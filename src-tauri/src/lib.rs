@@ -5,6 +5,7 @@
 //   - Register tauri-plugin-global-shortcut (Alt+Space → focus toggle)
 //   - Register tauri-plugin-sql (SQLite backend)
 //   - Window is configured as borderless + transparent via tauri.conf.json.
+//   - System tray integration (close → hide to tray, keep running in background)
 
 use tauri::Manager;
 use tauri_plugin_global_shortcut::{Code, Modifiers, ShortcutState};
@@ -53,16 +54,80 @@ fn toggle_window_focus(app: &tauri::AppHandle) {
 }
 
 // ---------------------------------------------------------------------------
+// Helper: setup system tray icon with menu
+// ---------------------------------------------------------------------------
+
+fn setup_tray(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
+    use tauri::menu::{MenuBuilder, MenuItemBuilder, PredefinedMenuItem};
+    use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
+
+    let show_i = MenuItemBuilder::with_id("show", "显示窗口").build(app)?;
+    let quit_i = MenuItemBuilder::with_id("quit", "退出").build(app)?;
+    let menu = MenuBuilder::new(app)
+        .items(&[&show_i, &PredefinedMenuItem::separator(app)?, &quit_i])
+        .build()?;
+
+    TrayIconBuilder::new()
+        .menu(&menu)
+        .on_menu_event(|app, event| {
+            match event.id().as_ref() {
+                "show" => {
+                    if let Some(window) = app.get_webview_window("main") {
+                        let _ = window.show();
+                        let _ = window.set_focus();
+                    }
+                }
+                "quit" => {
+                    app.exit(0);
+                }
+                _ => {}
+            }
+        })
+        .on_tray_icon_event(|tray, event| {
+            if let TrayIconEvent::Click {
+                button: MouseButton::Left,
+                button_state: MouseButtonState::Up,
+                ..
+            } = event
+            {
+                let app = tray.app_handle();
+                if let Some(window) = app.get_webview_window("main") {
+                    let _ = window.show();
+                    let _ = window.set_focus();
+                }
+            }
+        })
+        .icon(app.default_window_icon().unwrap().clone())
+        .build(app)?;
+
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
 // Public entry point (called from main.rs)
 // ---------------------------------------------------------------------------
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        // ── Intercept close request: hide to tray instead of quitting ───────
+        .on_window_event(|window, event| {
+            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                api.prevent_close();
+                if let Err(e) = window.hide() {
+                    eprintln!("[quick-chat] hide() on close requested: {e}");
+                }
+            }
+        })
         // ── Global shortcut plugin ──────────────────────────────────────────
         // `.with_shortcuts` pre-registers shortcuts at startup.
         // `.with_handler` receives ALL shortcut events; we filter by matching.
         .setup(|app| {
+            // System tray setup
+            if let Err(e) = setup_tray(app) {
+                eprintln!("[quick-chat] tray setup error: {e}");
+            }
+
             // Global shortcuts are desktop-only.
             #[cfg(desktop)]
             {

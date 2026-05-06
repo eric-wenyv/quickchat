@@ -56,6 +56,7 @@ export async function initDatabase(): Promise<void> {
       conversation_id TEXT    NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
       role            TEXT    NOT NULL CHECK (role IN ('user', 'assistant', 'system')),
       content         TEXT    NOT NULL DEFAULT '',
+      reasoning_content TEXT  DEFAULT NULL,
       status          TEXT    NOT NULL DEFAULT 'completed' CHECK (status IN ('pending', 'streaming', 'completed', 'error')),
       token_count     INTEGER DEFAULT NULL,
       model_id        TEXT    DEFAULT NULL,
@@ -63,6 +64,7 @@ export async function initDatabase(): Promise<void> {
       updated_at      INTEGER NOT NULL
     );
   `);
+  await ensureMessageReasoningContentColumn(db);
   await db.execute(`
     CREATE INDEX IF NOT EXISTS idx_messages_conversation_time
       ON messages(conversation_id, created_at ASC);
@@ -127,6 +129,13 @@ export async function initDatabase(): Promise<void> {
     CREATE UNIQUE INDEX IF NOT EXISTS idx_model_configs_provider_model
       ON model_configs(provider, model_id);
   `);
+}
+
+async function ensureMessageReasoningContentColumn(db: Database): Promise<void> {
+  const columns = await db.select<{ name: string }[]>('PRAGMA table_info(messages);');
+  if (!columns.some(column => column.name === 'reasoning_content')) {
+    await db.execute('ALTER TABLE messages ADD COLUMN reasoning_content TEXT DEFAULT NULL;');
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -325,20 +334,21 @@ export async function getConversations(limit = 100, offset = 0): Promise<Convers
 export async function saveMessage(msg: Message): Promise<void> {
   const db = await getDb();
   await db.execute(
-    'INSERT INTO messages (id, conversation_id, role, content, status, token_count, model_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
-    [msg.id, msg.conversation_id, msg.role, msg.content, msg.status, msg.token_count, msg.model_id, msg.created_at, msg.updated_at]
+    'INSERT INTO messages (id, conversation_id, role, content, reasoning_content, status, token_count, model_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+    [msg.id, msg.conversation_id, msg.role, msg.content, msg.reasoning_content ?? null, msg.status, msg.token_count, msg.model_id, msg.created_at, msg.updated_at]
   );
 }
 
 export async function updateMessage(
   id: UUID,
-  updates: Partial<Pick<Message, 'content' | 'status' | 'token_count' | 'updated_at'>>
+  updates: Partial<Pick<Message, 'content' | 'reasoning_content' | 'status' | 'token_count' | 'updated_at'>>
 ): Promise<void> {
   const db = await getDb();
   const sets: string[] = [];
   const vals: (string | number | null)[] = [];
 
   if (updates.content !== undefined) { sets.push('content = ?'); vals.push(updates.content); }
+  if (updates.reasoning_content !== undefined) { sets.push('reasoning_content = ?'); vals.push(updates.reasoning_content); }
   if (updates.status !== undefined) { sets.push('status = ?'); vals.push(updates.status); }
   if (updates.token_count !== undefined) { sets.push('token_count = ?'); vals.push(updates.token_count); }
   sets.push('updated_at = ?');
@@ -489,13 +499,14 @@ export async function migrateFromLocalStorage(): Promise<boolean> {
   for (const m of msgs) {
     try {
       await db.execute(
-        `INSERT OR IGNORE INTO messages (id, conversation_id, role, content, status, token_count, model_id, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT OR IGNORE INTO messages (id, conversation_id, role, content, reasoning_content, status, token_count, model_id, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           m.id,
           m.conversation_id,
           m.role,
           m.content,
+          m.reasoning_content ?? null,
           m.status || 'completed',
           m.token_count ?? null,
           m.model_id ?? null,

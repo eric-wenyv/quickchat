@@ -16,7 +16,9 @@ import {
   saveModelConfig,
   deleteModelConfig,
 } from "./services/db";
-import { streamChatCompletion } from "./services/ai";
+import { chatCompletion, WEB_SEARCH_TOOL } from "./services/ai";
+import type { ChatMessage } from "./services/ai";
+import { searchWeb, formatSearchResults, getSearchApiKey, setSearchApiKey } from "./services/search";
 import type {
   ConversationSummary,
   Conversation,
@@ -326,7 +328,35 @@ export default function App() {
     // thinking_level 不在数据库 schema 中，仅内存维护（或后续扩展 schema）
   };
 
-  // --- 发送消息 ---
+  // --- 全局搜索 API Key 状态 ---
+  const [searchApiKey, setSearchApiKeyState] = useState(() => {
+    return getSearchApiKey();
+  });
+
+  const handleSetSearchApiKey = (key: string) => {
+    const trimmed = key.trim();
+    setSearchApiKeyState(trimmed);
+    setSearchApiKey(trimmed);
+  };
+
+  // --- 将 Message[] 转换为 ChatMessage[] ---
+  const buildChatHistory = (currentMessages: Message[]): ChatMessage[] => {
+    const history: ChatMessage[] = [];
+    if (activeConversation?.system_prompt?.trim()) {
+      history.push({ role: 'system', content: activeConversation.system_prompt.trim() });
+    }
+    for (const msg of currentMessages) {
+      if (!msg.content.trim() && msg.role !== 'assistant') continue;
+      const chatMessage: ChatMessage = { role: msg.role as ChatMessage['role'], content: msg.content };
+      if (msg.role === 'assistant' && msg.reasoning_content != null) {
+        chatMessage.reasoning_content = msg.reasoning_content;
+      }
+      history.push(chatMessage);
+    }
+    return history;
+  };
+
+  // --- 发送消息（带 Tool Calling）---
   const handleSendMessage = async (content: string) => {
     if (!content.trim() || !activeConversation || !activeModelId) return;
     setIsSending(true);
@@ -384,6 +414,7 @@ export default function App() {
       conversation_id: convId,
       role: 'assistant',
       content: '',
+      reasoning_content: null,
       status: 'streaming',
       token_count: null,
       model_id: activeModelId,
@@ -407,31 +438,90 @@ export default function App() {
       const exists = prev.some(c => c.id === convId);
       const updated = exists
         ? prev.map(c => c.id === convId
-            ? { ...c, last_message_preview: content.slice(0, 120), last_message_at: now, message_count: c.message_count + 1 }
-            : c
-          )
+          ? { ...c, last_message_preview: content.slice(0, 120), last_message_at: now, message_count: c.message_count + 1 }
+          : c
+        )
         : [{
-            id: convId,
-            title: activeConversation.title,
-            created_at: activeConversation.created_at,
-            last_message_at: now,
-            last_message_preview: content.slice(0, 120),
-            message_count: 1,
-          }, ...prev];
+          id: convId,
+          title: activeConversation.title,
+          created_at: activeConversation.created_at,
+          last_message_at: now,
+          last_message_preview: content.slice(0, 120),
+          message_count: 1,
+        }, ...prev];
       return updated.sort((a, b) => b.last_message_at - a.last_message_at);
     });
 
-    try {
-      const stream = streamChatCompletion({
-        model: activeModel,
-        conversationId: convId,
-        systemPrompt: activeConversation.system_prompt,
-        messages,
-        userContent: content,
-      });
+    // 构建对话历史
+    let chatHistory = buildChatHistory([...messages, userMsg]);
+    const tools = searchApiKey ? [WEB_SEARCH_TOOL] : undefined;
+    const clearPendingAssistantUpdate = () => {
+      if (rafRef.current !== null) {
+        window.cancelAnimationFrame(rafRef.current);
+        rafRef.current = null;
+      }
+      delete pendingUpdatesRef.current[aiMsgId];
+    };
 
+    try {
+      // 第一轮：可能触发 tool call
+      let result = await chatCompletion({ model: activeModel, messages: chatHistory, tools });
+
+      // 处理 Tool Calling 循环
+      let toolLoopCount = 0;
+      while (result.type === 'tool_calls' && toolLoopCount < 3) {
+        toolLoopCount++;
+
+        // 显示"正在搜索..."
+        const toolNames = result.toolCalls.map(tc => tc.function.name).join(', ');
+        setMessages(prev => prev.map(msg =>
+          msg.id === aiMsgId
+            ? { ...msg, content: `🔍 正在调用工具: ${toolNames}...`, status: 'streaming' as const }
+            : msg
+        ));
+
+        // 将 assistant 的 tool call 追加到历史
+        chatHistory.push({
+          role: 'assistant',
+          content: result.assistantMessage || '',
+          tool_calls: result.toolCalls,
+          reasoning_content: result.reasoningContent,
+        });
+
+        // 执行每个 tool call
+        for (const call of result.toolCalls) {
+          let toolResult = '';
+          if (call.function.name === 'web_search') {
+            try {
+              const args = JSON.parse(call.function.arguments || '{}');
+              const query = args.query || content;
+              const searchResults = await searchWeb(query);
+              toolResult = formatSearchResults(query, searchResults);
+            } catch (e: any) {
+              toolResult = `搜索失败: ${e.message}`;
+            }
+          } else {
+            toolResult = `未知工具: ${call.function.name}`;
+          }
+
+          chatHistory.push({
+            role: 'tool',
+            content: toolResult,
+            tool_call_id: call.id,
+          });
+        }
+
+        // 再次请求（不带 tools，避免无限循环）
+        result = await chatCompletion({ model: activeModel, messages: chatHistory });
+      }
+
+      if (result.type === 'tool_calls') {
+        throw new Error('模型连续触发工具调用超过限制，请重试。');
+      }
+
+      // 流式显示最终文本回复
       let accumulated = '';
-      for await (const chunk of stream) {
+      for await (const chunk of result.stream) {
         accumulated = chunk.accumulated;
         pendingUpdatesRef.current[aiMsgId] = accumulated;
 
@@ -454,14 +544,20 @@ export default function App() {
       }
 
       // 流式完成，更新最终状态
+      clearPendingAssistantUpdate();
       const finalMsg: Message = {
         ...aiMsg,
         content: accumulated,
+        reasoning_content: result.reasoningContent,
         status: 'completed',
         updated_at: Date.now(),
       };
       setMessages(prev => prev.map(msg => msg.id === aiMsgId ? finalMsg : msg));
-      await updateMessage(aiMsgId, { content: accumulated, status: 'completed' });
+      await updateMessage(aiMsgId, {
+        content: accumulated,
+        reasoning_content: result.reasoningContent,
+        status: 'completed',
+      });
 
       // 更新会话列表
       setConversations(prev => prev.map(c =>
@@ -473,11 +569,12 @@ export default function App() {
     } catch (e: any) {
       console.error(e);
       showToast('AI 流式错误', e.toString(), 'error');
+      clearPendingAssistantUpdate();
       setMessages(prev => prev.map(msg => msg.id === aiMsgId ? { ...msg, status: 'error' as const } : msg));
       await updateMessage(aiMsgId, { status: 'error' });
     } finally {
       setIsSending(false);
-      delete pendingUpdatesRef.current[aiMsgId];
+      clearPendingAssistantUpdate();
     }
   };
 
@@ -561,6 +658,8 @@ export default function App() {
           onSave={handleSaveModel}
           onDelete={handleDeleteModel}
           onClose={() => setShowSettings(false)}
+          searchApiKey={searchApiKey}
+          onSearchApiKeyChange={handleSetSearchApiKey}
         />
       )}
 

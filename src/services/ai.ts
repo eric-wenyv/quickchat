@@ -1,13 +1,8 @@
 // =============================================================================
-// Quick-Chat — 统一 AI Service（OpenAI 兼容格式）
-// =============================================================================
-// 设计原则：
-//   1. 所有 Provider 统一走 OpenAI Chat Completions API 格式。
-//   2. Gemini 通过其 OpenAI 兼容 endpoint 调用，不再依赖 @google/genai。
-//   3. 流式响应统一使用 fetch + ReadableStream SSE 解析。
+// Quick-Chat — 统一 AI Service（OpenAI 兼容格式 + Tool Calling）
 // =============================================================================
 
-import type { ModelConfig, Message, UUID } from '@/types/types';
+import type { ModelConfig } from '@/types/types';
 
 // ---------------------------------------------------------------------------
 // 常量
@@ -24,19 +19,69 @@ const DEFAULT_ENDPOINTS: Record<string, string> = {
 // ---------------------------------------------------------------------------
 
 export interface StreamChunk {
-  /** 本次增量文本 */
   delta: string;
-  /** 截至目前累计的完整文本 */
   accumulated: string;
+}
+
+export interface ToolDefinition {
+  type: 'function';
+  function: {
+    name: string;
+    description: string;
+    parameters: Record<string, unknown>;
+  };
+}
+
+export interface ToolCall {
+  id: string;
+  type: 'function';
+  function: {
+    name: string;
+    arguments: string; // JSON string
+  };
+}
+
+export interface ChatMessage {
+  role: 'system' | 'user' | 'assistant' | 'tool';
+  content: string;
+  reasoning_content?: string;
+  tool_call_id?: string;
+  tool_calls?: ToolCall[];
+  name?: string;
 }
 
 export interface ChatCompletionParams {
   model: ModelConfig;
-  conversationId: UUID;
-  systemPrompt: string | null;
-  messages: Message[];
-  userContent: string;
+  messages: ChatMessage[];
+  tools?: ToolDefinition[];
 }
+
+export type ChatCompletionResult =
+  | { type: 'text'; stream: AsyncGenerator<StreamChunk, void, unknown>; reasoningContent: string }
+  | { type: 'tool_calls'; toolCalls: ToolCall[]; assistantMessage: string; reasoningContent: string };
+
+// ---------------------------------------------------------------------------
+// 内置工具定义
+// ---------------------------------------------------------------------------
+
+export const WEB_SEARCH_TOOL: ToolDefinition = {
+  type: 'function',
+  function: {
+    name: 'web_search',
+    description:
+      'Search the web for current, real-time information. Use this when the user asks about recent events, news, weather, stock prices, sports results, or any information that may have changed after your knowledge cutoff.',
+    parameters: {
+      type: 'object',
+      properties: {
+        query: {
+          type: 'string',
+          description: 'The search query in Chinese or English',
+        },
+      },
+      required: ['query'],
+    },
+  },
+};
 
 // ---------------------------------------------------------------------------
 // 工具函数
@@ -57,7 +102,6 @@ function buildHeaders(model: ModelConfig): Record<string, string> {
     Authorization: `Bearer ${model.api_key}`,
   };
 
-  // OpenRouter 需要额外标识
   if (model.provider === 'openrouter') {
     headers['HTTP-Referer'] = typeof window !== 'undefined' ? window.location.href : 'https://quick-chat.app';
     headers['X-Title'] = 'Quick Chat';
@@ -68,27 +112,9 @@ function buildHeaders(model: ModelConfig): Record<string, string> {
 
 function buildRequestBody(
   model: ModelConfig,
-  systemPrompt: string | null,
-  history: Message[],
-  userContent: string
+  messages: ChatMessage[],
+  tools?: ToolDefinition[]
 ): unknown {
-  const messages: Array<{ role: string; content: string }> = [];
-
-  if (systemPrompt?.trim()) {
-    messages.push({ role: 'system', content: systemPrompt.trim() });
-  }
-
-  for (const msg of history) {
-    if (!msg.content.trim()) continue;
-    if (msg.role === 'assistant') {
-      messages.push({ role: 'assistant', content: msg.content });
-    } else if (msg.role === 'user') {
-      messages.push({ role: 'user', content: msg.content });
-    }
-  }
-
-  messages.push({ role: 'user', content: userContent });
-
   const body: Record<string, unknown> = {
     model: model.model_id,
     messages,
@@ -98,23 +124,150 @@ function buildRequestBody(
     top_p: model.top_p,
   };
 
-  // Gemini thinking level → reasoning_effort (OpenAI 兼容映射)
-  if (model.provider === 'google_gemini' && model.thinking_level && model.model_id.includes('gemini-3')) {
-    // Gemini OpenAI 兼容端点暂时不暴露 thinkingConfig，保留原有 temperature/top_p 控制即可
-    // 如果将来支持，可在此扩展
+  if (tools && tools.length > 0) {
+    body.tools = tools;
+    body.tool_choice = 'auto';
   }
 
   return body;
 }
 
 // ---------------------------------------------------------------------------
-// SSE 解析器
+// SSE 解析器（支持 tool_calls）
 // ---------------------------------------------------------------------------
 
-async function* parseSSE(stream: ReadableStream<Uint8Array>): AsyncGenerator<string, void, unknown> {
+interface AccumulatedToolCall {
+  id?: string;
+  type?: string;
+  function?: {
+    name?: string;
+    arguments?: string;
+  };
+}
+
+interface SSEAccumulator {
+  text: string;
+  reasoningContent: string;
+  toolCalls: Map<number, AccumulatedToolCall>;
+  finishReason: string | null;
+}
+
+function createAccumulator(): SSEAccumulator {
+  return { text: '', reasoningContent: '', toolCalls: new Map(), finishReason: null };
+}
+
+function mergeDelta(acc: SSEAccumulator, delta: any): void {
+  if (typeof delta.content === 'string') {
+    acc.text += delta.content;
+  }
+
+  if (typeof delta.reasoning_content === 'string') {
+    acc.reasoningContent += delta.reasoning_content;
+  }
+
+  if (delta.tool_calls && Array.isArray(delta.tool_calls)) {
+    for (const tc of delta.tool_calls) {
+      const idx = tc.index ?? 0;
+      if (!acc.toolCalls.has(idx)) {
+        acc.toolCalls.set(idx, { id: tc.id, type: tc.type, function: {} });
+      }
+      const existing = acc.toolCalls.get(idx)!;
+      if (tc.id) existing.id = tc.id;
+      if (tc.type) existing.type = tc.type;
+      if (tc.function) {
+        if (!existing.function) existing.function = {};
+        if (tc.function.name) existing.function.name = tc.function.name;
+        if (tc.function.arguments) {
+          existing.function.arguments = (existing.function.arguments || '') + tc.function.arguments;
+        }
+      }
+    }
+  }
+}
+
+async function consumeStream(stream: ReadableStream<Uint8Array>): Promise<SSEAccumulator> {
   const reader = stream.getReader();
   const decoder = new TextDecoder('utf-8');
   let buffer = '';
+  const acc = createAccumulator();
+
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop() || '';
+
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed.startsWith('data: ')) continue;
+        const data = trimmed.slice(6);
+        if (data === '[DONE]') continue;
+        try {
+          const parsed = JSON.parse(data);
+          const delta = parsed.choices?.[0]?.delta;
+          const finishReason = parsed.choices?.[0]?.finish_reason;
+          if (finishReason) acc.finishReason = finishReason;
+          if (delta) mergeDelta(acc, delta);
+        } catch {
+          // ignore
+        }
+      }
+    }
+
+    if (buffer.trim()) {
+      const trimmed = buffer.trim();
+      if (trimmed.startsWith('data: ')) {
+        const data = trimmed.slice(6);
+        if (data !== '[DONE]') {
+          try {
+            const parsed = JSON.parse(data);
+            const delta = parsed.choices?.[0]?.delta;
+            const finishReason = parsed.choices?.[0]?.finish_reason;
+            if (finishReason) acc.finishReason = finishReason;
+            if (delta) mergeDelta(acc, delta);
+          } catch {
+            // ignore
+          }
+        }
+      }
+    }
+  } finally {
+    reader.releaseLock();
+  }
+
+  return acc;
+}
+
+function accumulatorToToolCalls(acc: SSEAccumulator): ToolCall[] {
+  const calls: ToolCall[] = [];
+  const indices = Array.from(acc.toolCalls.keys()).sort((a, b) => a - b);
+  for (const idx of indices) {
+    const tc = acc.toolCalls.get(idx)!;
+    const fn = tc.function ?? {};
+    calls.push({
+      id: tc.id || `call_${idx}`,
+      type: (tc.type as 'function') || 'function',
+      function: {
+        name: fn.name || '',
+        arguments: fn.arguments || '',
+      },
+    });
+  }
+  return calls;
+}
+
+// ---------------------------------------------------------------------------
+// 对外暴露的文本流式生成器（用于第二轮无 tool 的回复）
+// ---------------------------------------------------------------------------
+
+async function* parseTextStream(stream: ReadableStream<Uint8Array>): AsyncGenerator<StreamChunk, void, unknown> {
+  const reader = stream.getReader();
+  const decoder = new TextDecoder('utf-8');
+  let buffer = '';
+  let accumulated = '';
 
   try {
     while (true) {
@@ -134,15 +287,15 @@ async function* parseSSE(stream: ReadableStream<Uint8Array>): AsyncGenerator<str
           const parsed = JSON.parse(data);
           const delta = parsed.choices?.[0]?.delta?.content;
           if (typeof delta === 'string') {
-            yield delta;
+            accumulated += delta;
+            yield { delta, accumulated };
           }
         } catch {
-          // 忽略无法解析的行
+          // ignore
         }
       }
     }
 
-    // 处理剩余缓冲
     if (buffer.trim()) {
       const trimmed = buffer.trim();
       if (trimmed.startsWith('data: ')) {
@@ -152,7 +305,8 @@ async function* parseSSE(stream: ReadableStream<Uint8Array>): AsyncGenerator<str
             const parsed = JSON.parse(data);
             const delta = parsed.choices?.[0]?.delta?.content;
             if (typeof delta === 'string') {
-              yield delta;
+              accumulated += delta;
+              yield { delta, accumulated };
             }
           } catch {
             // ignore
@@ -166,18 +320,16 @@ async function* parseSSE(stream: ReadableStream<Uint8Array>): AsyncGenerator<str
 }
 
 // ---------------------------------------------------------------------------
-// 主入口：流式对话
+// 主入口：带 tool calling 的对话
 // ---------------------------------------------------------------------------
 
-export async function* streamChatCompletion(
-  params: ChatCompletionParams
-): AsyncGenerator<StreamChunk, void, unknown> {
-  const { model, systemPrompt, messages, userContent } = params;
+export async function chatCompletion(params: ChatCompletionParams): Promise<ChatCompletionResult> {
+  const { model, messages, tools } = params;
 
   const endpoint = getApiEndpoint(model);
   const url = `${endpoint.replace(/\/$/, '')}/chat/completions`;
   const headers = buildHeaders(model);
-  const body = buildRequestBody(model, systemPrompt, messages, userContent);
+  const body = buildRequestBody(model, messages, tools);
 
   const response = await fetch(url, {
     method: 'POST',
@@ -200,9 +352,69 @@ export async function* streamChatCompletion(
     throw new Error('API 返回了空的响应体');
   }
 
-  let accumulated = '';
-  for await (const delta of parseSSE(response.body)) {
-    accumulated += delta;
-    yield { delta, accumulated };
+  // 先消费完整流以判断是文本还是 tool call
+  const acc = await consumeStream(response.body);
+
+  // 如果是 tool call
+  if (acc.finishReason === 'tool_calls' || acc.toolCalls.size > 0) {
+    const toolCalls = accumulatorToToolCalls(acc);
+    if (toolCalls.length > 0) {
+      return {
+        type: 'tool_calls',
+        toolCalls,
+        assistantMessage: acc.text,
+        reasoningContent: acc.reasoningContent,
+      };
+    }
   }
+
+  // 否则是纯文本，但我们已经消费完了流，需要模拟一个 stream
+  // 为了兼容现有 UI，将完整文本包装成单 chunk stream
+  return {
+    type: 'text',
+    stream: (async function* () {
+      if (acc.text) {
+        yield { delta: acc.text, accumulated: acc.text };
+      }
+    })(),
+    reasoningContent: acc.reasoningContent,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// 纯文本流式对话（不带 tools，用于显示最终结果）
+// ---------------------------------------------------------------------------
+
+export async function streamTextCompletion(
+  params: Omit<ChatCompletionParams, 'tools'>
+): Promise<AsyncGenerator<StreamChunk, void, unknown>> {
+  const { model, messages } = params;
+
+  const endpoint = getApiEndpoint(model);
+  const url = `${endpoint.replace(/\/$/, '')}/chat/completions`;
+  const headers = buildHeaders(model);
+  const body = buildRequestBody(model, messages);
+
+  const response = await fetch(url, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify(body),
+  });
+
+  if (!response.ok) {
+    let errorText = '';
+    try {
+      const errorJson = await response.json();
+      errorText = errorJson.error?.message || JSON.stringify(errorJson);
+    } catch {
+      errorText = await response.text();
+    }
+    throw new Error(`API 请求失败 (${response.status}): ${errorText || response.statusText}`);
+  }
+
+  if (!response.body) {
+    throw new Error('API 返回了空的响应体');
+  }
+
+  return parseTextStream(response.body);
 }

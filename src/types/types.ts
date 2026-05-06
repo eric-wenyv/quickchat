@@ -74,6 +74,8 @@ export interface Message {
   role: MessageRole;
   /** 纯文本内容（Markdown 格式） */
   content: string;
+  /** 思考模型返回的推理内容（不展示给用户，但需要回传给 API） */
+  reasoning_content?: string | null;
   /** 消息状态 */
   status: MessageStatus;
   /** Token 用量（仅 assistant 消息有值） */
@@ -154,6 +156,7 @@ export interface SaveMessagePayload {
   conversation_id: UUID;
   role: MessageRole;
   content: string;
+  reasoning_content?: string | null;
   status: MessageStatus;
   token_count: number | null;
   model_id: string | null;
@@ -163,6 +166,7 @@ export interface SaveMessagePayload {
 export interface UpdateMessagePayload {
   id: UUID;
   content?: string;
+  reasoning_content?: string | null;
   status?: MessageStatus;
   token_count?: number | null;
   updated_at: EpochMillis;

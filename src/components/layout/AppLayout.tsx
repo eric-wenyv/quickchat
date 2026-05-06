@@ -1,79 +1,145 @@
-import React from 'react';
+import React, { useState } from 'react';
+import Sidebar from '../sidebar/Sidebar';
+import { MainChatArea } from '../chat/MainChatArea';
+import type { 
+  ConversationSummary, 
+  Conversation, 
+  Message, 
+  ModelConfig, 
+  UUID 
+} from '@/types/types';
 
 interface AppLayoutProps {
-  /** 
-   * 左侧边栏内容 
-   */
-  sidebar?: React.ReactNode;
-  /** 
-   * 右侧主对话区内容 
-   */
-  children?: React.ReactNode;
-  /** 
-   * 控制侧边栏是否展开，默认展开 
-   */
-  isSidebarOpen?: boolean;
+  // --- 数据契约 ---
+  /** 会话列表摘要 */
+  conversations: ConversationSummary[];
+  /** 当前激活的会话详情 */
+  activeConversation: Conversation | null;
+  /** 当前会话的消息流 */
+  messages: Message[];
+  /** 可选模型配置列表 */
+  models: ModelConfig[];
+  /** 当前选中的模型 ID */
+  activeModelId: UUID;
+  
+  // --- 状态标志 ---
+  /** 列表是否正在加载 */
+  isLoadingConversations: boolean;
+  /** 消息是否正在初次加载 */
+  isLoadingMessages: boolean;
+  /** 是否正在发送消息 (禁用输入框) */
+  isSending: boolean;
+  /** 是否有更多历史消息 */
+  hasMoreMessages: boolean;
+  
+  // --- 动作回调 ---
+  /** 切换会话 */
+  onSelectConversation: (id: UUID) => void;
+  /** 创建新会话 */
+  onCreateConversation: () => void;
+  /** 搜索会话 */
+  onSearchConversations: (query: string) => void;
+  /** 发送消息 */
+  onSendMessage: (content: string) => void;
+  /** 加载更多历史 */
+  onLoadMoreMessages: () => void;
+  /** 切换 AI 模型 */
+  onModelSelect: (id: UUID) => void;
 }
 
 /**
- * 全局应用布局骨架
- * 遵循极简、克制、高品质排版设计哲学
+ * AppLayout (P4): 最终集成页面布局
+ * 
+ * 核心职责：
+ * 1. 物理整合 Sidebar 与 MainChatArea，实现无缝联动。
+ * 2. 建立全局极简、高端的视觉基调 (Claude-inspired Sand-White Palette)。
+ * 3. 管理侧边栏的响应式显隐过渡与深度动效。
  */
-export const AppLayout: React.FC<AppLayoutProps> = ({ 
-  sidebar, 
-  children,
-  isSidebarOpen = true 
+export const AppLayout: React.FC<AppLayoutProps> = ({
+  conversations,
+  activeConversation,
+  messages,
+  models,
+  activeModelId,
+  isLoadingConversations,
+  isLoadingMessages,
+  isSending,
+  hasMoreMessages,
+  onSelectConversation,
+  onCreateConversation,
+  onSearchConversations,
+  onSendMessage,
+  onLoadMoreMessages,
+  onModelSelect
 }) => {
+  // 内部维护侧边栏开关状态，确保布局灵活性
+  const [isSidebarOpen, setIsSidebarOpen] = useState(true);
+
   return (
-    // 全局背景使用沙白色，字体使用低对比度深灰
-    <div className="flex h-screen w-screen bg-sand-100 text-ink-300 font-sans overflow-hidden selection:bg-sand-300 selection:text-ink-400">
+    <div className="flex h-screen w-screen bg-sand-100 text-ink-300 font-sans overflow-hidden selection:bg-sand-300/60 selection:text-ink-400 antialiased">
       
       {/* 
-        左侧 260px 可折叠侧边栏 
-        完全依赖极度克制的边框 (border-sand-400) 和内边距区分层级
+        左侧边栏区域 (B-1): 负责导航与历史管理
+        采用固定宽度 w-80 (320px)，支持通过 transform 与 opacity 实现硬件加速的平滑过渡
       */}
       <aside 
         className={`
-          flex flex-col h-full flex-shrink-0 transition-[width,opacity] duration-300 ease-in-out
-          border-r border-sand-400 bg-sand-200
-          ${isSidebarOpen ? 'w-[260px] opacity-100' : 'w-0 opacity-0 overflow-hidden border-none'}
+          flex-shrink-0 h-full border-r border-sand-400 transition-[width,opacity,transform] duration-500 ease-out z-20
+          ${isSidebarOpen ? 'w-80 opacity-100 translate-x-0' : 'w-0 opacity-0 -translate-x-full pointer-events-none'}
         `}
       >
-        {/* Tauri 无边框窗口顶部自定义拖拽区域 */}
-        <div 
-          data-tauri-drag-region 
-          className="h-12 w-full flex-shrink-0 cursor-grab active:cursor-grabbing" 
-        />
-        
-        {/* 侧边栏主内容区：留白控制 */}
-        <div className="flex-1 overflow-y-auto px-4 pb-4">
-          {sidebar}
+        <div className="w-80 h-full">
+          <Sidebar
+            conversations={conversations}
+            activeConversationId={activeConversation?.id ?? null}
+            onSelectConversation={onSelectConversation}
+            onCreateConversation={onCreateConversation}
+            onSearchChange={onSearchConversations}
+            isLoading={isLoadingConversations}
+          />
         </div>
       </aside>
 
       {/* 
-        右侧主对话区 
+        右侧主对话区区域 (C-1): 应用核心交互平面
+        利用 flex-1 中自适应剩余空间。
       */}
-      <main className="flex-1 flex flex-col h-full min-w-0 relative bg-sand-100">
+      <main className="flex-1 min-w-0 h-full relative z-10 flex flex-col shadow-[inset_1px_0_0_rgba(255,255,255,0.4)]">
         
-        {/* Tauri 无边框窗口顶部自定义拖拽区域 (悬浮于主内容之上但不阻挡主内容交互) */}
-        <div 
-          data-tauri-drag-region 
-          className="h-12 w-full flex-shrink-0 absolute top-0 left-0 z-50 cursor-grab active:cursor-grabbing"
-        />
+        {/* 侧边栏唤醒触发器: 采用磨砂玻璃质感，仅在侧边栏关闭时漂浮显示 */}
+        {!isSidebarOpen && (
+          <button
+            onClick={() => setIsSidebarOpen(true)}
+            className="absolute top-4 left-4 z-50 p-2.5 rounded-2xl bg-white/40 border border-sand-400/40 backdrop-blur-xl shadow-panel text-ink-200 hover:text-ink-400 hover:bg-white/60 transition-all active:scale-90 group"
+            title="展开侧边栏"
+          >
+            <svg className="w-5 h-5 transition-transform group-hover:translate-x-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M13 5l7 7-7 7M5 5l7 7-7 7" />
+            </svg>
+          </button>
+        )}
 
         {/* 
-          主内容容器：
-          - 顶部留出拖拽区的高度留白
-          - 居中限制最大宽度 (max-w-4xl) 确保高品质阅读排版体验
+          集成主对话区容器 
+          内部已包含 Header, MessageList, EmptyState 与 ChatInputFooter (含 Enter 发送拦截与高度增长逻辑)
         */}
-        <div className="flex-1 overflow-y-auto pt-12">
-          <div className="max-w-4xl mx-auto h-full px-6 md:px-12 pb-8 flex flex-col">
-            {children}
-          </div>
-        </div>
-        
+        <MainChatArea
+          conversation={activeConversation}
+          messages={messages}
+          isLoadingMessages={isLoadingMessages}
+          onSendMessage={onSendMessage}
+          onLoadMore={onLoadMoreMessages}
+          hasMore={hasMoreMessages}
+          models={models}
+          activeModelId={activeModelId}
+          onModelSelect={onModelSelect}
+          isSending={isSending}
+        />
       </main>
+
     </div>
   );
 };
+
+export default AppLayout;
+

@@ -10,6 +10,7 @@ interface SidebarProps {
   activeConversationId: UUID | null;
   onSelectConversation: (id: UUID) => void;
   onCreateConversation: () => void;
+  onDeleteConversation: (id: UUID) => void;
   onSearchChange: (query: string) => void;
   isLoading: boolean;
 }
@@ -31,13 +32,14 @@ const Sidebar: React.FC<SidebarProps> = ({
   activeConversationId,
   onSelectConversation,
   onCreateConversation,
+  onDeleteConversation,
   onSearchChange,
   isLoading,
 }) => {
   return (
     <aside className="flex flex-col h-full w-80 bg-sand-200 border-r border-sand-400 overflow-hidden select-none">
       {/* 1. Tauri 窗口拖拽区域 (非悬浮模式，占据侧边栏顶部高度) */}
-      <TauriDragRegion floating={false} className="flex-shrink-0 h-12" />
+      <TauriDragRegion floating={false} className="flex-shrink-0 h-10" />
 
       {/* 2. 操作与搜索区域 */}
       <div className="flex flex-col flex-shrink-0 px-4 mt-2">
@@ -56,6 +58,7 @@ const Sidebar: React.FC<SidebarProps> = ({
           conversations={conversations}
           activeId={activeConversationId}
           onSelect={onSelectConversation}
+          onDelete={onDeleteConversation}
           isLoading={isLoading}
         />
       </div>

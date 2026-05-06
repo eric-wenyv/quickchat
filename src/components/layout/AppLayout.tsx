@@ -37,6 +37,10 @@ interface AppLayoutProps {
   onSelectConversation: (id: UUID) => void;
   /** 创建新会话 */
   onCreateConversation: () => void;
+  /** 删除会话 */
+  onDeleteConversation: (id: UUID) => void;
+  /** 重命名会话 */
+  onRenameConversation: (id: UUID, newTitle: string) => void;
   /** 搜索会话 */
   onSearchConversations: (query: string) => void;
   /** 发送消息 */
@@ -45,6 +49,8 @@ interface AppLayoutProps {
   onLoadMoreMessages: () => void;
   /** 切换 AI 模型 */
   onModelSelect: (id: UUID) => void;
+  /** 更新系统提示词 */
+  onUpdateSystemPrompt: (prompt: string | null) => void;
 }
 
 /**
@@ -67,10 +73,13 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
   hasMoreMessages,
   onSelectConversation,
   onCreateConversation,
+  onDeleteConversation,
+  onRenameConversation,
   onSearchConversations,
   onSendMessage,
   onLoadMoreMessages,
-  onModelSelect
+  onModelSelect,
+  onUpdateSystemPrompt,
 }) => {
   // 内部维护侧边栏开关状态，确保布局灵活性
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
@@ -94,6 +103,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
             activeConversationId={activeConversation?.id ?? null}
             onSelectConversation={onSelectConversation}
             onCreateConversation={onCreateConversation}
+            onDeleteConversation={onDeleteConversation}
             onSearchChange={onSearchConversations}
             isLoading={isLoadingConversations}
           />
@@ -134,6 +144,8 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
           activeModelId={activeModelId}
           onModelSelect={onModelSelect}
           isSending={isSending}
+          onRenameConversation={onRenameConversation}
+          onUpdateSystemPrompt={onUpdateSystemPrompt}
         />
       </main>
 
@@ -142,4 +154,3 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
 };
 
 export default AppLayout;
-

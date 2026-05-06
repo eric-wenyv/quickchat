@@ -22,15 +22,15 @@ interface MainChatAreaProps {
   onModelSelect: (id: UUID) => void;
   /** 是否正在发送消息 (用于禁用输入) */
   isSending: boolean;
+  /** 重命名会话回调 */
+  onRenameConversation: (id: UUID, newTitle: string) => void;
+  /** 更新系统提示词回调 */
+  onUpdateSystemPrompt: (prompt: string | null) => void;
 }
 
 /**
  * C-1: MainChatArea
  * 主对话区容器，组合 Header + MessageList/EmptyState + InputFooter。
- * 它是应用的心脏，负责协调各个原子组件并呈现最核心的交流体验。
- * 
- * [针对 UI 任务的附加限制]：拦截 Enter 键实现发送，Shift+Enter 实现换行，高度必须随内容自动增长。
- * (注：此逻辑已在子组件 ChatTextArea 及 ChatInputFooter 中实现，本容器确保布局适配高度增长)
  */
 export const MainChatArea: React.FC<MainChatAreaProps> = ({
   conversation,
@@ -44,25 +44,32 @@ export const MainChatArea: React.FC<MainChatAreaProps> = ({
   activeModelId,
   onModelSelect,
   isSending,
+  onRenameConversation,
+  onUpdateSystemPrompt,
 }) => {
   const showNoConversation = !conversation;
   const showNoMessages = conversation && messages.length === 0 && !isLoadingMessages;
 
   return (
     <div className="relative flex flex-col h-full w-full overflow-hidden bg-sand-100">
-      {/* 顶部透明拖拽区 (悬浮模式，确保不遮挡 Header 交互但支持窗口拖拽) */}
-      <TauriDragRegion floating className="h-10 pointer-events-none" />
-
       {showNoConversation ? (
-        <div className="flex-1 overflow-hidden">
-          <EmptyState type="no_conversation" />
-        </div>
+        <>
+          {/* 无会话时：顶部拖拽区 + 窗口控制按钮 */}
+          <TauriDragRegion floating showControls className="h-10" />
+          <div className="flex-1 overflow-hidden">
+            <EmptyState type="no_conversation" />
+          </div>
+        </>
       ) : (
         <>
-          {/* 顶部导航与状态栏 */}
-          <MessageHeader conversation={conversation} />
+          {/* 顶部导航与状态栏 (已内联窗口控制按钮) */}
+          <MessageHeader
+            conversation={conversation}
+            onRename={(newTitle) => onRenameConversation(conversation.id, newTitle)}
+            onUpdateSystemPrompt={onUpdateSystemPrompt}
+          />
 
-          {/* 消息展示核心区：使用 flex-1 撑开，内部 MessageList 自助滚动 */}
+          {/* 消息展示核心区 */}
           <main className="flex-1 relative overflow-hidden flex flex-col min-h-0">
             {showNoMessages ? (
               <div className="flex-1 overflow-hidden">
@@ -78,7 +85,7 @@ export const MainChatArea: React.FC<MainChatAreaProps> = ({
             )}
           </main>
 
-          {/* 输入底部栏：位于容器底部，高度随内容自适应 */}
+          {/* 输入底部栏 */}
           <ChatInputFooter
             onSend={onSendMessage}
             disabled={isSending || isLoadingMessages}

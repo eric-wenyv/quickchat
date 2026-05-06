@@ -6,6 +6,7 @@ interface ConversationListProps {
   conversations: ConversationSummary[];
   activeId: UUID | null;
   onSelect: (id: UUID) => void;
+  onDelete: (id: UUID) => void;
   isLoading: boolean;
 }
 
@@ -17,6 +18,7 @@ const ConversationList: React.FC<ConversationListProps> = ({
   conversations,
   activeId,
   onSelect,
+  onDelete,
   isLoading,
 }) => {
   // 加载态：渲染 6 个骨架屏卡片
@@ -72,6 +74,7 @@ const ConversationList: React.FC<ConversationListProps> = ({
           conversation={conv}
           isActive={conv.id === activeId}
           onSelect={() => onSelect(conv.id)}
+          onDelete={() => onDelete(conv.id)}
         />
       ))}
     </div>

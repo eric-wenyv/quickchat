@@ -113,6 +113,8 @@ export interface ModelConfig {
   max_tokens: number;
   /** Top-P 采样参数 0.0 ~ 1.0 */
   top_p: number;
+  /** 思考模式级别 (Gemini 3.x: LOW/MEDIUM/HIGH, Gemini 2.5 不生效) */
+  thinking_level: 'LOW' | 'MEDIUM' | 'HIGH' | null;
   /** 是否为当前激活的默认模型 */
   is_default: boolean;
   created_at: EpochMillis;

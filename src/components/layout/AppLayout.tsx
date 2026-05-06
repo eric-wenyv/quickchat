@@ -43,6 +43,8 @@ interface AppLayoutProps {
   onRenameConversation: (id: UUID, newTitle: string) => void;
   /** 搜索会话 */
   onSearchConversations: (query: string) => void;
+  /** 当前搜索关键词 */
+  searchQuery: string;
   /** 发送消息 */
   onSendMessage: (content: string) => void;
   /** 加载更多历史 */
@@ -51,6 +53,8 @@ interface AppLayoutProps {
   onModelSelect: (id: UUID) => void;
   /** 更新系统提示词 */
   onUpdateSystemPrompt: (prompt: string | null) => void;
+  /** 更新模型 thinking level */
+  onUpdateModelThinkingLevel: (id: UUID, level: 'LOW' | 'MEDIUM' | 'HIGH' | null) => void;
 }
 
 /**
@@ -76,10 +80,12 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
   onDeleteConversation,
   onRenameConversation,
   onSearchConversations,
+  searchQuery,
   onSendMessage,
   onLoadMoreMessages,
   onModelSelect,
   onUpdateSystemPrompt,
+  onUpdateModelThinkingLevel,
 }) => {
   // 内部维护侧边栏开关状态，确保布局灵活性
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
@@ -106,6 +112,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
             onDeleteConversation={onDeleteConversation}
             onSearchChange={onSearchConversations}
             isLoading={isLoadingConversations}
+            searchQuery={searchQuery}
           />
         </div>
       </aside>
@@ -146,6 +153,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
           isSending={isSending}
           onRenameConversation={onRenameConversation}
           onUpdateSystemPrompt={onUpdateSystemPrompt}
+          onUpdateModelThinkingLevel={onUpdateModelThinkingLevel}
         />
       </main>
 

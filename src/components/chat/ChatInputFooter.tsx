@@ -3,6 +3,7 @@ import type { ModelConfig, UUID } from '@/types/types';
 import { ChatTextArea } from './ChatTextArea';
 import SendButton from './SendButton';
 import ModelSelector from './ModelSelector';
+import ThinkingLevelSelector from './ThinkingLevelSelector';
 
 interface ChatInputFooterProps {
   onSend: (content: string) => void;
@@ -10,6 +11,7 @@ interface ChatInputFooterProps {
   models: ModelConfig[];
   activeModelId: UUID;
   onModelSelect: (id: UUID) => void;
+  onUpdateModelThinkingLevel: (id: UUID, level: 'LOW' | 'MEDIUM' | 'HIGH' | null) => void;
 }
 
 /**
@@ -23,6 +25,7 @@ export const ChatInputFooter: React.FC<ChatInputFooterProps> = ({
   models,
   activeModelId,
   onModelSelect,
+  onUpdateModelThinkingLevel,
 }) => {
   const [content, setContent] = useState('');
 
@@ -54,6 +57,11 @@ export const ChatInputFooter: React.FC<ChatInputFooterProps> = ({
                 models={models}
                 activeModelId={activeModelId}
                 onSelect={onModelSelect}
+              />
+              <ThinkingLevelSelector
+                models={models}
+                activeModelId={activeModelId}
+                onUpdateThinkingLevel={onUpdateModelThinkingLevel}
               />
               <div className="h-4 w-[1px] bg-sand-400/30 mx-1" />
               <div className="flex items-center gap-1 px-2 py-1 rounded-lg bg-sand-200/50 text-[10px] font-bold text-ink-200 uppercase tracking-tighter">

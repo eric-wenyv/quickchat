@@ -26,6 +26,8 @@ interface MainChatAreaProps {
   onRenameConversation: (id: UUID, newTitle: string) => void;
   /** 更新系统提示词回调 */
   onUpdateSystemPrompt: (prompt: string | null) => void;
+  /** 更新模型 thinking level 回调 */
+  onUpdateModelThinkingLevel: (id: UUID, level: 'LOW' | 'MEDIUM' | 'HIGH' | null) => void;
 }
 
 /**
@@ -46,6 +48,7 @@ export const MainChatArea: React.FC<MainChatAreaProps> = ({
   isSending,
   onRenameConversation,
   onUpdateSystemPrompt,
+  onUpdateModelThinkingLevel,
 }) => {
   const showNoConversation = !conversation;
   const showNoMessages = conversation && messages.length === 0 && !isLoadingMessages;
@@ -92,6 +95,7 @@ export const MainChatArea: React.FC<MainChatAreaProps> = ({
             models={models}
             activeModelId={activeModelId}
             onModelSelect={onModelSelect}
+            onUpdateModelThinkingLevel={onUpdateModelThinkingLevel}
           />
         </>
       )}

@@ -13,6 +13,8 @@ interface SidebarProps {
   onDeleteConversation: (id: UUID) => void;
   onSearchChange: (query: string) => void;
   isLoading: boolean;
+  /** 当前搜索关键词 */
+  searchQuery: string;
 }
 
 /**
@@ -35,6 +37,7 @@ const Sidebar: React.FC<SidebarProps> = ({
   onDeleteConversation,
   onSearchChange,
   isLoading,
+  searchQuery,
 }) => {
   return (
     <aside className="flex flex-col h-full w-80 bg-sand-200 border-r border-sand-400 overflow-hidden select-none">
@@ -50,6 +53,23 @@ const Sidebar: React.FC<SidebarProps> = ({
         <div className="-mx-1 -mt-2">
           <SearchBar onSearch={onSearchChange} />
         </div>
+
+        {/* 搜索结果统计 */}
+        {searchQuery.trim() && (
+          <div className="flex items-center justify-between px-1 py-1.5 mb-1">
+            <span className="text-[11px] text-ink-200 font-medium">
+              {conversations.length > 0
+                ? `找到 ${conversations.length} 个结果`
+                : '无匹配结果'}
+            </span>
+            <button
+              onClick={() => onSearchChange('')}
+              className="text-[11px] text-ink-100 hover:text-ink-400 font-semibold transition-colors cursor-pointer"
+            >
+              清除
+            </button>
+          </div>
+        )}
       </div>
 
       {/* 3. 会话列表区域 (B-4) */}

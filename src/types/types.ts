@@ -42,7 +42,7 @@ export interface ConversationSummary {
 export interface Conversation {
   id: UUID;
   title: string;
-  /** AI 模型标识符，如 "gemini-2.5-flash" */
+  /** AI 模型标识符，如 "gemini-3-flash-preview" */
   model_id: string;
   /** 系统提示词（可选） */
   system_prompt: string | null;
@@ -99,7 +99,7 @@ export interface ModelConfig {
   id: UUID;
   /** 供应商 */
   provider: AIProvider;
-  /** 模型标识符，如 "gemini-2.5-flash" */
+  /** 模型标识符，如 "gemini-3-flash-preview" */
   model_id: string;
   /** 用户自定义的显示名称 */
   display_name: string;
@@ -113,7 +113,7 @@ export interface ModelConfig {
   max_tokens: number;
   /** Top-P 采样参数 0.0 ~ 1.0 */
   top_p: number;
-  /** 思考模式级别 (Gemini 3.x: LOW/MEDIUM/HIGH, Gemini 2.5 不生效) */
+  /** 思考模式级别 (Gemini 3.x: LOW/MEDIUM/HIGH) */
   thinking_level: 'LOW' | 'MEDIUM' | 'HIGH' | null;
   /** 是否为当前激活的默认模型 */
   is_default: boolean;

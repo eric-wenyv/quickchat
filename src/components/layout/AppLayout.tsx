@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import Sidebar from '../sidebar/Sidebar';
 import { MainChatArea } from '../chat/MainChatArea';
 import type { 
@@ -89,6 +89,23 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
 }) => {
   // 内部维护侧边栏开关状态，确保布局灵活性
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
+
+  // 全局快捷键：Ctrl+Shift+S 切换侧边栏，Ctrl+Shift+N 新建对话
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (!e.ctrlKey || !e.shiftKey) return;
+      const key = e.key.toLowerCase();
+      if (key === 's') {
+        e.preventDefault();
+        setIsSidebarOpen(prev => !prev);
+      } else if (key === 'n') {
+        e.preventDefault();
+        onCreateConversation();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [onCreateConversation]);
 
   return (
     <div className="flex h-screen w-screen bg-sand-100 text-ink-300 font-sans overflow-hidden selection:bg-sand-300/60 selection:text-ink-400 antialiased">

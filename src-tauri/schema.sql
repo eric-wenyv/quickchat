@@ -22,7 +22,7 @@ CREATE TABLE IF NOT EXISTS conversations (
     id          TEXT    PRIMARY KEY NOT NULL,
     -- 会话标题
     title       TEXT    NOT NULL DEFAULT '',
-    -- AI 模型标识符，如 "gemini-2.5-flash"
+    -- AI 模型标识符，如 "gemini-3-flash-preview"
     model_id    TEXT    NOT NULL,
     -- 系统提示词（可选）
     system_prompt TEXT  DEFAULT NULL,

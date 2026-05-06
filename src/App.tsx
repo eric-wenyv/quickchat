@@ -122,6 +122,21 @@ export default function App() {
 
   const loadModels = async () => {
     let currentModels = models;
+
+    // 清理已废弃的 Gemini 2.5 系列模型
+    const beforeCount = currentModels.length;
+    currentModels = currentModels.filter(m => !m.model_id.includes('gemini-2.5'));
+    if (currentModels.length < beforeCount) {
+      // 若默认模型被移除，将剩余第一个设为默认
+      const hasDefault = currentModels.some(m => m.is_default);
+      if (!hasDefault && currentModels.length > 0) {
+        currentModels = currentModels.map((m, i) =>
+          i === 0 ? { ...m, is_default: true } : { ...m, is_default: false }
+        );
+      }
+      setModels(currentModels);
+    }
+
     if (currentModels.length === 0) {
       // 自动从 .env 获取
       const envApiKey = import.meta.env.VITE_GEMINI_API_KEY;
@@ -131,14 +146,14 @@ export default function App() {
           {
             id: crypto.randomUUID(),
             provider: "google_gemini",
-            model_id: "gemini-2.5-flash",
-            display_name: "Gemini 2.5 Flash",
+            model_id: "gemini-3-flash-preview",
+            display_name: "Gemini 3 Flash",
             api_key: envApiKey,
             api_endpoint: null,
             temperature: 0.7,
-            max_tokens: 4096,
+            max_tokens: 8192,
             top_p: 0.9,
-            thinking_level: null,
+            thinking_level: 'MEDIUM',
             is_default: true,
             created_at: now,
             updated_at: now,
@@ -148,21 +163,6 @@ export default function App() {
             provider: "google_gemini",
             model_id: "gemini-3.1-pro-preview",
             display_name: "Gemini 3.1 Pro Preview",
-            api_key: envApiKey,
-            api_endpoint: null,
-            temperature: 0.7,
-            max_tokens: 8192,
-            top_p: 0.9,
-            thinking_level: 'MEDIUM',
-            is_default: false,
-            created_at: now,
-            updated_at: now,
-          },
-          {
-            id: crypto.randomUUID(),
-            provider: "google_gemini",
-            model_id: "gemini-3-flash-preview",
-            display_name: "Gemini 3 Flash",
             api_key: envApiKey,
             api_endpoint: null,
             temperature: 0.7,
@@ -399,12 +399,10 @@ export default function App() {
         }));
       contents.push({ role: 'user' as const, parts: [{ text: content }] });
 
-      // 配置 thinkingConfig：Gemini 3 系列用 thinkingLevel，Gemini 2.5 用 thinkingBudget
+      // 配置 thinkingConfig：Gemini 3 系列用 thinkingLevel
       const thinkingConfig = activeModel.model_id.includes('gemini-3')
         ? { thinkingLevel: activeModel.thinking_level || 'MEDIUM' as const }
-        : activeModel.model_id.includes('gemini-2.5')
-          ? { thinkingBudget: 0 }
-          : undefined;
+        : undefined;
 
       const stream = await ai.models.generateContentStream({
         model: activeModel.model_id,

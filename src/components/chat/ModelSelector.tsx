@@ -2,6 +2,12 @@ import React, { useState, useRef, useEffect, useMemo } from 'react';
 import type { ModelConfig, UUID } from '@/types/types';
 import { useAutoResize } from '@/hooks/useAutoResize';
 
+const PROVIDER_BADGES: Record<string, { label: string; color: string }> = {
+  google_gemini: { label: 'GG', color: 'bg-blue-500' },
+  openrouter: { label: 'OR', color: 'bg-purple-500' },
+  openai_compatible: { label: 'OA', color: 'bg-emerald-500' },
+};
+
 interface ModelSelectorProps {
   models: ModelConfig[];
   activeModelId: UUID;
@@ -126,12 +132,17 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({
                         : 'text-ink-200 hover:bg-sand-200 hover:text-ink-300'
                     }`}
                   >
-                    <div className="flex flex-col gap-0.5">
-                      <span className="text-sm font-bold tracking-tight">{model.display_name}</span>
-                      <span className="text-[10px] font-medium opacity-50 uppercase tracking-widest">{model.model_id}</span>
+                    <div className="flex items-center gap-2 min-w-0">
+                      <span className={`flex-shrink-0 w-5 h-5 rounded-md ${PROVIDER_BADGES[model.provider]?.color || 'bg-gray-400'} text-white flex items-center justify-center text-[8px] font-bold`}>
+                        {PROVIDER_BADGES[model.provider]?.label || '?'}
+                      </span>
+                      <div className="flex flex-col gap-0.5 min-w-0">
+                        <span className="text-sm font-bold tracking-tight truncate">{model.display_name}</span>
+                        <span className="text-[10px] font-medium opacity-50 uppercase tracking-widest truncate">{model.model_id}</span>
+                      </div>
                     </div>
                     {model.id === activeModelId && (
-                      <div className="bg-ink-400 text-sand-100 rounded-full p-0.5 shadow-sm">
+                      <div className="bg-ink-400 text-sand-100 rounded-full p-0.5 shadow-sm flex-shrink-0">
                         <svg
                           xmlns="http://www.w3.org/2000/svg"
                           className="w-3 h-3"

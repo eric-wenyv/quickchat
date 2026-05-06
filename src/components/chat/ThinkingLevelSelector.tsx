@@ -36,8 +36,8 @@ const ThinkingLevelSelector: React.FC<ThinkingLevelSelectorProps> = ({
     [models, activeModelId]
   );
 
-  // 仅 Gemini 3.x 系列支持 thinkingLevel 调节
-  const isSupported = activeModel?.model_id.includes('gemini-3') ?? false;
+  // 仅 Gemini 3.x 系列支持 thinkingLevel 调节（通过 Gemini OpenAI 兼容端点）
+  const isSupported = (activeModel?.provider === 'google_gemini' && activeModel?.model_id.includes('gemini-3')) ?? false;
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {

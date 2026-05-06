@@ -91,7 +91,7 @@ export interface Message {
 // ---------------------------------------------------------------------------
 
 /** AI 供应商枚举 */
-export type AIProvider = "google_gemini";
+export type AIProvider = "google_gemini" | "openrouter" | "openai_compatible";
 
 /** 模型配置 — 持久化到 SQLite */
 export interface ModelConfig {

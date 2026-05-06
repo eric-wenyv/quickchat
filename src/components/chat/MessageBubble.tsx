@@ -15,7 +15,6 @@ interface MessageBubbleProps {
  */
 const MessageBubble: React.FC<MessageBubbleProps> = ({ message }) => {
   const isUser = message.role === 'user';
-  const isAssistant = message.role === 'assistant';
   const isSystem = message.role === 'system';
 
   // 系统消息：居中显示，采用极简的胶囊样式

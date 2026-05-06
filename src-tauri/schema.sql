@@ -128,7 +128,7 @@ CREATE TABLE IF NOT EXISTS model_configs (
     id            TEXT    PRIMARY KEY NOT NULL,
     -- AI 供应商：'google_gemini'
     provider      TEXT    NOT NULL
-        CHECK (provider IN ('google_gemini')),
+        CHECK (provider IN ('google_gemini', 'openrouter', 'openai_compatible')),
     -- 模型标识符
     model_id      TEXT    NOT NULL,
     -- 用户自定义显示名称

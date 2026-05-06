@@ -55,6 +55,7 @@ interface AppLayoutProps {
   onUpdateSystemPrompt: (prompt: string | null) => void;
   /** 更新模型 thinking level */
   onUpdateModelThinkingLevel: (id: UUID, level: 'LOW' | 'MEDIUM' | 'HIGH' | null) => void;
+  onOpenSettings?: () => void;
 }
 
 /**
@@ -86,6 +87,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
   onModelSelect,
   onUpdateSystemPrompt,
   onUpdateModelThinkingLevel,
+  onOpenSettings,
 }) => {
   // 内部维护侧边栏开关状态，确保布局灵活性
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
@@ -130,6 +132,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
           isLoading={isLoadingConversations}
           searchQuery={searchQuery}
           onToggleCollapse={() => setIsSidebarOpen(false)}
+          onOpenSettings={onOpenSettings}
         />
       </aside>
 

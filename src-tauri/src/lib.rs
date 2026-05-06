@@ -7,6 +7,7 @@
 //   - Window is configured as borderless + transparent via tauri.conf.json.
 //   - System tray integration (close → hide to tray, keep running in background)
 
+use serde_json::Value;
 use tauri::Manager;
 use tauri_plugin_global_shortcut::{Code, Modifiers, ShortcutState};
 
@@ -69,19 +70,17 @@ fn setup_tray(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
 
     TrayIconBuilder::new()
         .menu(&menu)
-        .on_menu_event(|app, event| {
-            match event.id().as_ref() {
-                "show" => {
-                    if let Some(window) = app.get_webview_window("main") {
-                        let _ = window.show();
-                        let _ = window.set_focus();
-                    }
+        .on_menu_event(|app, event| match event.id().as_ref() {
+            "show" => {
+                if let Some(window) = app.get_webview_window("main") {
+                    let _ = window.show();
+                    let _ = window.set_focus();
                 }
-                "quit" => {
-                    app.exit(0);
-                }
-                _ => {}
             }
+            "quit" => {
+                app.exit(0);
+            }
+            _ => {}
         })
         .on_tray_icon_event(|tray, event| {
             if let TrayIconEvent::Click {
@@ -101,6 +100,42 @@ fn setup_tray(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
         .build(app)?;
 
     Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// Helper: proxy SerpApi requests through Rust to avoid browser CORS
+// ---------------------------------------------------------------------------
+
+#[tauri::command]
+async fn search_web(query: String, api_key: String) -> Result<Value, String> {
+    let api_key = api_key.trim();
+    if api_key.is_empty() {
+        return Err("SerpApi Key 未配置".to_string());
+    }
+
+    let client = reqwest::Client::new();
+    let response = client
+        .get("https://serpapi.com/search.json")
+        .query(&[
+            ("engine", "google"),
+            ("q", query.as_str()),
+            ("api_key", api_key),
+        ])
+        .send()
+        .await
+        .map_err(|e| format!("SerpApi 搜索请求失败: {e}"))?;
+
+    let status = response.status();
+    let body = response
+        .text()
+        .await
+        .map_err(|e| format!("SerpApi 响应读取失败: {e}"))?;
+
+    if !status.is_success() {
+        return Err(format!("SerpApi 搜索请求失败 ({status}): {body}"));
+    }
+
+    serde_json::from_str(&body).map_err(|e| format!("SerpApi 响应解析失败: {e}"))
 }
 
 // ---------------------------------------------------------------------------
@@ -153,9 +188,8 @@ pub fn run() {
         // ── SQLite plugin ───────────────────────────────────────────────────
         .plugin(tauri_plugin_sql::Builder::default().build())
         // ── Invoke handler ──────────────────────────────────────────────────
-        // No custom commands at this time; extend with tauri::generate_handler!
-        // as the project grows.
-        .invoke_handler(tauri::generate_handler![])
+        // 搜索请求走 Rust 侧转发，避免 webview 直连 SerpApi 的 CORS 限制。
+        .invoke_handler(tauri::generate_handler![search_web])
         // ── Run ─────────────────────────────────────────────────────────────
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

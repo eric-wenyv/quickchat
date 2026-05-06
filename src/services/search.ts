@@ -4,6 +4,8 @@
 // 支持 SerpApi Google Search API
 // =============================================================================
 
+import { invoke } from '@tauri-apps/api/core';
+
 const SEARCH_API_KEY_STORAGE_KEY = 'quick_chat_serpapi_key';
 
 function readStoredSearchApiKey(): string {
@@ -24,6 +26,39 @@ export interface SearchResult {
   title: string;
   url: string;
   snippet: string;
+}
+
+interface SerpApiSearchResponse {
+  search_metadata?: {
+    status?: string;
+    error?: string;
+  };
+  error?: string;
+  organic_results?: Array<{
+    title?: string;
+    link?: string;
+    url?: string;
+    snippet?: string;
+    description?: string;
+  }>;
+  knowledge_graph?: {
+    title?: string;
+    description?: string;
+    website?: string;
+    link?: string;
+  };
+  answer_box?: {
+    title?: string;
+    link?: string;
+    answer?: string;
+    snippet?: string;
+  };
+}
+
+function getErrorMessage(error: unknown): string {
+  if (error instanceof Error) return error.message;
+  if (typeof error === 'string') return error;
+  return '未知错误';
 }
 
 let searchApiKey: string = readStoredSearchApiKey();
@@ -54,23 +89,16 @@ export async function searchWeb(query: string): Promise<SearchResult[]> {
     throw new Error('SerpApi Key 未配置');
   }
 
-  const url = new URL('https://serpapi.com/search.json');
-  url.searchParams.set('engine', 'google');
-  url.searchParams.set('q', query);
-  url.searchParams.set('api_key', apiKey);
-
-  const response = await fetch(url.toString(), {
-    headers: {
-      'Accept': 'application/json',
-    },
-  });
-
-  if (!response.ok) {
-    const text = await response.text();
-    throw new Error(`SerpApi 搜索请求失败 (${response.status}): ${text}`);
+  let data: SerpApiSearchResponse;
+  try {
+    data = await invoke<SerpApiSearchResponse>('search_web', {
+      query,
+      apiKey: apiKey,
+    });
+  } catch (error) {
+    throw new Error(`SerpApi 本地转发失败: ${getErrorMessage(error)}`);
   }
 
-  const data = await response.json();
   const searchStatus = data?.search_metadata?.status;
   if (searchStatus && searchStatus !== 'Success') {
     const errorMessage = data?.error || data?.search_metadata?.error || '未知错误';

@@ -476,7 +476,7 @@ export default function App() {
         const toolNames = result.toolCalls.map(tc => tc.function.name).join(', ');
         setMessages(prev => prev.map(msg =>
           msg.id === aiMsgId
-            ? { ...msg, content: `🔍 正在调用工具: ${toolNames}...`, status: 'streaming' as const }
+            ? { ...msg, content: `正在调用工具: ${toolNames}...`, status: 'streaming' as const }
             : msg
         ));
 

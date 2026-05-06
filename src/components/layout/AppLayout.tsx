@@ -113,6 +113,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
             onSearchChange={onSearchConversations}
             isLoading={isLoadingConversations}
             searchQuery={searchQuery}
+            onToggleCollapse={() => setIsSidebarOpen(false)}
           />
         </div>
       </aside>
@@ -121,7 +122,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
         右侧主对话区区域 (C-1): 应用核心交互平面
         利用 flex-1 中自适应剩余空间。
       */}
-      <main className="flex-1 min-w-0 h-full relative z-10 flex flex-col shadow-[inset_1px_0_0_rgba(255,255,255,0.4)]">
+      <main className={`flex-1 min-w-0 h-full relative z-10 flex flex-col shadow-[inset_1px_0_0_rgba(255,255,255,0.4)] transition-[padding] duration-500 ease-out ${!isSidebarOpen ? 'pl-14' : ''}`}>
         
         {/* 侧边栏唤醒触发器: 采用磨砂玻璃质感，仅在侧边栏关闭时漂浮显示 */}
         {!isSidebarOpen && (

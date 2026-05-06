@@ -13,6 +13,8 @@ interface MessageContentProps {
  * 消息正文渲染组件，支持 Markdown 解析与流式输出光标动画。
  */
 const MessageContent: React.FC<MessageContentProps> = ({ content, status }) => {
+  const isThinking = content.trim() === '' && status === 'streaming';
+
   return (
     <div className="w-full text-ink-300 selection:bg-sand-400/50 selection:text-ink-400">
       <article className="prose prose-sm md:prose-base max-w-none 
@@ -26,10 +28,21 @@ const MessageContent: React.FC<MessageContentProps> = ({ content, status }) => {
         prose-li:my-1
         prose-hr:border-sand-400 prose-hr:my-6
         prose-img:rounded-xl prose-img:shadow-panel">
-        <ReactMarkdown remarkPlugins={[remarkGfm]}>
-          {content}
-        </ReactMarkdown>
-        {status === 'streaming' && (
+        {isThinking ? (
+          <div className="flex items-center gap-3 py-2 select-none">
+            <div className="flex items-center gap-1.5">
+              <span className="w-2 h-2 rounded-full bg-ink-300 animate-bounce" style={{ animationDuration: '0.6s', animationDelay: '0ms' }} />
+              <span className="w-2 h-2 rounded-full bg-ink-300 animate-bounce" style={{ animationDuration: '0.6s', animationDelay: '0.15s' }} />
+              <span className="w-2 h-2 rounded-full bg-ink-300 animate-bounce" style={{ animationDuration: '0.6s', animationDelay: '0.3s' }} />
+            </div>
+            <span className="text-sm text-ink-200 font-medium">思考中...</span>
+          </div>
+        ) : (
+          <ReactMarkdown remarkPlugins={[remarkGfm]}>
+            {content}
+          </ReactMarkdown>
+        )}
+        {status === 'streaming' && !isThinking && (
           <span 
             className="inline-block w-[2px] h-[1.1em] ml-1 bg-ink-400 animate-pulse rounded-full align-middle -translate-y-[1px]" 
             aria-hidden="true"

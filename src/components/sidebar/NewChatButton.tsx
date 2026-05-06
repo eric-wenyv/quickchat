@@ -13,17 +13,17 @@ const NewChatButton: React.FC<NewChatButtonProps> = ({ onClick }) => {
   return (
     <button
       onClick={onClick}
-      className="group flex items-center justify-between w-full px-4 py-3.5 mb-6 transition-all duration-300 border rounded-2xl bg-sand-100 border-sand-400 hover:border-sand-500 hover:bg-white hover:shadow-input-hover active:scale-[0.98] cursor-pointer outline-none focus-visible:ring-2 focus-visible:ring-sand-500"
+      className="group flex items-center justify-between w-full px-3.5 py-2.5 transition-all duration-200 border rounded-xl bg-sand-100 border-sand-400/60 hover:border-sand-500 hover:bg-white hover:shadow-sm active:scale-[0.98] cursor-pointer outline-none focus-visible:ring-2 focus-visible:ring-sand-500"
       aria-label="Create new conversation"
     >
-      <span className="text-[15px] font-semibold text-ink-300 transition-colors group-hover:text-ink-400">
+      <span className="text-sm font-semibold text-ink-300 transition-colors group-hover:text-ink-400">
         New Chat
       </span>
-      <div className="flex items-center justify-center w-7 h-7 transition-all duration-300 rounded-xl bg-sand-200 group-hover:bg-sand-300 group-hover:rotate-90">
+      <div className="flex items-center justify-center w-6 h-6 transition-all duration-200 rounded-lg bg-sand-200 group-hover:bg-sand-300 group-hover:rotate-90">
         <svg
           xmlns="http://www.w3.org/2000/svg"
-          width="18"
-          height="18"
+          width="14"
+          height="14"
           viewBox="0 0 24 24"
           fill="none"
           stroke="currentColor"

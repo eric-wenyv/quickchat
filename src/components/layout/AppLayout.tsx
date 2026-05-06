@@ -112,34 +112,32 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
       
       {/* 
         左侧边栏区域 (B-1): 负责导航与历史管理
-        采用固定宽度 w-80 (320px)，支持通过 transform 与 opacity 实现硬件加速的平滑过渡
+        宽度从 w-80 收缩到 w-0，内容被 overflow-hidden 裁切，实现"收进去"的抽屉效果
       */}
       <aside 
         className={`
-          flex-shrink-0 h-full border-r border-sand-400 transition-[width,opacity,transform] duration-500 ease-out z-20
-          ${isSidebarOpen ? 'w-80 opacity-100 translate-x-0' : 'w-0 opacity-0 -translate-x-full pointer-events-none'}
+          flex-shrink-0 h-full border-r border-sand-400 transition-[width] duration-500 ease-out z-20 overflow-hidden
+          ${isSidebarOpen ? 'w-80' : 'w-0 pointer-events-none'}
         `}
       >
-        <div className="w-80 h-full">
-          <Sidebar
-            conversations={conversations}
-            activeConversationId={activeConversation?.id ?? null}
-            onSelectConversation={onSelectConversation}
-            onCreateConversation={onCreateConversation}
-            onDeleteConversation={onDeleteConversation}
-            onSearchChange={onSearchConversations}
-            isLoading={isLoadingConversations}
-            searchQuery={searchQuery}
-            onToggleCollapse={() => setIsSidebarOpen(false)}
-          />
-        </div>
+        <Sidebar
+          conversations={conversations}
+          activeConversationId={activeConversation?.id ?? null}
+          onSelectConversation={onSelectConversation}
+          onCreateConversation={onCreateConversation}
+          onDeleteConversation={onDeleteConversation}
+          onSearchChange={onSearchConversations}
+          isLoading={isLoadingConversations}
+          searchQuery={searchQuery}
+          onToggleCollapse={() => setIsSidebarOpen(false)}
+        />
       </aside>
 
       {/* 
         右侧主对话区区域 (C-1): 应用核心交互平面
         利用 flex-1 中自适应剩余空间。
       */}
-      <main className={`flex-1 min-w-0 h-full relative z-10 flex flex-col shadow-[inset_1px_0_0_rgba(255,255,255,0.4)] transition-[padding] duration-500 ease-out ${!isSidebarOpen ? 'pl-14' : ''}`}>
+      <main className={`flex-1 min-w-0 h-full relative z-10 flex flex-col shadow-[inset_1px_0_0_rgba(255,255,255,0.4)] transition-[padding] duration-500 ease-out ${!isSidebarOpen ? 'pl-10' : ''}`}>
         
         {/* 侧边栏唤醒触发器: 采用磨砂玻璃质感，仅在侧边栏关闭时漂浮显示 */}
         {!isSidebarOpen && (

@@ -43,36 +43,37 @@ const Sidebar: React.FC<SidebarProps> = ({
   onToggleCollapse,
 }) => {
   return (
-    <aside className="flex flex-col h-full w-80 bg-sand-200 border-r border-sand-400 overflow-hidden select-none">
-      {/* 1. Tauri 窗口拖拽区域 (非悬浮模式，占据侧边栏顶部高度) */}
-      <TauriDragRegion floating={false} className="flex-shrink-0 h-10" />
+    <aside className="relative flex flex-col h-full w-80 bg-sand-200 border-r border-sand-400 overflow-hidden select-none">
+      {/* 1. Tauri 窗口拖拽区域 — 悬浮不占地，覆盖顶部 */}
+      <TauriDragRegion floating className="h-10 z-0" />
 
-      {/* 收缩按钮 */}
-      {onToggleCollapse && (
-        <div className="flex items-center justify-end px-3 pb-1">
-          <button
-            onClick={onToggleCollapse}
-            className="flex items-center justify-center w-7 h-7 rounded-lg text-ink-100 hover:text-ink-300 hover:bg-sand-300/50 transition-all duration-200 cursor-pointer"
-            title="收起侧边栏"
-            aria-label="Collapse sidebar"
-          >
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M11 17l-5-5 5-5" />
-              <path d="M18 17l-5-5 5-5" />
-            </svg>
-          </button>
+      {/* 2. 操作与搜索区域 — pt-3 与右侧 MessageHeader py-3 对齐 */}
+      <div
+        className="relative z-10 flex flex-col flex-shrink-0 px-3 pt-3 pb-1 gap-3"
+        style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
+      >
+        {/* B-2: 新建对话按钮 + 收缩按钮 */}
+        <div className="flex items-center gap-1.5">
+          <div className="flex-1 min-w-0">
+            <NewChatButton onClick={onCreateConversation} />
+          </div>
+          {onToggleCollapse && (
+            <button
+              onClick={onToggleCollapse}
+              className="flex-shrink-0 flex items-center justify-center w-7 h-7 rounded-lg text-ink-100 hover:text-ink-300 hover:bg-sand-300/50 transition-all duration-200 cursor-pointer"
+              title="收起侧边栏"
+              aria-label="Collapse sidebar"
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M11 17l-5-5 5-5" />
+                <path d="M18 17l-5-5 5-5" />
+              </svg>
+            </button>
+          )}
         </div>
-      )}
 
-      {/* 2. 操作与搜索区域 */}
-      <div className="flex flex-col flex-shrink-0 px-4 mt-2">
-        {/* B-2: 新建对话按钮 */}
-        <NewChatButton onClick={onCreateConversation} />
-        
-        {/* B-3: 搜索框 (内部自带 padding 和 bg) */}
-        <div className="-mx-1 -mt-2">
-          <SearchBar onSearch={onSearchChange} />
-        </div>
+        {/* B-3: 搜索框 */}
+        <SearchBar onSearch={onSearchChange} />
 
         {/* 搜索结果统计 */}
         {searchQuery.trim() && (

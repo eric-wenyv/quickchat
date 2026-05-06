@@ -75,28 +75,39 @@ export const MainChatArea: React.FC<MainChatAreaProps> = ({
           {/* 消息展示核心区 */}
           <main className="flex-1 relative overflow-hidden flex flex-col min-h-0">
             {showNoMessages ? (
-              <div className="flex-1 overflow-hidden">
+              <div className="flex-1 flex flex-col items-center justify-center px-4 pb-12">
                 <EmptyState type="no_messages" />
+                <div className="w-full max-w-2xl mt-8">
+                  <ChatInputFooter
+                    onSend={onSendMessage}
+                    disabled={isSending || isLoadingMessages}
+                    models={models}
+                    activeModelId={activeModelId}
+                    onModelSelect={onModelSelect}
+                    onUpdateModelThinkingLevel={onUpdateModelThinkingLevel}
+                    showDisclaimer={false}
+                  />
+                </div>
               </div>
             ) : (
-              <MessageList
-                messages={messages}
-                onLoadMore={onLoadMore}
-                hasMore={hasMore}
-                isLoadingMore={isLoadingMore}
-              />
+              <>
+                <MessageList
+                  messages={messages}
+                  onLoadMore={onLoadMore}
+                  hasMore={hasMore}
+                  isLoadingMore={isLoadingMore}
+                />
+                <ChatInputFooter
+                  onSend={onSendMessage}
+                  disabled={isSending || isLoadingMessages}
+                  models={models}
+                  activeModelId={activeModelId}
+                  onModelSelect={onModelSelect}
+                  onUpdateModelThinkingLevel={onUpdateModelThinkingLevel}
+                />
+              </>
             )}
           </main>
-
-          {/* 输入底部栏 */}
-          <ChatInputFooter
-            onSend={onSendMessage}
-            disabled={isSending || isLoadingMessages}
-            models={models}
-            activeModelId={activeModelId}
-            onModelSelect={onModelSelect}
-            onUpdateModelThinkingLevel={onUpdateModelThinkingLevel}
-          />
         </>
       )}
     </div>

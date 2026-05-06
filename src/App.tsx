@@ -115,10 +115,28 @@ export default function App() {
     }
 
     loadModels();
-    if (cleanedConversations.length > 0) {
-      handleSelectConversation(cleanedConversations[0].id);
+
+    // 恢复上次活跃对话，否则选择第一个
+    const lastActiveId = localStorage.getItem("quick_chat_last_active_conv");
+    const target = lastActiveId
+      ? cleanedConversations.find(c => c.id === lastActiveId)
+      : cleanedConversations[0];
+    if (target) {
+      handleSelectConversation(target.id);
     }
   }, []);
+
+  // 模型就绪且无任何对话时，自动创建新对话
+  const didAutoCreateRef = useRef(false);
+  useEffect(() => {
+    if (didAutoCreateRef.current) return;
+    if (!activeModelId) return;
+    if (activeConversation) return;
+    if (conversations.length > 0) return;
+
+    didAutoCreateRef.current = true;
+    handleCreateConversation();
+  }, [activeModelId, activeConversation, conversations]);
 
   const loadModels = async () => {
     let currentModels = models;
@@ -237,6 +255,7 @@ export default function App() {
   };
 
   const handleSelectConversation = async (id: UUID) => {
+    localStorage.setItem("quick_chat_last_active_conv", id);
     const summary = conversations.find(c => c.id === id);
     if (!summary) return;
     setIsLoadingMessages(true);
@@ -289,16 +308,25 @@ export default function App() {
 
   // ── 删除对话 ──
   const handleDeleteConversation = (id: UUID) => {
-    setConversations(prev => prev.filter(c => c.id !== id));
+    setConversations(prev => {
+      const remaining = prev.filter(c => c.id !== id);
+      // 若删除的是当前激活会话，尝试切换到剩余第一个
+      if (activeConversation?.id === id) {
+        if (remaining.length > 0) {
+          localStorage.setItem("quick_chat_last_active_conv", remaining[0].id);
+          setTimeout(() => handleSelectConversation(remaining[0].id), 0);
+        } else {
+          localStorage.removeItem("quick_chat_last_active_conv");
+          setActiveConversation(null);
+        }
+      }
+      return remaining;
+    });
     setAllMessages(prev => prev.filter(m => m.conversation_id !== id));
     // 清理详情缓存
     const stored = JSON.parse(localStorage.getItem("quick_chat_conv_details") || "{}");
     delete stored[id];
     localStorage.setItem("quick_chat_conv_details", JSON.stringify(stored));
-    // 如果删除的是当前激活的会话，清空
-    if (activeConversation?.id === id) {
-      setActiveConversation(null);
-    }
     showToast("已删除", "对话已移除", "success");
   };
 

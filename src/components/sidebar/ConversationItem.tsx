@@ -56,10 +56,10 @@ const ConversationItem: React.FC<ConversationItemProps> = ({
         onClick={onSelect}
         onContextMenu={handleContextMenu}
         className={`
-          group flex flex-col gap-1.5 p-3 cursor-pointer rounded-xl transition-all duration-200 select-none
+          group flex flex-col gap-1 p-2.5 cursor-pointer rounded-lg transition-all duration-200 select-none
           ${isActive 
-            ? 'bg-sand-400 shadow-sm' 
-            : 'hover:bg-sand-300 active:scale-[0.98] active:bg-sand-400'
+            ? 'bg-sand-400/70 shadow-sm' 
+            : 'hover:bg-sand-300/60 active:scale-[0.98] active:bg-sand-400/70'
           }
         `}
       >

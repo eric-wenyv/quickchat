@@ -30,7 +30,7 @@ const SearchBar: React.FC<SearchBarProps> = ({ onSearch, placeholder = '搜索�
   }, []);
 
   return (
-    <div className="px-3 py-4 bg-sand-200">
+    <div className="bg-sand-200">
       <div className="relative">
         {/* 搜索图标 */}
         <svg

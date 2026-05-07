@@ -18,7 +18,7 @@ import {
   deleteModelConfig,
 } from "./services/db";
 import { chatCompletion, WEB_SEARCH_TOOL } from "./services/ai";
-import type { ChatMessage } from "./services/ai";
+import type { ChatMessage, ChatContentPart } from "./services/ai";
 import { searchWeb, formatSearchResults, getSearchApiKey, setSearchApiKey } from "./services/search";
 import type {
   ConversationSummary,
@@ -343,6 +343,8 @@ export default function App() {
   };
 
   // --- 将 Message[] 转换为 ChatMessage[] ---
+  const IMAGE_MARKDOWN_REGEX = /!\[[^\]]*\]\((data:image\/[^;)]+;base64,[A-Za-z0-9+/=]+)\)/g;
+
   const buildChatHistory = (currentMessages: Message[]): ChatMessage[] => {
     const history: ChatMessage[] = [];
     if (activeConversation?.system_prompt?.trim()) {
@@ -350,7 +352,31 @@ export default function App() {
     }
     for (const msg of currentMessages) {
       if (!msg.content.trim() && msg.role !== 'assistant') continue;
-      const chatMessage: ChatMessage = { role: msg.role as ChatMessage['role'], content: msg.content };
+
+      let content: string | ChatContentPart[] = msg.content;
+
+      // 仅 user 消息支持多模态（图片）
+      if (msg.role === 'user') {
+        const matches = Array.from(msg.content.matchAll(IMAGE_MARKDOWN_REGEX));
+        if (matches.length > 0) {
+          const imageUrls = matches.map((m) => m[1]);
+          // 移除图片 Markdown 得到纯文本
+          let textOnly = msg.content.replace(IMAGE_MARKDOWN_REGEX, '').trim();
+          // 去除多余空行
+          textOnly = textOnly.replace(/\n{3,}/g, '\n\n');
+
+          const parts: ChatContentPart[] = [];
+          if (textOnly) {
+            parts.push({ type: 'text', text: textOnly });
+          }
+          for (const url of imageUrls) {
+            parts.push({ type: 'image_url', image_url: { url } });
+          }
+          content = parts;
+        }
+      }
+
+      const chatMessage: ChatMessage = { role: msg.role as ChatMessage['role'], content };
       if (msg.role === 'assistant' && msg.reasoning_content != null) {
         chatMessage.reasoning_content = msg.reasoning_content;
       }

@@ -185,6 +185,8 @@ pub fn run() {
             }
             Ok(())
         })
+        // ── Clipboard manager plugin ────────────────────────────────────────
+        .plugin(tauri_plugin_clipboard_manager::init())
         // ── SQLite plugin ───────────────────────────────────────────────────
         .plugin(tauri_plugin_sql::Builder::default().build())
         // ── Invoke handler ──────────────────────────────────────────────────

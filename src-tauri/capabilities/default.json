@@ -19,6 +19,7 @@
     "global-shortcut:allow-is-registered",
     "sql:allow-execute",
     "sql:allow-select",
-    "sql:allow-load"
+    "sql:allow-load",
+    "clipboard-manager:allow-read-image"
   ]
 }

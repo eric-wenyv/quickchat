@@ -13,6 +13,7 @@ import {
   deleteConversation as dbDeleteConversation,
   saveMessage,
   updateMessage,
+  deleteMessage as dbDeleteMessage,
   getModelConfigs,
   saveModelConfig,
   deleteModelConfig,
@@ -302,6 +303,19 @@ export default function App() {
         }
       }
       showToast('已删除', '对话已移除', 'success');
+    } catch (e) {
+      showToast('删除失败', String(e));
+    }
+  };
+
+  const handleDeleteMessage = async (msgId: UUID) => {
+    try {
+      await dbDeleteMessage(msgId);
+      setMessages(prev => prev.filter(m => m.id !== msgId));
+      // 刷新会话列表（更新消息数和预览）
+      const convs = await getConversations(100, 0);
+      setConversations(convs);
+      showToast('已删除', '消息已移除', 'success');
     } catch (e) {
       showToast('删除失败', String(e));
     }
@@ -764,6 +778,7 @@ export default function App() {
         systemPrompts={systemPrompts}
         onSaveSystemPromptPreset={handleSaveSystemPromptPreset}
         onDeleteSystemPromptPreset={handleDeleteSystemPromptPreset}
+        onDeleteMessage={handleDeleteMessage}
       />
     </ErrorBoundary>
   );

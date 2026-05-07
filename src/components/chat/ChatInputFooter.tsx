@@ -12,8 +12,6 @@ interface ChatInputFooterProps {
   activeModelId: UUID;
   onModelSelect: (id: UUID) => void;
   onUpdateModelThinkingLevel: (id: UUID, level: 'LOW' | 'MEDIUM' | 'HIGH' | null) => void;
-  /** 是否显示底部免责声明，默认 true */
-  showDisclaimer?: boolean;
 }
 
 /**
@@ -28,7 +26,6 @@ export const ChatInputFooter: React.FC<ChatInputFooterProps> = ({
   activeModelId,
   onModelSelect,
   onUpdateModelThinkingLevel,
-  showDisclaimer = true,
 }) => {
   const [content, setContent] = useState('');
   const [pendingImages, setPendingImages] = useState<string[]>([]);
@@ -59,7 +56,7 @@ export const ChatInputFooter: React.FC<ChatInputFooterProps> = ({
   const canSend = (!!content.trim() || pendingImages.length > 0) && !disabled;
 
   return (
-    <footer className={`w-full px-4 pt-2 bg-gradient-to-t from-sand-100 via-sand-100/95 to-transparent ${showDisclaimer ? 'pb-4' : 'pb-2'}`}>
+    <footer className="w-full px-4 pt-2 pb-0 bg-gradient-to-t from-sand-100 via-sand-100/95 to-transparent">
       <div className="max-w-3xl mx-auto">
         <div className="relative group transition-all duration-500 ease-in-out bg-white/70 dark:bg-sand-300/70 backdrop-blur-2xl border border-sand-400/60 rounded-[28px] shadow-sm hover:shadow-input-hover focus-within:shadow-input-hover focus-within:border-sand-500/40">
           {/* 图片预览区 */}
@@ -128,11 +125,7 @@ export const ChatInputFooter: React.FC<ChatInputFooterProps> = ({
           </div>
         </div>
         
-        {showDisclaimer && (
-          <p className="mt-4 text-[10px] text-center text-ink-100 font-medium opacity-50 tracking-tight select-none">
-            Quick Chat can make mistakes. Always check for accuracy.
-          </p>
-        )}
+
       </div>
     </footer>
   );

@@ -1,8 +1,10 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 
 interface EmptyStateProps {
   /** "no_conversation" = 未选会话; "no_messages" = 会话内无消息 */
   type: 'no_conversation' | 'no_messages';
+  /** 当前会话 ID，用于固定问候语 */
+  conversationId?: string;
 }
 
 const GREETINGS = [
@@ -29,13 +31,14 @@ function getRandomGreeting(): string {
  * 职责：
  * 当未选择会话或会话内无消息时，提供极简的占位视觉引导。
  */
-export const EmptyState: React.FC<EmptyStateProps> = ({ type }) => {
+export const EmptyState: React.FC<EmptyStateProps> = ({ type, conversationId }) => {
   const isNoConversation = type === 'no_conversation';
+  const greeting = useMemo(() => getRandomGreeting(), [conversationId]);
 
   return (
     <div className="flex flex-col items-center justify-center text-center select-none animate-in fade-in duration-700 ease-out">
       <h2 className="text-2xl font-semibold text-ink-300 tracking-tight">
-        {isNoConversation ? 'Quick Chat' : getRandomGreeting()}
+        {isNoConversation ? 'Quick Chat' : greeting}
       </h2>
       {isNoConversation && (
         <p className="mt-2 text-sm text-ink-200">

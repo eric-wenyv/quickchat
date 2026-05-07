@@ -66,6 +66,8 @@ interface AppLayoutProps {
   onSaveSystemPromptPreset: (title: string, content: string) => void;
   /** 删除系统提示词预设 */
   onDeleteSystemPromptPreset: (id: UUID) => void;
+  /** 删除单条消息 */
+  onDeleteMessage: (id: UUID) => void;
 }
 
 const MIN_SIDEBAR_WIDTH = 180;
@@ -109,6 +111,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
   systemPrompts,
   onSaveSystemPromptPreset,
   onDeleteSystemPromptPreset,
+  onDeleteMessage,
 }) => {
   // 内部维护侧边栏开关状态，确保布局灵活性
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
@@ -263,6 +266,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
           systemPrompts={systemPrompts}
           onSaveSystemPromptPreset={onSaveSystemPromptPreset}
           onDeleteSystemPromptPreset={onDeleteSystemPromptPreset}
+          onDeleteMessage={onDeleteMessage}
         />
       </main>
 

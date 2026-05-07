@@ -1,6 +1,5 @@
 import React from 'react';
 import type { ConversationSummary, UUID } from '@/types/types';
-import TauriDragRegion from '@/components/shared/TauriDragRegion';
 import NewChatButton from './NewChatButton';
 import SearchBar from './SearchBar';
 import ConversationList from './ConversationList';
@@ -51,16 +50,14 @@ const Sidebar: React.FC<SidebarProps> = ({
 }) => {
   return (
     <aside className="relative flex flex-col h-full w-80 bg-sand-200 border-r border-sand-400 overflow-hidden select-none">
-      {/* 1. Tauri 窗口拖拽区域 — 悬浮不占地，覆盖顶部 */}
-      <TauriDragRegion floating className="h-10 z-0" />
-
-      {/* 2. 操作与搜索区域 — pt-3 与右侧 MessageHeader py-3 对齐 */}
+      {/* 操作与搜索区域 — 整体作为拖拽区，内部按钮/搜索框可交互 */}
       <div
-        className="relative z-10 flex flex-col flex-shrink-0 px-3 pt-3 pb-1 gap-3"
-        style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
+        data-tauri-drag-region
+        className="relative flex flex-col flex-shrink-0 px-3 pt-3 pb-1 gap-3"
+        style={{ WebkitAppRegion: 'drag' } as React.CSSProperties}
       >
         {/* B-2: 新建对话按钮 + 收缩按钮 */}
-        <div className="flex items-center gap-1.5">
+        <div className="flex items-center gap-1.5" style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
           <div className="flex-1 min-w-0">
             <NewChatButton onClick={onCreateConversation} />
           </div>
@@ -80,11 +77,13 @@ const Sidebar: React.FC<SidebarProps> = ({
         </div>
 
         {/* B-3: 搜索框 */}
-        <SearchBar onSearch={onSearchChange} />
+        <div style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
+          <SearchBar onSearch={onSearchChange} />
+        </div>
 
         {/* 搜索结果统计 */}
         {searchQuery.trim() && (
-          <div className="flex items-center justify-between px-1 py-1.5 mb-1">
+          <div className="flex items-center justify-between px-1 py-1.5 mb-1" style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
             <span className="text-[11px] text-ink-200 font-medium">
               {conversations.length > 0
                 ? `找到 ${conversations.length} 个结果`

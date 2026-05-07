@@ -243,7 +243,9 @@ export async function saveModelConfig(config: ModelConfig): Promise<void> {
   await db.execute(
     `INSERT INTO model_configs (id, provider, model_id, display_name, api_key, api_endpoint, temperature, max_tokens, top_p, is_default, created_at, updated_at)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-     ON CONFLICT(provider, model_id) DO UPDATE SET
+     ON CONFLICT(id) DO UPDATE SET
+       provider = excluded.provider,
+       model_id = excluded.model_id,
        display_name = excluded.display_name,
        api_key = excluded.api_key,
        api_endpoint = excluded.api_endpoint,

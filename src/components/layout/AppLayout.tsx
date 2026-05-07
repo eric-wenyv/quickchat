@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import Sidebar from '../sidebar/Sidebar';
 import { MainChatArea } from '../chat/MainChatArea';
 import type { 
@@ -68,6 +68,11 @@ interface AppLayoutProps {
   onDeleteSystemPromptPreset: (id: UUID) => void;
 }
 
+const MIN_SIDEBAR_WIDTH = 180;
+const MAX_SIDEBAR_WIDTH = 480;
+const DEFAULT_SIDEBAR_WIDTH = 256; // ~2/3 of original w-80 (320px)
+const SIDEBAR_WIDTH_KEY = 'quick_chat_sidebar_width';
+
 /**
  * AppLayout (P4): 最终集成页面布局
  * 
@@ -75,6 +80,7 @@ interface AppLayoutProps {
  * 1. 物理整合 Sidebar 与 MainChatArea，实现无缝联动。
  * 2. 建立全局极简、高端的视觉基调 (Claude-inspired Sand-White Palette)。
  * 3. 管理侧边栏的响应式显隐过渡与深度动效。
+ * 4. 支持侧边栏宽度拖拽调整。
  */
 export const AppLayout: React.FC<AppLayoutProps> = ({
   theme,
@@ -107,6 +113,59 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
   // 内部维护侧边栏开关状态，确保布局灵活性
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
 
+  // 侧边栏宽度状态（支持拖拽调整）
+  const [sidebarWidth, setSidebarWidth] = useState(() => {
+    const saved = localStorage.getItem(SIDEBAR_WIDTH_KEY);
+    if (saved) {
+      const parsed = parseInt(saved, 10);
+      if (!isNaN(parsed) && parsed >= MIN_SIDEBAR_WIDTH && parsed <= MAX_SIDEBAR_WIDTH) {
+        return parsed;
+      }
+    }
+    return DEFAULT_SIDEBAR_WIDTH;
+  });
+  const asideRef = useRef<HTMLElement>(null);
+
+  // 直接操作 DOM 的拖拽实现，绕过 React 渲染周期以避免卡顿
+  const startResize = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    const startX = e.clientX;
+    const startWidth = asideRef.current?.offsetWidth ?? sidebarWidth;
+    const aside = asideRef.current;
+
+    if (aside) {
+      aside.style.transition = 'none';
+    }
+    document.body.style.userSelect = 'none';
+    document.body.style.cursor = 'col-resize';
+
+    const handleMouseMove = (moveEvent: MouseEvent) => {
+      const delta = moveEvent.clientX - startX;
+      const newWidth = Math.min(Math.max(startWidth + delta, MIN_SIDEBAR_WIDTH), MAX_SIDEBAR_WIDTH);
+      if (aside) {
+        aside.style.width = `${newWidth}px`;
+      }
+    };
+
+    const handleMouseUp = (upEvent: MouseEvent) => {
+      const delta = upEvent.clientX - startX;
+      const finalWidth = Math.min(Math.max(startWidth + delta, MIN_SIDEBAR_WIDTH), MAX_SIDEBAR_WIDTH);
+      if (aside) {
+        aside.style.transition = '';
+        aside.style.width = '';
+      }
+      document.body.style.userSelect = '';
+      document.body.style.cursor = '';
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+      setSidebarWidth(finalWidth);
+      localStorage.setItem(SIDEBAR_WIDTH_KEY, String(finalWidth));
+    };
+
+    window.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('mouseup', handleMouseUp);
+  }, [sidebarWidth]);
+
   // 全局快捷键：Ctrl+Shift+S 切换侧边栏，Ctrl+Shift+N 新建对话
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -129,13 +188,15 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
       
       {/* 
         左侧边栏区域 (B-1): 负责导航与历史管理
-        宽度从 w-80 收缩到 w-0，内容被 overflow-hidden 裁切，实现"收进去"的抽屉效果
+        宽度支持拖拽调整，通过 style 动态绑定
       */}
-      <aside 
+      <aside
+        ref={asideRef}
         className={`
-          flex-shrink-0 h-full border-r border-sand-400 transition-[width] duration-500 ease-out z-20 overflow-hidden
-          ${isSidebarOpen ? 'w-80' : 'w-0 pointer-events-none'}
+          relative flex-shrink-0 h-full border-r border-sand-400 transition-[width] duration-500 ease-out z-20 overflow-hidden
+          ${isSidebarOpen ? '' : 'w-0 pointer-events-none'}
         `}
+        style={{ width: isSidebarOpen ? sidebarWidth : 0 }}
       >
         <Sidebar
           conversations={conversations}
@@ -151,6 +212,15 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
           theme={theme}
           onToggleTheme={onToggleTheme}
         />
+
+        {/* 侧边栏宽度拖拽条 */}
+        {isSidebarOpen && (
+          <div
+            onMouseDown={startResize}
+            className="absolute right-0 top-0 bottom-0 w-2 z-30 cursor-col-resize bg-sand-400/0 hover:bg-sand-400/50 active:bg-sand-400/80 transition-colors"
+            title="拖动调整宽度"
+          />
+        )}
       </aside>
 
       {/* 

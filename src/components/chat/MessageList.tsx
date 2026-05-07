@@ -1,4 +1,4 @@
-import React, { useRef, useEffect } from 'react';
+import React, { useRef, useEffect, useState, useCallback } from 'react';
 import type { Message } from '@/types/types';
 import { useAutoScroll } from '@/hooks/useAutoScroll';
 import MessageBubble from './MessageBubble';
@@ -14,6 +14,7 @@ interface MessageListProps {
  * C-4: MessageList
  * 消息列表容器组件。
  * 职责：负责渲染消息流主体、管理消息到达时的自动滚动、以及向上滚动的流式分页加载。
+ * 新增：右侧快速定位导航条（类似 Google AI Studio）。
  */
 const MessageList: React.FC<MessageListProps> = ({
   messages,
@@ -24,6 +25,64 @@ const MessageList: React.FC<MessageListProps> = ({
   // 注入自动滚动钩子：当消息数组长度或内容变化时，自动同步滚动到底部
   const scrollRef = useAutoScroll([messages]);
   const loadMoreRef = useRef<HTMLDivElement>(null);
+
+  // ── 消息快速定位导航条状态 ──
+  const messageRefs = useRef<(HTMLDivElement | null)[]>([]);
+  const [activeIndex, setActiveIndex] = useState(0);
+  const rafRef = useRef<number | null>(null);
+
+  // 计算当前视口中心最接近的消息索引
+  const updateActiveIndex = useCallback(() => {
+    const container = scrollRef.current;
+    if (!container || messages.length === 0) return;
+    const viewportCenter = container.scrollTop + container.clientHeight / 2;
+    let closestIdx = 0;
+    let minDist = Infinity;
+    messageRefs.current.forEach((el, idx) => {
+      if (!el) return;
+      const elCenter = el.offsetTop + el.clientHeight / 2;
+      const dist = Math.abs(elCenter - viewportCenter);
+      if (dist < minDist) {
+        minDist = dist;
+        closestIdx = idx;
+      }
+    });
+    setActiveIndex(closestIdx);
+  }, [messages.length]);
+
+  useEffect(() => {
+    const container = scrollRef.current;
+    if (!container) return;
+
+    const handleScroll = () => {
+      if (rafRef.current !== null) return;
+      rafRef.current = requestAnimationFrame(() => {
+        updateActiveIndex();
+        rafRef.current = null;
+      });
+    };
+
+    container.addEventListener('scroll', handleScroll);
+    // 初始化一次
+    const timer = window.setTimeout(updateActiveIndex, 100);
+    return () => {
+      container.removeEventListener('scroll', handleScroll);
+      clearTimeout(timer);
+      if (rafRef.current !== null) {
+        cancelAnimationFrame(rafRef.current);
+        rafRef.current = null;
+      }
+    };
+  }, [updateActiveIndex]);
+
+  // 点击导航点滚动到对应消息
+  const handleDotClick = (index: number) => {
+    const el = messageRefs.current[index];
+    const container = scrollRef.current;
+    if (!el || !container) return;
+    const targetTop = el.offsetTop - 24; // 留一些顶部呼吸空间
+    container.scrollTo({ top: Math.max(0, targetTop), behavior: 'smooth' });
+  };
 
   // 向上滚动加载更多：使用 Intersection Observer 监听列表顶部占位符
   useEffect(() => {
@@ -50,11 +109,13 @@ const MessageList: React.FC<MessageListProps> = ({
     return () => observer.disconnect();
   }, [hasMore, isLoadingMore, onLoadMore, scrollRef]);
 
+  const showNavBar = messages.length >= 3;
+
   return (
     <div
       ref={scrollRef}
       id="message-list-container"
-      className="flex-1 w-full overflow-y-auto overflow-x-hidden flex flex-col bg-transparent custom-scrollbar"
+      className="flex-1 w-full overflow-y-auto overflow-x-hidden flex flex-col bg-transparent custom-scrollbar relative"
     >
       {/* 内部弹性容器，通过 min-h-full 确保内容不足时也能撑开高度 */}
       <div className="flex flex-col w-full min-h-full">
@@ -83,14 +144,51 @@ const MessageList: React.FC<MessageListProps> = ({
 
         {/* 消息渲染流：不加额外边距，MessageBubble 内部已处理 py-6 间距 */}
         <div className="flex flex-col w-full">
-          {messages.map((message) => (
-            <MessageBubble key={message.id} message={message} />
+          {messages.map((message, index) => (
+            <div
+              key={message.id}
+              ref={(el) => { messageRefs.current[index] = el; }}
+            >
+              <MessageBubble message={message} />
+            </div>
           ))}
         </div>
         
         {/* 底部安全占位：确保最后一条消息与输入框/底部栏保持呼吸感，且利于 auto-scroll 到底部的视觉表现 */}
         <div className="h-16 w-full flex-shrink-0" aria-hidden="true" />
       </div>
+
+      {/* ── 右侧消息快速定位导航条 ── */}
+      {showNavBar && (
+        <div className="absolute right-2 top-4 bottom-20 w-4 flex flex-col items-center z-10 pointer-events-none">
+          <div className="relative w-full flex-1">
+            {messages.map((message, index) => {
+              const isActive = index === activeIndex;
+              const isUser = message.role === 'user';
+              return (
+                <button
+                  key={message.id}
+                  onClick={() => handleDotClick(index)}
+                  className={`
+                    absolute left-1/2 -translate-x-1/2 rounded-full pointer-events-auto
+                    transition-all duration-200 cursor-pointer
+                    ${isActive 
+                      ? 'w-2 h-2 bg-ink-400 dark:bg-white shadow-[0_0_6px_rgba(0,0,0,0.2)]' 
+                      : isUser 
+                        ? 'w-1.5 h-1.5 bg-ink-200/40 hover:bg-ink-200/70' 
+                        : 'w-1.5 h-1.5 bg-ink-200/30 hover:bg-ink-200/60'
+                    }
+                  `}
+                  style={{
+                    top: `${(index / (messages.length - 1)) * 100}%`,
+                  }}
+                  title={`${isUser ? 'User' : 'Assistant'} · 第 ${index + 1} 条`}
+                />
+              );
+            })}
+          </div>
+        </div>
+      )}
     </div>
   );
 };

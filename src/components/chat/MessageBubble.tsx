@@ -21,7 +21,7 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({ message }) => {
   if (isSystem) {
     return (
       <div className="flex justify-center w-full my-6 px-6">
-        <div className="px-4 py-1.5 bg-sand-200/50 border border-sand-400/40 rounded-full text-[11px] text-ink-200 font-medium tracking-wide backdrop-blur-sm select-none">
+        <div className="px-4 py-1.5 bg-sand-200/50 dark:bg-sand-300/50 border border-sand-400/40 rounded-full text-[11px] text-ink-200 font-medium tracking-wide backdrop-blur-sm select-none">
           {message.content}
         </div>
       </div>
@@ -33,7 +33,7 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({ message }) => {
       className={`
         flex w-full group py-6 px-4 md:px-8 transition-colors duration-300 ease-in-out
         ${isUser ? 'flex-row-reverse' : 'flex-row'} 
-        gap-4 md:gap-6 hover:bg-sand-200/30
+        gap-4 md:gap-6 hover:bg-sand-200/30 dark:hover:bg-sand-300/20
       `}
     >
       {/* 头像区域：固定宽度，防止在长文本下挤压 */}
@@ -49,7 +49,7 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({ message }) => {
           className={`
             relative w-full transition-all duration-300
             ${isUser 
-              ? 'px-5 py-3.5 bg-white border border-sand-400/60 rounded-2xl rounded-tr-sm shadow-[0_2px_12px_-2px_rgba(0,0,0,0.02)]' 
+              ? 'px-5 py-3.5 bg-white dark:bg-sand-300 border border-sand-400/60 rounded-2xl rounded-tr-sm shadow-[0_2px_12px_-2px_rgba(0,0,0,0.02)]' 
               : 'px-1 py-1 bg-transparent'
             }
           `}

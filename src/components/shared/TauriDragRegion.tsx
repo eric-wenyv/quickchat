@@ -78,7 +78,7 @@ const TauriDragRegion: React.FC<TauriDragRegionProps> = ({
               /* 还原图标：两个重叠的小矩形 */
               <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
                 <rect x="2" y="0" width="8" height="8" rx="0.5" stroke="currentColor" strokeWidth="1" opacity="0.7" fill="none" />
-                <rect x="0" y="2" width="8" height="8" rx="0.5" stroke="currentColor" strokeWidth="1" opacity="0.7" fill="white" />
+                <rect x="0" y="2" width="8" height="8" rx="0.5" stroke="currentColor" strokeWidth="1" opacity="0.7" className="fill-white dark:fill-sand-100" />
               </svg>
             ) : (
               /* 最大化图标：□ 空心矩形 */

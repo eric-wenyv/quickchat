@@ -65,8 +65,7 @@ const ConversationList: React.FC<ConversationListProps> = ({
   // 正常列表态
   return (
     <div 
-      className="flex-1 overflow-y-auto px-2 py-1 flex flex-col gap-0.5 transition-opacity duration-300 ease-in-out"
-      style={{ scrollbarWidth: 'thin', scrollbarColor: '#D4D0C8 transparent' }}
+      className="flex-1 overflow-y-auto px-2 py-1 flex flex-col gap-0.5 transition-opacity duration-300 ease-in-out custom-scrollbar"
     >
       {conversations.map((conv) => (
         <ConversationItem

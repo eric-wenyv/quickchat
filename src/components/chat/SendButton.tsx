@@ -18,7 +18,7 @@ const SendButton: React.FC<SendButtonProps> = ({ onClick, disabled }) => {
         ${
           disabled
             ? 'bg-transparent text-ink-100 cursor-not-allowed opacity-30'
-            : 'bg-ink-400 text-sand-100 hover:bg-ink-300 active:scale-90 shadow-sm hover:shadow-input-hover'
+            : 'bg-ink-400 dark:bg-accent-600 text-sand-100 hover:bg-ink-300 dark:hover:bg-accent-500 active:scale-90 shadow-sm hover:shadow-input-hover'
         }
       `}
       aria-label="Send message"

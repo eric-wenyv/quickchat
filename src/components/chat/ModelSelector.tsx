@@ -102,7 +102,7 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({
 
       {isOpen && (
         <div 
-          className="absolute bottom-full left-0 mb-3 w-64 bg-sand-100/95 backdrop-blur-md border border-sand-400/60 rounded-2xl shadow-panel z-50 animate-in fade-in slide-in-from-bottom-2 duration-300 origin-bottom"
+          className="absolute bottom-full left-0 mb-3 w-64 bg-sand-100/95 dark:bg-sand-200/95 backdrop-blur-md border border-sand-400/60 rounded-2xl shadow-panel z-50 animate-in fade-in slide-in-from-bottom-2 duration-300 origin-bottom"
         >
           <div className="p-2 space-y-1">
             <div className="px-2 py-1.5 mb-1">
@@ -112,7 +112,7 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({
                 onChange={(e) => setSearchQuery(e.target.value)}
                 placeholder="Search models..."
                 rows={1}
-                className="w-full bg-sand-200/50 text-ink-300 text-xs placeholder:text-ink-100 px-3 py-2 rounded-xl border border-sand-400/40 focus:border-sand-500 focus:shadow-input-hover outline-none transition-all duration-200 resize-none overflow-hidden"
+                className="w-full bg-sand-200/50 dark:bg-sand-300/50 text-ink-300 text-xs placeholder:text-ink-100 px-3 py-2 rounded-xl border border-sand-400/40 focus:border-sand-500 focus:shadow-input-hover outline-none transition-all duration-200 resize-none overflow-hidden"
               />
             </div>
 
@@ -133,7 +133,7 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({
                     }`}
                   >
                     <div className="flex items-center gap-2 min-w-0">
-                      <span className={`flex-shrink-0 w-5 h-5 rounded-md ${PROVIDER_BADGES[model.provider]?.color || 'bg-gray-400'} text-white flex items-center justify-center text-[8px] font-bold`}>
+                      <span className={`flex-shrink-0 w-5 h-5 rounded-md ${PROVIDER_BADGES[model.provider]?.color || 'bg-gray-400 dark:bg-gray-600'} text-white flex items-center justify-center text-[8px] font-bold`}>
                         {PROVIDER_BADGES[model.provider]?.label || '?'}
                       </span>
                       <div className="flex flex-col gap-0.5 min-w-0">

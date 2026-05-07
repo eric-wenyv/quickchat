@@ -1,6 +1,37 @@
 @import "tailwindcss";
 @config "../tailwind.config.js";
 
+@variant dark (&:where(.dark, .dark *));
+
+@theme {
+  --color-sand-100: #FAF9F6;
+  --color-sand-200: #F4F2EC;
+  --color-sand-300: #EBE8E0;
+  --color-sand-400: #E2DFD8;
+  --color-sand-500: #D4D0C8;
+  --color-ink-100: #8C8C8C;
+  --color-ink-200: #595959;
+  --color-ink-300: #333333;
+  --color-ink-400: #1A1A1A;
+  --color-accent-500: #d97706;
+  --color-accent-600: #b45309;
+}
+
+.dark {
+  --color-sand-100: #1a1a1a;
+  --color-sand-200: #262626;
+  --color-sand-300: #333333;
+  --color-sand-400: #404040;
+  --color-sand-500: #525252;
+  --color-ink-100: #737373;
+  --color-ink-200: #a3a3a3;
+  --color-ink-300: #d4d4d4;
+  --color-ink-400: #e5e5e5;
+  --color-accent-500: #f97316;
+  --color-accent-600: #ea580c;
+  color-scheme: dark;
+}
+
 /* Custom Scrollbar */
 @layer utilities {
   .custom-scrollbar::-webkit-scrollbar {

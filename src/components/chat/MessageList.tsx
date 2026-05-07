@@ -54,7 +54,7 @@ const MessageList: React.FC<MessageListProps> = ({
     <div
       ref={scrollRef}
       id="message-list-container"
-      className="flex-1 w-full overflow-y-auto overflow-x-hidden flex flex-col bg-transparent"
+      className="flex-1 w-full overflow-y-auto overflow-x-hidden flex flex-col bg-transparent custom-scrollbar"
     >
       {/* 内部弹性容器，通过 min-h-full 确保内容不足时也能撑开高度 */}
       <div className="flex flex-col w-full min-h-full">

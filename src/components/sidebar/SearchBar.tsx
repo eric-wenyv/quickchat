@@ -46,7 +46,7 @@ const SearchBar: React.FC<SearchBarProps> = ({ onSearch, placeholder = '搜索�
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           placeholder={placeholder}
-          className="w-full bg-sand-100 text-ink-300 text-sm placeholder:text-ink-100 pl-9 pr-8 py-2.5 rounded-xl border border-sand-400 focus:border-sand-500 focus:shadow-input-hover outline-none transition-all duration-200"
+          className="w-full bg-sand-100 dark:bg-sand-300 text-ink-300 text-sm placeholder:text-ink-100 pl-9 pr-8 py-2.5 rounded-xl border border-sand-400 focus:border-sand-500 focus:shadow-input-hover outline-none transition-all duration-200"
         />
 
         {/* 清除按钮 */}

@@ -17,7 +17,7 @@ const MessageAvatar: React.FC<MessageAvatarProps> = ({ role }) => {
         ${isAssistant 
           ? 'bg-ink-400 border-ink-400 text-sand-100 shadow-sm ring-1 ring-ink-400/10' 
           : isUser
-          ? 'bg-white border-sand-400 text-ink-300 shadow-sm'
+          ? 'bg-white dark:bg-sand-300 border-sand-400 text-ink-300 shadow-sm'
           : 'bg-sand-300 border-sand-400 text-ink-200'
         }
       `}

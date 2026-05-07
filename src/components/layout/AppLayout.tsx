@@ -10,6 +10,9 @@ import type {
 } from '@/types/types';
 
 interface AppLayoutProps {
+  // --- 主题 ---
+  theme: string;
+  onToggleTheme: () => void;
   // --- 数据契约 ---
   /** 会话列表摘要 */
   conversations: ConversationSummary[];
@@ -67,6 +70,8 @@ interface AppLayoutProps {
  * 3. 管理侧边栏的响应式显隐过渡与深度动效。
  */
 export const AppLayout: React.FC<AppLayoutProps> = ({
+  theme,
+  onToggleTheme,
   conversations,
   activeConversation,
   messages,
@@ -133,6 +138,8 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
           searchQuery={searchQuery}
           onToggleCollapse={() => setIsSidebarOpen(false)}
           onOpenSettings={onOpenSettings}
+          theme={theme}
+          onToggleTheme={onToggleTheme}
         />
       </aside>
 
@@ -140,13 +147,13 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
         右侧主对话区区域 (C-1): 应用核心交互平面
         利用 flex-1 中自适应剩余空间。
       */}
-      <main className={`flex-1 min-w-0 h-full relative z-10 flex flex-col shadow-[inset_1px_0_0_rgba(255,255,255,0.4)] transition-[padding] duration-500 ease-out ${!isSidebarOpen ? 'pl-10' : ''}`}>
+      <main className={`flex-1 min-w-0 h-full relative z-10 flex flex-col shadow-[inset_1px_0_0_rgba(255,255,255,0.4)] dark:shadow-[inset_1px_0_0_rgba(255,255,255,0.06)] transition-[padding] duration-500 ease-out ${!isSidebarOpen ? 'pl-10' : ''}`}>
         
         {/* 侧边栏唤醒触发器: 采用磨砂玻璃质感，仅在侧边栏关闭时漂浮显示 */}
         {!isSidebarOpen && (
           <button
             onClick={() => setIsSidebarOpen(true)}
-            className="absolute top-4 left-4 z-50 p-2.5 rounded-2xl bg-white/40 border border-sand-400/40 backdrop-blur-xl shadow-panel text-ink-200 hover:text-ink-400 hover:bg-white/60 transition-all active:scale-90 group"
+            className="absolute top-4 left-4 z-50 p-2.5 rounded-2xl bg-white/40 dark:bg-sand-100/60 border border-sand-400/40 backdrop-blur-xl shadow-panel text-ink-200 hover:text-ink-400 hover:bg-white/60 dark:hover:bg-sand-100/80 transition-all active:scale-90 group"
             title="展开侧边栏"
           >
             <svg className="w-5 h-5 transition-transform group-hover:translate-x-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">

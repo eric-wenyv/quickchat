@@ -137,7 +137,7 @@ export const MessageHeader: React.FC<MessageHeaderProps> = ({
               {conversation.model_id}
             </span>
             {conversation.system_prompt && (
-              <span className="text-[9px] bg-sand-300 text-ink-200 px-1.5 py-0.5 rounded-md font-medium">
+              <span className="text-[9px] bg-sand-300 dark:bg-sand-400 text-ink-200 px-1.5 py-0.5 rounded-md font-medium">
                 系统提示词
               </span>
             )}
@@ -222,7 +222,7 @@ export const MessageHeader: React.FC<MessageHeaderProps> = ({
           onClick={() => setShowSystemPromptModal(false)}
         >
           <div
-            className="bg-white/95 backdrop-blur-xl border border-sand-400/60 rounded-2xl shadow-2xl w-full max-w-lg mx-4 animate-in fade-in zoom-in-95 duration-200"
+            className="bg-white/95 dark:bg-sand-200/95 backdrop-blur-xl border border-sand-400/60 rounded-2xl shadow-2xl w-full max-w-lg mx-4 animate-in fade-in zoom-in-95 duration-200"
             onClick={(e) => e.stopPropagation()}
           >
             {/* 弹窗头部 */}
@@ -270,7 +270,7 @@ export const MessageHeader: React.FC<MessageHeaderProps> = ({
                     onUpdateSystemPrompt(null);
                     setShowSystemPromptModal(false);
                   }}
-                  className="px-4 py-2 text-sm text-red-500 hover:bg-red-50 rounded-xl transition-colors cursor-pointer"
+                  className="px-4 py-2 text-sm text-red-500 hover:bg-red-50 dark:hover:bg-red-950 rounded-xl transition-colors cursor-pointer"
                 >
                   清除
                 </button>
@@ -283,7 +283,7 @@ export const MessageHeader: React.FC<MessageHeaderProps> = ({
               </button>
               <button
                 onClick={handleSaveSystemPrompt}
-                className="px-5 py-2 text-sm font-semibold text-white bg-ink-400 hover:bg-ink-300 rounded-xl transition-colors shadow-sm cursor-pointer"
+                className="px-5 py-2 text-sm font-semibold text-white bg-ink-400 hover:bg-ink-300 dark:bg-accent-600 dark:hover:bg-accent-500 rounded-xl transition-colors shadow-sm cursor-pointer"
               >
                 保存
               </button>

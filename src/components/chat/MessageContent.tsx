@@ -17,12 +17,12 @@ const MessageContent: React.FC<MessageContentProps> = ({ content, status }) => {
 
   return (
     <div className="w-full text-ink-300 selection:bg-sand-400/50 selection:text-ink-400">
-      <article className="prose prose-sm md:prose-base max-w-none 
+      <article className="prose prose-sm md:prose-base max-w-none dark:prose-invert
         prose-p:leading-relaxed prose-p:my-2
         prose-headings:text-ink-400 prose-headings:font-bold prose-headings:mt-4 prose-headings:mb-2
         prose-a:text-ink-400 prose-a:underline prose-a:underline-offset-4 hover:prose-a:text-ink-300
-        prose-code:text-ink-400 prose-code:bg-sand-300/50 prose-code:px-1.5 prose-code:py-0.5 prose-code:rounded-md prose-code:font-medium prose-code:before:content-none prose-code:after:content-none
-        prose-pre:bg-sand-200 prose-pre:border prose-pre:border-sand-400 prose-pre:rounded-xl prose-pre:p-4 prose-pre:my-4
+        prose-code:text-ink-400 prose-code:bg-sand-300/50 dark:prose-code:bg-sand-400/50 prose-code:px-1.5 prose-code:py-0.5 prose-code:rounded-md prose-code:font-medium prose-code:before:content-none prose-code:after:content-none
+        prose-pre:bg-sand-200 dark:prose-pre:bg-sand-300 prose-pre:border prose-pre:border-sand-400 prose-pre:rounded-xl prose-pre:p-4 prose-pre:my-4
         prose-blockquote:border-l-sand-500 prose-blockquote:text-ink-200 prose-blockquote:pl-4 prose-blockquote:italic
         prose-ul:list-disc prose-ul:pl-5 prose-ol:list-decimal prose-ol:pl-5
         prose-li:my-1

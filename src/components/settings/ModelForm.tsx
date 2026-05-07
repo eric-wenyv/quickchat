@@ -91,7 +91,7 @@ export const ModelForm: React.FC<ModelFormProps> = ({ initial, onSave, onCancel 
               onClick={() => setProvider(p)}
               className={`px-2 py-2 rounded-xl text-xs font-semibold transition-all border ${
                 provider === p
-                  ? 'bg-ink-400 text-white border-ink-400 shadow-sm'
+                  ? 'bg-ink-400 dark:bg-accent-600 text-white border-ink-400 dark:border-accent-600 shadow-sm'
                   : 'bg-sand-200 text-ink-200 border-sand-400/40 hover:border-sand-400/80'
               }`}
             >
@@ -109,7 +109,7 @@ export const ModelForm: React.FC<ModelFormProps> = ({ initial, onSave, onCancel 
           value={modelId}
           onChange={e => setModelId(e.target.value)}
           placeholder={provider === 'openrouter' ? 'anthropic/claude-sonnet-4' : 'gemini-3-flash-preview'}
-          className="w-full bg-sand-200/50 text-ink-300 text-sm placeholder:text-ink-100 px-3 py-2.5 rounded-xl border border-sand-400/40 focus:border-sand-500 focus:shadow-input-hover outline-none transition-all"
+          className="w-full bg-sand-200/50 dark:bg-sand-300/50 text-ink-300 text-sm placeholder:text-ink-100 px-3 py-2.5 rounded-xl border border-sand-400/40 focus:border-sand-500 focus:shadow-input-hover outline-none transition-all"
         />
         {errors.modelId && <p className="mt-1 text-[11px] text-red-500">{errors.modelId}</p>}
       </div>
@@ -121,7 +121,7 @@ export const ModelForm: React.FC<ModelFormProps> = ({ initial, onSave, onCancel 
           value={displayName}
           onChange={e => setDisplayName(e.target.value)}
           placeholder="给模型起个名字"
-          className="w-full bg-sand-200/50 text-ink-300 text-sm placeholder:text-ink-100 px-3 py-2.5 rounded-xl border border-sand-400/40 focus:border-sand-500 focus:shadow-input-hover outline-none transition-all"
+          className="w-full bg-sand-200/50 dark:bg-sand-300/50 text-ink-300 text-sm placeholder:text-ink-100 px-3 py-2.5 rounded-xl border border-sand-400/40 focus:border-sand-500 focus:shadow-input-hover outline-none transition-all"
         />
         {errors.displayName && <p className="mt-1 text-[11px] text-red-500">{errors.displayName}</p>}
       </div>
@@ -134,7 +134,7 @@ export const ModelForm: React.FC<ModelFormProps> = ({ initial, onSave, onCancel 
           value={apiKey}
           onChange={e => setApiKey(e.target.value)}
           placeholder="sk-..."
-          className="w-full bg-sand-200/50 text-ink-300 text-sm placeholder:text-ink-100 px-3 py-2.5 rounded-xl border border-sand-400/40 focus:border-sand-500 focus:shadow-input-hover outline-none transition-all"
+          className="w-full bg-sand-200/50 dark:bg-sand-300/50 text-ink-300 text-sm placeholder:text-ink-100 px-3 py-2.5 rounded-xl border border-sand-400/40 focus:border-sand-500 focus:shadow-input-hover outline-none transition-all"
         />
         {errors.apiKey && <p className="mt-1 text-[11px] text-red-500">{errors.apiKey}</p>}
       </div>
@@ -148,7 +148,7 @@ export const ModelForm: React.FC<ModelFormProps> = ({ initial, onSave, onCancel 
           value={apiEndpoint}
           onChange={e => setApiEndpoint(e.target.value)}
           placeholder={DEFAULT_ENDPOINTS[provider] || 'https://your-api.com/v1/'}
-          className="w-full bg-sand-200/50 text-ink-300 text-sm placeholder:text-ink-100 px-3 py-2.5 rounded-xl border border-sand-400/40 focus:border-sand-500 focus:shadow-input-hover outline-none transition-all"
+          className="w-full bg-sand-200/50 dark:bg-sand-300/50 text-ink-300 text-sm placeholder:text-ink-100 px-3 py-2.5 rounded-xl border border-sand-400/40 focus:border-sand-500 focus:shadow-input-hover outline-none transition-all"
         />
         {errors.apiEndpoint && <p className="mt-1 text-[11px] text-red-500">{errors.apiEndpoint}</p>}
       </div>
@@ -198,7 +198,7 @@ export const ModelForm: React.FC<ModelFormProps> = ({ initial, onSave, onCancel 
           type="checkbox"
           checked={isDefault}
           onChange={e => setIsDefault(e.target.checked)}
-          className="w-4 h-4 rounded border-sand-400 text-ink-400 focus:ring-ink-400"
+          className="w-4 h-4 rounded border-sand-400 text-ink-400 dark:text-accent-500 focus:ring-ink-400 dark:focus:ring-accent-500"
         />
         <span className="text-xs font-semibold text-ink-300">设为默认模型</span>
       </label>
@@ -214,7 +214,7 @@ export const ModelForm: React.FC<ModelFormProps> = ({ initial, onSave, onCancel 
         </button>
         <button
           type="submit"
-          className="px-5 py-2 text-sm font-semibold text-white bg-ink-400 hover:bg-ink-300 rounded-xl transition-colors shadow-sm cursor-pointer"
+          className="px-5 py-2 text-sm font-semibold text-white bg-ink-400 hover:bg-ink-300 dark:bg-accent-600 dark:hover:bg-accent-500 rounded-xl transition-colors shadow-sm cursor-pointer"
         >
           {initial ? '保存修改' : '添加模型'}
         </button>

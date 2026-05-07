@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef, useMemo } from "react";
 import AppLayout from "./components/layout/AppLayout";
+import { useTheme } from "./hooks/useTheme";
 import ModelSettings from "./components/settings/ModelSettings";
 import {
   initDatabase,
@@ -43,9 +44,9 @@ class ErrorBoundary extends React.Component<{ children: React.ReactNode }, { has
       return (
         <div className="flex items-center justify-center h-screen w-screen bg-sand-100 text-ink-300">
           <div className="text-center space-y-4">
-            <h1 className="text-2xl font-bold text-red-500">Something went wrong</h1>
+            <h1 className="text-2xl font-bold text-red-500 dark:text-red-400">Something went wrong</h1>
             <p className="text-sm text-ink-200">The application encountered a fatal error. Please restart.</p>
-            <button onClick={() => window.location.reload()} className="px-4 py-2 bg-sand-300 rounded-xl text-ink-400 font-medium">Reload</button>
+            <button onClick={() => window.location.reload()} className="px-4 py-2 bg-sand-300 dark:bg-sand-400 rounded-xl text-ink-400 dark:text-ink-300 font-medium">Reload</button>
           </div>
         </div>
       );
@@ -66,6 +67,8 @@ const showToast = (title: string, desc?: string, type: "error" | "success" = "er
 // App
 // -----------------------------------------------------------------------------
 export default function App() {
+  const { theme, toggleTheme } = useTheme();
+
   // --- 状态 ---
   const [conversations, setConversations] = useState<ConversationSummary[]>([]);
   const [messages, setMessages] = useState<Message[]>([]);
@@ -642,7 +645,7 @@ export default function App() {
     <ErrorBoundary>
       {/* Toast */}
       {toast && (
-        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-[9999] bg-white/90 backdrop-blur-xl border border-sand-400/40 shadow-panel px-6 py-4 rounded-2xl animate-in fade-in slide-in-from-top-4 flex items-start gap-3">
+        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-[9999] bg-white/90 dark:bg-sand-200/90 backdrop-blur-xl border border-sand-400/40 shadow-panel px-6 py-4 rounded-2xl animate-in fade-in slide-in-from-top-4 flex items-start gap-3">
           <div className={`mt-0.5 w-2 h-2 rounded-full flex-shrink-0 shadow-[0_0_8px_currentColor] ${toast.type === 'error' ? 'text-red-500 bg-red-500' : 'text-emerald-500 bg-emerald-500'}`} />
           <div className="flex flex-col gap-1">
             <h3 className="text-sm font-bold text-ink-400">{toast.title}</h3>
@@ -664,6 +667,8 @@ export default function App() {
       )}
 
       <AppLayout
+        theme={theme}
+        onToggleTheme={toggleTheme}
         conversations={filteredConversations}
         activeConversation={activeConversation}
         messages={messages}

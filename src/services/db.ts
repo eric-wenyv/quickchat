@@ -10,6 +10,7 @@ import type {
   ConversationSummary,
   Message,
   ModelConfig,
+  SystemPrompt,
   UUID,
   EpochMillis,
 } from '@/types/types';
@@ -108,6 +109,21 @@ export async function initDatabase(): Promise<void> {
     END;
   `);
 
+  // 系统提示词预设表
+  await db.execute(`
+    CREATE TABLE IF NOT EXISTS system_prompts (
+      id          TEXT    PRIMARY KEY NOT NULL,
+      title       TEXT    NOT NULL,
+      content     TEXT    NOT NULL,
+      created_at  INTEGER NOT NULL,
+      updated_at  INTEGER NOT NULL
+    );
+  `);
+  await db.execute(`
+    CREATE INDEX IF NOT EXISTS idx_system_prompts_updated_at
+      ON system_prompts(updated_at DESC);
+  `);
+
   // 模型配置表
   await db.execute(`
     CREATE TABLE IF NOT EXISTS model_configs (
@@ -136,6 +152,49 @@ async function ensureMessageReasoningContentColumn(db: Database): Promise<void> 
   if (!columns.some(column => column.name === 'reasoning_content')) {
     await db.execute('ALTER TABLE messages ADD COLUMN reasoning_content TEXT DEFAULT NULL;');
   }
+}
+
+// ---------------------------------------------------------------------------
+// 系统提示词预设 (System Prompt Preset)
+// ---------------------------------------------------------------------------
+
+export async function getSystemPrompts(): Promise<SystemPrompt[]> {
+  const db = await getDb();
+  const rows = await db.select<{
+    id: string;
+    title: string;
+    content: string;
+    created_at: number;
+    updated_at: number;
+  }[]>('SELECT * FROM system_prompts ORDER BY updated_at DESC');
+
+  return rows.map(r => ({
+    id: r.id,
+    title: r.title,
+    content: r.content,
+    created_at: r.created_at,
+    updated_at: r.updated_at,
+  }));
+}
+
+export async function saveSystemPrompt(prompt: SystemPrompt): Promise<void> {
+  const db = await getDb();
+  // 确保同一标题只保留一条记录（去重）
+  await db.execute('DELETE FROM system_prompts WHERE title = ? AND id != ?', [prompt.title, prompt.id]);
+  await db.execute(
+    `INSERT INTO system_prompts (id, title, content, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?)
+     ON CONFLICT(id) DO UPDATE SET
+       title = excluded.title,
+       content = excluded.content,
+       updated_at = excluded.updated_at`,
+    [prompt.id, prompt.title, prompt.content, prompt.created_at, prompt.updated_at]
+  );
+}
+
+export async function deleteSystemPrompt(id: UUID): Promise<void> {
+  const db = await getDb();
+  await db.execute('DELETE FROM system_prompts WHERE id = ?', [id]);
 }
 
 // ---------------------------------------------------------------------------

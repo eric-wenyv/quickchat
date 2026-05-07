@@ -16,6 +16,9 @@ import {
   getModelConfigs,
   saveModelConfig,
   deleteModelConfig,
+  getSystemPrompts,
+  saveSystemPrompt,
+  deleteSystemPrompt,
 } from "./services/db";
 import { chatCompletion, WEB_SEARCH_TOOL } from "./services/ai";
 import type { ChatMessage, ChatContentPart } from "./services/ai";
@@ -25,6 +28,7 @@ import type {
   Conversation,
   Message,
   ModelConfig,
+  SystemPrompt,
   UUID,
 } from "./types/types";
 import "./App.css";
@@ -77,6 +81,7 @@ export default function App() {
   const [activeModelId, setActiveModelId] = useState<UUID>('');
   const [dbReady, setDbReady] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
+  const [systemPrompts, setSystemPrompts] = useState<SystemPrompt[]>([]);
 
   const [isLoadingConversations, setIsLoadingConversations] = useState(false);
   const [isLoadingMessages, setIsLoadingMessages] = useState(false);
@@ -125,12 +130,14 @@ export default function App() {
   const loadAll = async () => {
     setIsLoadingConversations(true);
     try {
-      const [convs, mods] = await Promise.all([
+      const [convs, mods, prompts] = await Promise.all([
         getConversations(100, 0),
         getModelConfigs(),
+        getSystemPrompts(),
       ]);
       setConversations(convs);
       setModels(mods);
+      setSystemPrompts(prompts);
 
       if (mods.length > 0) {
         const def = mods.find(m => m.is_default) || mods[0];
@@ -323,6 +330,44 @@ export default function App() {
       showToast('已更新', '系统提示词已保存', 'success');
     } catch (e) {
       showToast('更新失败', String(e));
+    }
+  };
+
+  const handleSaveSystemPromptPreset = async (title: string, content: string) => {
+    const trimmedTitle = title.trim();
+    const trimmedContent = content.trim();
+    if (!trimmedContent) {
+      showToast('保存失败', '提示词内容不能为空');
+      return;
+    }
+
+    const now = Date.now();
+    const existing = systemPrompts.find(p => p.title === trimmedTitle);
+    const prompt: SystemPrompt = {
+      id: existing?.id ?? crypto.randomUUID(),
+      title: trimmedTitle,
+      content: trimmedContent,
+      created_at: existing?.created_at ?? now,
+      updated_at: now,
+    };
+
+    try {
+      await saveSystemPrompt(prompt);
+      const refreshed = await getSystemPrompts();
+      setSystemPrompts(refreshed);
+      showToast('已保存', `预设 "${trimmedTitle}" 已保存`, 'success');
+    } catch (e) {
+      showToast('保存失败', String(e));
+    }
+  };
+
+  const handleDeleteSystemPromptPreset = async (id: UUID) => {
+    try {
+      await deleteSystemPrompt(id);
+      setSystemPrompts(prev => prev.filter(p => p.id !== id));
+      showToast('已删除', '预设已移除', 'success');
+    } catch (e) {
+      showToast('删除失败', String(e));
     }
   };
 
@@ -716,6 +761,9 @@ export default function App() {
         onUpdateSystemPrompt={handleUpdateSystemPrompt}
         onUpdateModelThinkingLevel={handleUpdateModelThinkingLevel}
         onOpenSettings={() => setShowSettings(true)}
+        systemPrompts={systemPrompts}
+        onSaveSystemPromptPreset={handleSaveSystemPromptPreset}
+        onDeleteSystemPromptPreset={handleDeleteSystemPromptPreset}
       />
     </ErrorBoundary>
   );

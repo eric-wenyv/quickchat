@@ -6,6 +6,7 @@ import type {
   Conversation, 
   Message, 
   ModelConfig, 
+  SystemPrompt,
   UUID 
 } from '@/types/types';
 
@@ -59,6 +60,12 @@ interface AppLayoutProps {
   /** 更新模型 thinking level */
   onUpdateModelThinkingLevel: (id: UUID, level: 'LOW' | 'MEDIUM' | 'HIGH' | null) => void;
   onOpenSettings?: () => void;
+  /** 已保存的系统提示词预设列表 */
+  systemPrompts: SystemPrompt[];
+  /** 保存系统提示词预设 */
+  onSaveSystemPromptPreset: (title: string, content: string) => void;
+  /** 删除系统提示词预设 */
+  onDeleteSystemPromptPreset: (id: UUID) => void;
 }
 
 /**
@@ -93,6 +100,9 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
   onUpdateSystemPrompt,
   onUpdateModelThinkingLevel,
   onOpenSettings,
+  systemPrompts,
+  onSaveSystemPromptPreset,
+  onDeleteSystemPromptPreset,
 }) => {
   // 内部维护侧边栏开关状态，确保布局灵活性
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
@@ -180,6 +190,9 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
           onRenameConversation={onRenameConversation}
           onUpdateSystemPrompt={onUpdateSystemPrompt}
           onUpdateModelThinkingLevel={onUpdateModelThinkingLevel}
+          systemPrompts={systemPrompts}
+          onSaveSystemPromptPreset={onSaveSystemPromptPreset}
+          onDeleteSystemPromptPreset={onDeleteSystemPromptPreset}
         />
       </main>
 

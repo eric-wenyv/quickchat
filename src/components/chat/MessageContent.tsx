@@ -38,7 +38,13 @@ const MessageContent: React.FC<MessageContentProps> = ({ content, status }) => {
             <span className="text-sm text-ink-200 font-medium">思考中...</span>
           </div>
         ) : (
-          <ReactMarkdown remarkPlugins={[remarkGfm]}>
+          <ReactMarkdown
+            remarkPlugins={[remarkGfm]}
+            urlTransform={(url) => {
+              if (url.startsWith('data:')) return url;
+              return url;
+            }}
+          >
             {content}
           </ReactMarkdown>
         )}

@@ -1,5 +1,5 @@
 import React from 'react';
-import type { Conversation, Message, ModelConfig, UUID } from '@/types/types';
+import type { Conversation, Message, ModelConfig, SystemPrompt, UUID } from '@/types/types';
 import { MessageHeader } from './MessageHeader';
 import MessageList from './MessageList';
 import { EmptyState } from './EmptyState';
@@ -28,6 +28,12 @@ interface MainChatAreaProps {
   onUpdateSystemPrompt: (prompt: string | null) => void;
   /** 更新模型 thinking level 回调 */
   onUpdateModelThinkingLevel: (id: UUID, level: 'LOW' | 'MEDIUM' | 'HIGH' | null) => void;
+  /** 已保存的系统提示词预设列表 */
+  systemPrompts: SystemPrompt[];
+  /** 保存系统提示词预设 */
+  onSaveSystemPromptPreset: (title: string, content: string) => void;
+  /** 删除系统提示词预设 */
+  onDeleteSystemPromptPreset: (id: UUID) => void;
 }
 
 /**
@@ -49,6 +55,9 @@ export const MainChatArea: React.FC<MainChatAreaProps> = ({
   onRenameConversation,
   onUpdateSystemPrompt,
   onUpdateModelThinkingLevel,
+  systemPrompts,
+  onSaveSystemPromptPreset,
+  onDeleteSystemPromptPreset,
 }) => {
   const showNoConversation = !conversation;
   const showNoMessages = conversation && messages.length === 0 && !isLoadingMessages;
@@ -70,6 +79,9 @@ export const MainChatArea: React.FC<MainChatAreaProps> = ({
             conversation={conversation}
             onRename={(newTitle) => onRenameConversation(conversation.id, newTitle)}
             onUpdateSystemPrompt={onUpdateSystemPrompt}
+            savedPrompts={systemPrompts}
+            onSavePrompt={onSaveSystemPromptPreset}
+            onDeletePrompt={onDeleteSystemPromptPreset}
           />
 
           {/* 消息展示核心区 */}

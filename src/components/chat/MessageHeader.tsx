@@ -1,11 +1,28 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { getCurrentWindow } from '@tauri-apps/api/window';
-import type { Conversation } from '@/types/types';
+import type { Conversation, SystemPrompt, UUID } from '@/types/types';
 
 interface MessageHeaderProps {
   conversation: Conversation;
   onRename: (newTitle: string) => void;
   onUpdateSystemPrompt: (prompt: string | null) => void;
+  savedPrompts: SystemPrompt[];
+  onSavePrompt: (title: string, content: string) => void;
+  onDeletePrompt: (id: UUID) => void;
+}
+
+function generateDefaultTitle(existingTitles: string[]): string {
+  const base = 'Default Prompt';
+  if (!existingTitles.includes(base)) return base;
+  let maxNum = 0;
+  const regex = /^Default Prompt(\d+)$/;
+  for (const t of existingTitles) {
+    const match = t.match(regex);
+    if (match) {
+      maxNum = Math.max(maxNum, parseInt(match[1], 10));
+    }
+  }
+  return `${base}${maxNum + 1}`;
 }
 
 /**
@@ -19,6 +36,9 @@ export const MessageHeader: React.FC<MessageHeaderProps> = ({
   conversation,
   onRename,
   onUpdateSystemPrompt,
+  savedPrompts,
+  onSavePrompt,
+  onDeletePrompt,
 }) => {
   // ── 窗口控制状态 ──
   const [isWindowMaximized, setIsWindowMaximized] = useState(false);
@@ -79,6 +99,8 @@ export const MessageHeader: React.FC<MessageHeaderProps> = ({
   // ── 系统提示词弹窗状态 ──
   const [showSystemPromptModal, setShowSystemPromptModal] = useState(false);
   const [systemPromptDraft, setSystemPromptDraft] = useState(conversation.system_prompt || '');
+  const [saveTitleDraft, setSaveTitleDraft] = useState('');
+  const [selectedPresetId, setSelectedPresetId] = useState('');
   const promptTextareaRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
@@ -95,6 +117,29 @@ export const MessageHeader: React.FC<MessageHeaderProps> = ({
     const trimmed = systemPromptDraft.trim();
     onUpdateSystemPrompt(trimmed || null);
     setShowSystemPromptModal(false);
+  };
+
+  const handleSelectPreset = (id: string) => {
+    setSelectedPresetId(id);
+    if (!id) return;
+    const preset = savedPrompts.find(p => p.id === id);
+    if (preset) {
+      setSystemPromptDraft(preset.content);
+    }
+  };
+
+  const handleSavePreset = () => {
+    const title = saveTitleDraft.trim() || generateDefaultTitle(savedPrompts.map(p => p.title));
+    onSavePrompt(title, systemPromptDraft);
+    setSaveTitleDraft('');
+  };
+
+  const handleDeletePreset = (id: UUID, e: React.MouseEvent) => {
+    e.stopPropagation();
+    onDeletePrompt(id);
+    if (selectedPresetId === id) {
+      setSelectedPresetId('');
+    }
   };
 
   return (
@@ -222,11 +267,11 @@ export const MessageHeader: React.FC<MessageHeaderProps> = ({
           onClick={() => setShowSystemPromptModal(false)}
         >
           <div
-            className="bg-white/95 dark:bg-sand-200/95 backdrop-blur-xl border border-sand-400/60 rounded-2xl shadow-2xl w-full max-w-lg mx-4 animate-in fade-in zoom-in-95 duration-200"
+            className="bg-white/95 dark:bg-sand-200/95 backdrop-blur-xl border border-sand-400/60 rounded-2xl shadow-2xl w-full max-w-lg mx-4 animate-in fade-in zoom-in-95 duration-200 max-h-[85vh] flex flex-col"
             onClick={(e) => e.stopPropagation()}
           >
             {/* 弹窗头部 */}
-            <div className="flex items-center justify-between px-6 py-4 border-b border-sand-400/30">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-sand-400/30 flex-shrink-0">
               <div className="flex items-center gap-2">
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-ink-300">
                   <path d="M12 20h9" /><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z" />
@@ -244,7 +289,59 @@ export const MessageHeader: React.FC<MessageHeaderProps> = ({
             </div>
 
             {/* 弹窗内容 */}
-            <div className="px-6 py-4">
+            <div className="px-6 py-4 overflow-y-auto">
+              {/* 已保存预设选择 */}
+              {savedPrompts.length > 0 && (
+                <div className="mb-4">
+                  <label className="block text-xs font-medium text-ink-300 mb-1.5">
+                    选择已保存的提示词
+                  </label>
+                  <div className="relative">
+                    <select
+                      value={selectedPresetId}
+                      onChange={(e) => handleSelectPreset(e.target.value)}
+                      className="w-full bg-sand-200/50 text-ink-300 text-sm px-3 py-2.5 rounded-xl border border-sand-400/40 focus:border-sand-500 focus:shadow-input-hover outline-none transition-all duration-200 appearance-none cursor-pointer"
+                    >
+                      <option value="">-- 选择预设 --</option>
+                      {savedPrompts.map((p) => (
+                        <option key={p.id} value={p.id}>
+                          {p.title}
+                        </option>
+                      ))}
+                    </select>
+                    <svg className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-ink-200 pointer-events-none" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="m6 9 6 6 6-6" />
+                    </svg>
+                  </div>
+                  {savedPrompts.length > 0 && selectedPresetId && (
+                    <div className="flex flex-wrap gap-2 mt-2">
+                      {savedPrompts.map((p) => (
+                        <button
+                          key={p.id}
+                          onClick={() => handleSelectPreset(p.id)}
+                          className={`group flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs border transition-all cursor-pointer ${
+                            selectedPresetId === p.id
+                              ? 'bg-ink-400 text-white border-ink-400'
+                              : 'bg-sand-200/50 text-ink-300 border-sand-400/40 hover:border-sand-500'
+                          }`}
+                        >
+                          <span>{p.title}</span>
+                          <span
+                            onClick={(e) => handleDeletePreset(p.id, e)}
+                            className={`w-4 h-4 rounded-full flex items-center justify-center text-[10px] opacity-0 group-hover:opacity-100 transition-opacity ${
+                              selectedPresetId === p.id ? 'hover:bg-white/20' : 'hover:bg-sand-300'
+                            }`}
+                            title="删除预设"
+                          >
+                            ×
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+
               <p className="text-xs text-ink-200 mb-3">
                 设置系统提示词来定义 AI 的行为方式。留空则使用默认行为。
               </p>
@@ -259,10 +356,36 @@ export const MessageHeader: React.FC<MessageHeaderProps> = ({
               <div className="flex items-center justify-between mt-1">
                 <span className="text-[10px] text-ink-100">{systemPromptDraft.length} 字符</span>
               </div>
+
+              {/* 保存为新预设 */}
+              <div className="mt-4 pt-4 border-t border-sand-400/30">
+                <label className="block text-xs font-medium text-ink-300 mb-1.5">
+                  保存为新预设
+                </label>
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    value={saveTitleDraft}
+                    onChange={(e) => setSaveTitleDraft(e.target.value)}
+                    placeholder={`留空则使用 "${generateDefaultTitle(savedPrompts.map(p => p.title))}"`}
+                    className="flex-1 bg-sand-200/50 text-ink-300 text-sm placeholder:text-ink-100 px-3 py-2 rounded-xl border border-sand-400/40 focus:border-sand-500 focus:shadow-input-hover outline-none transition-all duration-200"
+                  />
+                  <button
+                    onClick={handleSavePreset}
+                    disabled={!systemPromptDraft.trim()}
+                    className="px-4 py-2 text-sm font-medium text-ink-400 bg-sand-200 hover:bg-sand-300 disabled:opacity-40 disabled:cursor-not-allowed rounded-xl transition-colors cursor-pointer border border-sand-400/40"
+                  >
+                    保存
+                  </button>
+                </div>
+                <p className="text-[10px] text-ink-100 mt-1">
+                  使用相同标题会覆盖已有预设
+                </p>
+              </div>
             </div>
 
             {/* 弹窗底部 */}
-            <div className="flex items-center justify-end gap-2 px-6 py-4 border-t border-sand-400/30">
+            <div className="flex items-center justify-end gap-2 px-6 py-4 border-t border-sand-400/30 flex-shrink-0">
               {conversation.system_prompt && (
                 <button
                   onClick={() => {
@@ -285,7 +408,7 @@ export const MessageHeader: React.FC<MessageHeaderProps> = ({
                 onClick={handleSaveSystemPrompt}
                 className="px-5 py-2 text-sm font-semibold text-white bg-ink-400 hover:bg-ink-300 dark:bg-accent-600 dark:hover:bg-accent-500 rounded-xl transition-colors shadow-sm cursor-pointer"
               >
-                保存
+                应用
               </button>
             </div>
           </div>

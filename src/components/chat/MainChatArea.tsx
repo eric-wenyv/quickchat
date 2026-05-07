@@ -39,6 +39,24 @@ interface MainChatAreaProps {
 }
 
 /**
+ * 根据当前活跃的全局消息索引，返回对应的高亮 user 消息在 userMessages 中的索引
+ */
+function getActiveUserIndex(allMessages: Message[], activeIdx: number): number {
+  const userIndices = allMessages
+    .map((m, i) => (m.role === 'user' ? i : -1))
+    .filter((i) => i !== -1);
+  let target = -1;
+  for (let i = 0; i < userIndices.length; i++) {
+    if (userIndices[i] <= activeIdx) {
+      target = i;
+    } else {
+      break;
+    }
+  }
+  return target;
+}
+
+/**
  * C-1: MainChatArea
  * 主对话区容器，组合 Header + MessageList/EmptyState + InputFooter。
  * 新增：右侧消息区域中间固定导航条（DeepSeek 风格，默认仅显示短横线，悬浮展开信息）。
@@ -69,10 +87,15 @@ export const MainChatArea: React.FC<MainChatAreaProps> = ({
   // ── 右侧导航条状态 ──
   const messageListRef = useRef<MessageListHandle>(null);
   const [isNavHovered, setIsNavHovered] = useState(false);
+  const [activeMessageIndex, setActiveMessageIndex] = useState(0);
 
   const userMessages = useMemo(
     () => messages.filter((m) => m.role === 'user'),
     [messages]
+  );
+  const activeUserIndex = useMemo(
+    () => getActiveUserIndex(messages, activeMessageIndex),
+    [messages, activeMessageIndex]
   );
 
   const showNavPanel = userMessages.length >= 2;
@@ -154,7 +177,7 @@ export const MainChatArea: React.FC<MainChatAreaProps> = ({
                     >
                       <div className="flex flex-col items-center w-full">
                         {userMessages.map((msg, idx) => {
-                          const isLast = idx === userMessages.length - 1;
+                          const isActive = idx === activeUserIndex;
                           const preview = msg.content
                             .replace(/!\[.*?\]\(.*?\)/g, '[图片]')
                             .replace(/\n/g, ' ')
@@ -169,7 +192,7 @@ export const MainChatArea: React.FC<MainChatAreaProps> = ({
                               {/* 短横线标记 */}
                               <div
                                 className={`h-px shrink-0 transition-all ${
-                                  isLast
+                                  isActive
                                     ? 'bg-blue-500'
                                     : 'bg-sand-400/50 hover:bg-sand-400'
                                 }`}
@@ -195,6 +218,7 @@ export const MainChatArea: React.FC<MainChatAreaProps> = ({
                     hasMore={hasMore}
                     isLoadingMore={isLoadingMore}
                     onDeleteMessage={onDeleteMessage}
+                    onActiveIndexChange={setActiveMessageIndex}
                   />
                 </div>
 

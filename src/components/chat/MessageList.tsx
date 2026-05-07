@@ -1,4 +1,4 @@
-import { useRef, useEffect, forwardRef, useImperativeHandle } from 'react';
+import { useRef, useEffect, useState, useCallback, forwardRef, useImperativeHandle } from 'react';
 import type { Message } from '@/types/types';
 import { useAutoScroll } from '@/hooks/useAutoScroll';
 import MessageBubble from './MessageBubble';
@@ -9,6 +9,7 @@ interface MessageListProps {
   hasMore: boolean;
   isLoadingMore: boolean;
   onDeleteMessage?: (id: string) => void;
+  onActiveIndexChange?: (index: number) => void;
 }
 
 export interface MessageListHandle {
@@ -21,10 +22,12 @@ export interface MessageListHandle {
  * 职责：负责渲染消息流主体、管理消息到达时的自动滚动、以及向上滚动的流式分页加载。
  */
 const MessageList = forwardRef<MessageListHandle, MessageListProps>(
-  ({ messages, onLoadMore, hasMore, isLoadingMore, onDeleteMessage }, ref) => {
+  ({ messages, onLoadMore, hasMore, isLoadingMore, onDeleteMessage, onActiveIndexChange }, ref) => {
     const scrollRef = useAutoScroll([messages]);
     const loadMoreRef = useRef<HTMLDivElement>(null);
     const messageRefs = useRef<(HTMLDivElement | null)[]>([]);
+    const [activeIndex, setActiveIndex] = useState(0);
+    const rafRef = useRef<number | null>(null);
 
     // 暴露 scrollToMessage 给父组件
     useImperativeHandle(ref, () => ({
@@ -36,6 +39,54 @@ const MessageList = forwardRef<MessageListHandle, MessageListProps>(
         container.scrollTo({ top: Math.max(0, targetTop), behavior: 'smooth' });
       },
     }));
+
+    // 通知父组件活跃索引变化
+    useEffect(() => {
+      onActiveIndexChange?.(activeIndex);
+    }, [activeIndex, onActiveIndexChange]);
+
+    // 计算当前视口中心最接近的消息索引
+    const updateActiveIndex = useCallback(() => {
+      const container = scrollRef.current;
+      if (!container || messages.length === 0) return;
+      const viewportCenter = container.scrollTop + container.clientHeight / 2;
+      let closestIdx = 0;
+      let minDist = Infinity;
+      messageRefs.current.forEach((el, idx) => {
+        if (!el) return;
+        const elCenter = el.offsetTop + el.clientHeight / 2;
+        const dist = Math.abs(elCenter - viewportCenter);
+        if (dist < minDist) {
+          minDist = dist;
+          closestIdx = idx;
+        }
+      });
+      setActiveIndex(closestIdx);
+    }, [messages.length]);
+
+    useEffect(() => {
+      const container = scrollRef.current;
+      if (!container) return;
+
+      const handleScroll = () => {
+        if (rafRef.current !== null) return;
+        rafRef.current = requestAnimationFrame(() => {
+          updateActiveIndex();
+          rafRef.current = null;
+        });
+      };
+
+      container.addEventListener('scroll', handleScroll);
+      const timer = window.setTimeout(updateActiveIndex, 100);
+      return () => {
+        container.removeEventListener('scroll', handleScroll);
+        clearTimeout(timer);
+        if (rafRef.current !== null) {
+          cancelAnimationFrame(rafRef.current);
+          rafRef.current = null;
+        }
+      };
+    }, [updateActiveIndex]);
 
     // 向上滚动加载更多
     useEffect(() => {

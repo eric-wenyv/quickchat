@@ -60,12 +60,14 @@ export async function initDatabase(): Promise<void> {
       reasoning_content TEXT  DEFAULT NULL,
       status          TEXT    NOT NULL DEFAULT 'completed' CHECK (status IN ('pending', 'streaming', 'completed', 'error')),
       token_count     INTEGER DEFAULT NULL,
+      input_tokens    INTEGER DEFAULT NULL,
+      output_tokens   INTEGER DEFAULT NULL,
       model_id        TEXT    DEFAULT NULL,
       created_at      INTEGER NOT NULL,
       updated_at      INTEGER NOT NULL
     );
   `);
-  await ensureMessageReasoningContentColumn(db);
+  await ensureMessageColumns(db);
   await db.execute(`
     CREATE INDEX IF NOT EXISTS idx_messages_conversation_time
       ON messages(conversation_id, created_at ASC);
@@ -147,10 +149,26 @@ export async function initDatabase(): Promise<void> {
   `);
 }
 
-async function ensureMessageReasoningContentColumn(db: Database): Promise<void> {
-  const columns = await db.select<{ name: string }[]>('PRAGMA table_info(messages);');
-  if (!columns.some(column => column.name === 'reasoning_content')) {
-    await db.execute('ALTER TABLE messages ADD COLUMN reasoning_content TEXT DEFAULT NULL;');
+async function ensureMessageColumns(db: Database): Promise<void> {
+  try {
+    const columns = await db.select<{ name: string }[]>('PRAGMA table_info(messages);');
+    const colNames = new Set(columns.map((c: any) => c.name));
+    console.log('[DB] messages table columns:', Array.from(colNames));
+
+    if (!colNames.has('reasoning_content')) {
+      await db.execute('ALTER TABLE messages ADD COLUMN reasoning_content TEXT DEFAULT NULL;');
+      console.log('[DB] Added column: reasoning_content');
+    }
+    if (!colNames.has('input_tokens')) {
+      await db.execute('ALTER TABLE messages ADD COLUMN input_tokens INTEGER DEFAULT NULL;');
+      console.log('[DB] Added column: input_tokens');
+    }
+    if (!colNames.has('output_tokens')) {
+      await db.execute('ALTER TABLE messages ADD COLUMN output_tokens INTEGER DEFAULT NULL;');
+      console.log('[DB] Added column: output_tokens');
+    }
+  } catch (e) {
+    console.error('[DB] ensureMessageColumns failed:', e);
   }
 }
 
@@ -394,15 +412,28 @@ export async function getConversations(limit = 100, offset = 0): Promise<Convers
 
 export async function saveMessage(msg: Message): Promise<void> {
   const db = await getDb();
-  await db.execute(
-    'INSERT INTO messages (id, conversation_id, role, content, reasoning_content, status, token_count, model_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-    [msg.id, msg.conversation_id, msg.role, msg.content, msg.reasoning_content ?? null, msg.status, msg.token_count, msg.model_id, msg.created_at, msg.updated_at]
-  );
+  try {
+    await db.execute(
+      'INSERT INTO messages (id, conversation_id, role, content, reasoning_content, status, token_count, input_tokens, output_tokens, model_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      [msg.id, msg.conversation_id, msg.role, msg.content, msg.reasoning_content ?? null, msg.status, msg.token_count, msg.input_tokens, msg.output_tokens, msg.model_id, msg.created_at, msg.updated_at]
+    );
+  } catch (e: any) {
+    // Fallback: 如果新列不存在，使用旧版 SQL
+    if (e?.message?.includes('input_tokens') || e?.message?.includes('output_tokens') || e?.message?.includes('no column named')) {
+      console.warn('[DB] saveMessage fallback (old schema):', e.message);
+      await db.execute(
+        'INSERT INTO messages (id, conversation_id, role, content, reasoning_content, status, token_count, model_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+        [msg.id, msg.conversation_id, msg.role, msg.content, msg.reasoning_content ?? null, msg.status, msg.token_count, msg.model_id, msg.created_at, msg.updated_at]
+      );
+    } else {
+      throw e;
+    }
+  }
 }
 
 export async function updateMessage(
   id: UUID,
-  updates: Partial<Pick<Message, 'content' | 'reasoning_content' | 'status' | 'token_count' | 'updated_at'>>
+  updates: Partial<Pick<Message, 'content' | 'reasoning_content' | 'status' | 'token_count' | 'input_tokens' | 'output_tokens' | 'updated_at'>>
 ): Promise<void> {
   const db = await getDb();
   const sets: string[] = [];
@@ -412,11 +443,33 @@ export async function updateMessage(
   if (updates.reasoning_content !== undefined) { sets.push('reasoning_content = ?'); vals.push(updates.reasoning_content); }
   if (updates.status !== undefined) { sets.push('status = ?'); vals.push(updates.status); }
   if (updates.token_count !== undefined) { sets.push('token_count = ?'); vals.push(updates.token_count); }
+  if (updates.input_tokens !== undefined) { sets.push('input_tokens = ?'); vals.push(updates.input_tokens); }
+  if (updates.output_tokens !== undefined) { sets.push('output_tokens = ?'); vals.push(updates.output_tokens); }
   sets.push('updated_at = ?');
   vals.push(updates.updated_at ?? Date.now());
   vals.push(id);
 
-  await db.execute(`UPDATE messages SET ${sets.join(', ')} WHERE id = ?`, vals);
+  const sql = `UPDATE messages SET ${sets.join(', ')} WHERE id = ?`;
+  try {
+    await db.execute(sql, vals);
+  } catch (e: any) {
+    // Fallback: 如果新列不存在，移除相关 set 子句后重试
+    if (e?.message?.includes('input_tokens') || e?.message?.includes('output_tokens') || e?.message?.includes('no column named')) {
+      console.warn('[DB] updateMessage fallback (old schema):', e.message);
+      const fallbackSets: string[] = [];
+      const fallbackVals: (string | number | null)[] = [];
+      if (updates.content !== undefined) { fallbackSets.push('content = ?'); fallbackVals.push(updates.content); }
+      if (updates.reasoning_content !== undefined) { fallbackSets.push('reasoning_content = ?'); fallbackVals.push(updates.reasoning_content); }
+      if (updates.status !== undefined) { fallbackSets.push('status = ?'); fallbackVals.push(updates.status); }
+      if (updates.token_count !== undefined) { fallbackSets.push('token_count = ?'); fallbackVals.push(updates.token_count); }
+      fallbackSets.push('updated_at = ?');
+      fallbackVals.push(updates.updated_at ?? Date.now());
+      fallbackVals.push(id);
+      await db.execute(`UPDATE messages SET ${fallbackSets.join(', ')} WHERE id = ?`, fallbackVals);
+    } else {
+      throw e;
+    }
+  }
 }
 
 export async function getMessages(
@@ -560,8 +613,8 @@ export async function migrateFromLocalStorage(): Promise<boolean> {
   for (const m of msgs) {
     try {
       await db.execute(
-        `INSERT OR IGNORE INTO messages (id, conversation_id, role, content, reasoning_content, status, token_count, model_id, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT OR IGNORE INTO messages (id, conversation_id, role, content, reasoning_content, status, token_count, input_tokens, output_tokens, model_id, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           m.id,
           m.conversation_id,
@@ -570,6 +623,8 @@ export async function migrateFromLocalStorage(): Promise<boolean> {
           m.reasoning_content ?? null,
           m.status || 'completed',
           m.token_count ?? null,
+          m.input_tokens ?? null,
+          m.output_tokens ?? null,
           m.model_id ?? null,
           m.created_at,
           m.updated_at ?? m.created_at,

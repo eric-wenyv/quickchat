@@ -21,6 +21,11 @@ const DEFAULT_ENDPOINTS: Record<string, string> = {
 export interface StreamChunk {
   delta: string;
   accumulated: string;
+  usage?: {
+    prompt_tokens: number;
+    completion_tokens: number;
+    total_tokens: number;
+  };
 }
 
 export interface ToolDefinition {
@@ -60,9 +65,15 @@ export interface ChatCompletionParams {
   tools?: ToolDefinition[];
 }
 
+export interface TokenUsage {
+  prompt_tokens: number;
+  completion_tokens: number;
+  total_tokens: number;
+}
+
 export type ChatCompletionResult =
-  | { type: 'text'; stream: AsyncGenerator<StreamChunk, void, unknown>; reasoningContent: string }
-  | { type: 'tool_calls'; toolCalls: ToolCall[]; assistantMessage: string; reasoningContent: string };
+  | { type: 'text'; stream: AsyncGenerator<StreamChunk, void, unknown>; reasoningContent: string; usage: TokenUsage | null }
+  | { type: 'tool_calls'; toolCalls: ToolCall[]; assistantMessage: string; reasoningContent: string; usage: TokenUsage | null };
 
 // ---------------------------------------------------------------------------
 // 内置工具定义
@@ -126,6 +137,7 @@ function buildRequestBody(
     temperature: model.temperature,
     max_tokens: model.max_tokens,
     top_p: model.top_p,
+    stream_options: { include_usage: true },
   };
 
   if (tools && tools.length > 0) {
@@ -154,10 +166,11 @@ interface SSEAccumulator {
   reasoningContent: string;
   toolCalls: Map<number, AccumulatedToolCall>;
   finishReason: string | null;
+  usage: TokenUsage | null;
 }
 
 function createAccumulator(): SSEAccumulator {
-  return { text: '', reasoningContent: '', toolCalls: new Map(), finishReason: null };
+  return { text: '', reasoningContent: '', toolCalls: new Map(), finishReason: null, usage: null };
 }
 
 function mergeDelta(acc: SSEAccumulator, delta: any): void {
@@ -215,6 +228,20 @@ async function consumeStream(stream: ReadableStream<Uint8Array>): Promise<SSEAcc
           const finishReason = parsed.choices?.[0]?.finish_reason;
           if (finishReason) acc.finishReason = finishReason;
           if (delta) mergeDelta(acc, delta);
+          if (parsed.usage) {
+            acc.usage = {
+              prompt_tokens: parsed.usage.prompt_tokens ?? parsed.usage.input_tokens ?? 0,
+              completion_tokens: parsed.usage.completion_tokens ?? parsed.usage.output_tokens ?? 0,
+              total_tokens: parsed.usage.total_tokens ?? 0,
+            };
+          }
+          if (parsed.usage) {
+            acc.usage = {
+              prompt_tokens: parsed.usage.prompt_tokens ?? parsed.usage.input_tokens ?? 0,
+              completion_tokens: parsed.usage.completion_tokens ?? parsed.usage.output_tokens ?? 0,
+              total_tokens: parsed.usage.total_tokens ?? 0,
+            };
+          }
         } catch {
           // ignore
         }
@@ -294,6 +321,17 @@ async function* parseTextStream(stream: ReadableStream<Uint8Array>): AsyncGenera
             accumulated += delta;
             yield { delta, accumulated };
           }
+          if (parsed.usage) {
+            yield {
+              delta: '',
+              accumulated,
+              usage: {
+                prompt_tokens: parsed.usage.prompt_tokens ?? parsed.usage.input_tokens ?? 0,
+                completion_tokens: parsed.usage.completion_tokens ?? parsed.usage.output_tokens ?? 0,
+                total_tokens: parsed.usage.total_tokens ?? 0,
+              },
+            };
+          }
         } catch {
           // ignore
         }
@@ -311,6 +349,17 @@ async function* parseTextStream(stream: ReadableStream<Uint8Array>): AsyncGenera
             if (typeof delta === 'string') {
               accumulated += delta;
               yield { delta, accumulated };
+            }
+            if (parsed.usage) {
+              yield {
+                delta: '',
+                accumulated,
+                usage: {
+                  prompt_tokens: parsed.usage.prompt_tokens ?? parsed.usage.input_tokens ?? 0,
+                  completion_tokens: parsed.usage.completion_tokens ?? parsed.usage.output_tokens ?? 0,
+                  total_tokens: parsed.usage.total_tokens ?? 0,
+                },
+              };
             }
           } catch {
             // ignore
@@ -368,6 +417,7 @@ export async function chatCompletion(params: ChatCompletionParams): Promise<Chat
         toolCalls,
         assistantMessage: acc.text,
         reasoningContent: acc.reasoningContent,
+        usage: acc.usage,
       };
     }
   }
@@ -380,8 +430,12 @@ export async function chatCompletion(params: ChatCompletionParams): Promise<Chat
       if (acc.text) {
         yield { delta: acc.text, accumulated: acc.text };
       }
+      if (acc.usage) {
+        yield { delta: '', accumulated: acc.text, usage: acc.usage };
+      }
     })(),
     reasoningContent: acc.reasoningContent,
+    usage: acc.usage,
   };
 }
 

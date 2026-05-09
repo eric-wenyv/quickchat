@@ -491,6 +491,8 @@ export default function App() {
       content,
       status: 'completed',
       token_count: null,
+      input_tokens: null,
+      output_tokens: null,
       model_id: null,
       created_at: now,
       updated_at: now,
@@ -505,6 +507,8 @@ export default function App() {
       reasoning_content: null,
       status: 'streaming',
       token_count: null,
+      input_tokens: null,
+      output_tokens: null,
       model_id: activeModelId,
       created_at: now + 1,
       updated_at: now + 1,
@@ -609,9 +613,13 @@ export default function App() {
 
       // 流式显示最终文本回复
       let accumulated = '';
+      let lastUsage: { prompt_tokens: number; completion_tokens: number; total_tokens: number } | null = null;
       for await (const chunk of result.stream) {
         accumulated = chunk.accumulated;
         pendingUpdatesRef.current[aiMsgId] = accumulated;
+        if (chunk.usage) {
+          lastUsage = chunk.usage;
+        }
 
         if (!rafRef.current) {
           rafRef.current = window.requestAnimationFrame(() => {
@@ -633,11 +641,17 @@ export default function App() {
 
       // 流式完成，更新最终状态
       clearPendingAssistantUpdate();
+      const tokenCount = lastUsage?.total_tokens ?? result.usage?.total_tokens ?? null;
+      const inputTokens = lastUsage?.prompt_tokens ?? result.usage?.prompt_tokens ?? null;
+      const outputTokens = lastUsage?.completion_tokens ?? result.usage?.completion_tokens ?? null;
       const finalMsg: Message = {
         ...aiMsg,
         content: accumulated,
         reasoning_content: result.reasoningContent,
         status: 'completed',
+        token_count: tokenCount,
+        input_tokens: inputTokens,
+        output_tokens: outputTokens,
         updated_at: Date.now(),
       };
       setMessages(prev => prev.map(msg => msg.id === aiMsgId ? finalMsg : msg));
@@ -645,6 +659,9 @@ export default function App() {
         content: accumulated,
         reasoning_content: result.reasoningContent,
         status: 'completed',
+        token_count: tokenCount,
+        input_tokens: inputTokens,
+        output_tokens: outputTokens,
       });
 
       // 更新会话列表

@@ -78,8 +78,12 @@ export interface Message {
   reasoning_content?: string | null;
   /** 消息状态 */
   status: MessageStatus;
-  /** Token 用量（仅 assistant 消息有值） */
+  /** Token 用量（仅 assistant 消息有值，总 token 数） */
   token_count: number | null;
+  /** 输入 Token 用量（prompt tokens） */
+  input_tokens: number | null;
+  /** 输出 Token 用量（completion tokens） */
+  output_tokens: number | null;
   /** 模型标识（仅 assistant 消息有值），记录实际使用的模型 */
   model_id: string | null;
   /** 创建时间 (ms) */
@@ -171,6 +175,8 @@ export interface SaveMessagePayload {
   reasoning_content?: string | null;
   status: MessageStatus;
   token_count: number | null;
+  input_tokens: number | null;
+  output_tokens: number | null;
   model_id: string | null;
   created_at: EpochMillis;
 }
@@ -181,6 +187,8 @@ export interface UpdateMessagePayload {
   reasoning_content?: string | null;
   status?: MessageStatus;
   token_count?: number | null;
+  input_tokens?: number | null;
+  output_tokens?: number | null;
   updated_at: EpochMillis;
 }
 

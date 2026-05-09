@@ -102,7 +102,10 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({ message, onDelete }) => {
             <MessageMeta 
               createdAt={message.created_at} 
               tokenCount={message.token_count} 
-              modelId={message.model_id} 
+              inputTokens={message.input_tokens}
+              outputTokens={message.output_tokens}
+              modelId={message.model_id}
+              role={message.role}
             />
           </div>
         </div>

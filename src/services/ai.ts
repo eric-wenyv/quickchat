@@ -483,3 +483,77 @@ export async function streamTextCompletion(
 
   return parseTextStream(response.body);
 }
+
+// ---------------------------------------------------------------------------
+// 对话标题生成（后台静默调用）
+// ---------------------------------------------------------------------------
+
+export async function generateConversationTitle(
+  messages: { role: string; content: string }[],
+  openrouterModel: ModelConfig
+): Promise<string | null> {
+  const endpoint = getApiEndpoint(openrouterModel);
+  const url = `${endpoint.replace(/\/$/, '')}/chat/completions`;
+  const headers = buildHeaders(openrouterModel);
+
+  const promptMessages: ChatMessage[] = [
+    {
+      role: 'system',
+      content:
+        '你是一个对话标题生成助手。请根据对话内容生成一个简洁的中文标题（不超过15个字）。只输出标题文本，不要加引号，不要有任何解释。',
+    },
+    ...messages
+      .filter((m) => m.role === 'user' || m.role === 'assistant')
+      .slice(-6)
+      .map((m) => ({
+        role: m.role as 'user' | 'assistant',
+        content: m.content.slice(0, 500),
+      })),
+    {
+      role: 'user',
+      content: '请为以上对话生成一个简洁的中文标题（不超过15个字）：',
+    },
+  ];
+
+  const body = {
+    model: 'openai/gpt-oss-120b:free',
+    messages: promptMessages,
+    stream: false,
+    temperature: 0.5,
+    max_tokens: 30,
+  };
+
+  const response = await fetch(url, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify(body),
+  });
+
+  if (!response.ok) {
+    let errorText = '';
+    try {
+      const errorJson = await response.json();
+      errorText = errorJson.error?.message || JSON.stringify(errorJson);
+    } catch {
+      errorText = await response.text();
+    }
+    throw new Error(`API 请求失败 (${response.status}): ${errorText || response.statusText}`);
+  }
+
+  const data = await response.json();
+
+  const title =
+    data.choices?.[0]?.message?.content?.trim() ||
+    data.choices?.[0]?.text?.trim() ||
+    '';
+
+  if (!title) return null;
+
+  return (
+    title
+      .replace(/^["'\u201c\u2018]+|["'\u201d\u2019]+$/g, '')
+      .replace(/\n+/g, ' ')
+      .trim()
+      .slice(0, 20) || null
+  );
+}

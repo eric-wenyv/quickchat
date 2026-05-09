@@ -21,7 +21,7 @@ import {
   saveSystemPrompt,
   deleteSystemPrompt,
 } from "./services/db";
-import { chatCompletion, WEB_SEARCH_TOOL } from "./services/ai";
+import { chatCompletion, WEB_SEARCH_TOOL, generateConversationTitle } from "./services/ai";
 import type { ChatMessage, ChatContentPart } from "./services/ai";
 import { searchWeb, formatSearchResults, getSearchApiKey, setSearchApiKey } from "./services/search";
 import type {
@@ -670,6 +670,32 @@ export default function App() {
           ? { ...c, last_message_preview: accumulated.slice(0, 120), last_message_at: Date.now(), message_count: c.message_count + 1 }
           : c
       ).sort((a, b) => b.last_message_at - a.last_message_at));
+
+      // 静默生成/更新对话标题（后台执行，失败不提示）
+      (async () => {
+        try {
+          const openrouterModel = models.find(m => m.provider === 'openrouter');
+          if (!openrouterModel?.api_key) return;
+
+          const titleMessages = [...messages, userMsg, finalMsg].map(m => ({
+            role: m.role,
+            content: m.content,
+          }));
+
+          const newTitle = await generateConversationTitle(titleMessages, openrouterModel);
+          if (newTitle && newTitle !== activeConversation?.title) {
+            await dbUpdateConversation(convId, { title: newTitle });
+            setConversations(prev => prev.map(c =>
+              c.id === convId ? { ...c, title: newTitle } : c
+            ));
+            if (activeConversation?.id === convId) {
+              setActiveConversation(prev => prev ? { ...prev, title: newTitle } : prev);
+            }
+          }
+        } catch {
+          // 标题生成失败，静默忽略
+        }
+      })();
 
     } catch (e: any) {
       console.error(e);

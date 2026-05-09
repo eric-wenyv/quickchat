@@ -1,4 +1,5 @@
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useCallback, useEffect, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { PrismLight as SyntaxHighlighter } from 'react-syntax-highlighter';
@@ -242,69 +243,132 @@ const CodeBlock: React.FC<{ code: string; language: string }> = ({
 };
 
 // ------------------------------------------------------------------
-// Markdown 自定义渲染组件
+// 链接预览悬浮框
 // ------------------------------------------------------------------
-const markdownComponents: Components = {
-  pre({ children }) {
-    // 阻止 react-markdown 再包一层 <pre>，由 CodeBlock 自行控制
-    return <>{children}</>;
-  },
-
-  code({ className, children, ...props }) {
-    const match = /language-(\w+)/.exec(className || '');
-    const language = match ? match[1] : '';
-    const code = String(children).replace(/\n$/, '');
-
-    if (match) {
-      return <CodeBlock code={code} language={language} />;
+const LinkPreviewModal: React.FC<{
+  url: string;
+  onClose: () => void;
+}> = ({ url, onClose }) => {
+  const [loading, setLoading] = useState(true);
+  const domain = useMemo(() => {
+    try {
+      return new URL(url).hostname;
+    } catch {
+      return url;
     }
+  }, [url]);
 
-    // 行内代码
-    return (
-      <code
-        className={`${className || ''} text-ink-400 bg-sand-300/50 dark:bg-sand-400/50 px-1.5 py-0.5 rounded-md font-medium text-[0.875em]`}
-        {...props}
+  // ESC 关闭
+  useEffect(() => {
+    const handleEsc = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    document.addEventListener('keydown', handleEsc);
+    return () => document.removeEventListener('keydown', handleEsc);
+  }, [onClose]);
+
+  const handleOpenExternal = async () => {
+    try {
+      const { openUrl } = await import('@tauri-apps/plugin-opener');
+      await openUrl(url);
+    } catch {
+      window.open(url, '_blank');
+    }
+  };
+
+  return (
+    <div
+      className="fixed inset-0 z-[200] flex items-center justify-center bg-black/40 backdrop-blur-sm animate-in fade-in duration-150"
+      onClick={onClose}
+    >
+      <div
+        className="relative flex flex-col w-[90vw] h-[88vh] max-w-6xl bg-white dark:bg-sand-200 rounded-2xl shadow-2xl border border-sand-400/60 overflow-hidden animate-in zoom-in-95 duration-150"
+        onClick={(e) => e.stopPropagation()}
       >
-        {children}
-      </code>
-    );
-  },
+        {/* Header */}
+        <div className="flex items-center justify-between px-4 py-3 border-b border-sand-400/60 bg-sand-100 dark:bg-sand-300 flex-shrink-0">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <svg
+              className="w-4 h-4 text-ink-200 flex-shrink-0"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+              strokeWidth={2}
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m-9 9a9 9 0 019-9"
+              />
+            </svg>
+            <span className="text-sm text-ink-300 font-medium truncate">
+              {domain}
+            </span>
+          </div>
+          <div className="flex items-center gap-1 flex-shrink-0">
+            <button
+              onClick={handleOpenExternal}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-ink-200 hover:text-ink-400 hover:bg-sand-300 dark:hover:bg-sand-400 transition-colors"
+              title="在浏览器中打开"
+            >
+              <svg
+                className="w-3.5 h-3.5"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+                strokeWidth={2}
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"
+                />
+              </svg>
+              外部打开
+            </button>
+            <button
+              onClick={onClose}
+              className="p-1.5 rounded-lg text-ink-200 hover:text-ink-400 hover:bg-sand-300 dark:hover:bg-sand-400 transition-colors"
+              title="关闭"
+            >
+              <svg
+                className="w-4 h-4"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+                strokeWidth={2}
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  d="M6 18L18 6M6 6l12 12"
+                />
+              </svg>
+            </button>
+          </div>
+        </div>
 
-  table({ children }) {
-    return (
-      <div className="overflow-x-auto my-4 rounded-xl border border-sand-400">
-        <table className="w-full text-sm text-left border-collapse">
-          {children}
-        </table>
+        {/* Body */}
+        <div className="flex-1 relative bg-white">
+          {loading && (
+            <div className="absolute inset-0 flex items-center justify-center bg-sand-100/60 z-10">
+              <div className="flex items-center gap-3">
+                <div className="w-5 h-5 border-2 border-sand-400 border-t-ink-400 rounded-full animate-spin" />
+                <span className="text-sm text-ink-200">正在加载网页...</span>
+              </div>
+            </div>
+          )}
+          <iframe
+            src={url}
+            className="w-full h-full border-0"
+            sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
+            onLoad={() => setLoading(false)}
+            title={domain}
+          />
+        </div>
       </div>
-    );
-  },
-
-  thead({ children }) {
-    return (
-      <thead className="bg-sand-200 dark:bg-sand-300 text-ink-400 font-semibold">
-        {children}
-      </thead>
-    );
-  },
-
-  tr({ children }) {
-    return (
-      <tr className="border-b border-sand-400 last:border-b-0 hover:bg-sand-200/50 dark:hover:bg-sand-300/50 transition-colors">
-        {children}
-      </tr>
-    );
-  },
-
-  th({ children }) {
-    return (
-      <th className="px-4 py-3 text-ink-400 font-semibold">{children}</th>
-    );
-  },
-
-  td({ children }) {
-    return <td className="px-4 py-3 text-ink-300">{children}</td>;
-  },
+    </div>
+  );
 };
 
 // ------------------------------------------------------------------
@@ -312,6 +376,99 @@ const markdownComponents: Components = {
 // ------------------------------------------------------------------
 const MessageContent: React.FC<MessageContentProps> = ({ content, status }) => {
   const isThinking = content.trim() === '' && status === 'streaming';
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+
+  const markdownComponents = useMemo<Components>(
+    () => ({
+      pre({ children }) {
+        return <>{children}</>;
+      },
+
+      code({ className, children, ...props }) {
+        const match = /language-(\w+)/.exec(className || '');
+        const language = match ? match[1] : '';
+        const code = String(children).replace(/\n$/, '');
+
+        if (match) {
+          return <CodeBlock code={code} language={language} />;
+        }
+
+        return (
+          <code
+            className={`${className || ''} text-ink-400 bg-sand-300/50 dark:bg-sand-400/50 px-1.5 py-0.5 rounded-md font-medium text-[0.875em]`}
+            {...props}
+          >
+            {children}
+          </code>
+        );
+      },
+
+      a({ href, children, ...props }) {
+        const isExternal =
+          href &&
+          (href.startsWith('http://') || href.startsWith('https://'));
+
+        if (!isExternal) {
+          return (
+            <a href={href} {...props}>
+              {children}
+            </a>
+          );
+        }
+
+        return (
+          <a
+            href={href}
+            {...props}
+            onClick={(e) => {
+              e.preventDefault();
+              setPreviewUrl(href);
+            }}
+            className="cursor-pointer"
+          >
+            {children}
+          </a>
+        );
+      },
+
+      table({ children }) {
+        return (
+          <div className="overflow-x-auto my-4 rounded-xl border border-sand-400">
+            <table className="w-full text-sm text-left border-collapse">
+              {children}
+            </table>
+          </div>
+        );
+      },
+
+      thead({ children }) {
+        return (
+          <thead className="bg-sand-200 dark:bg-sand-300 text-ink-400 font-semibold">
+            {children}
+          </thead>
+        );
+      },
+
+      tr({ children }) {
+        return (
+          <tr className="border-b border-sand-400 last:border-b-0 hover:bg-sand-200/50 dark:hover:bg-sand-300/50 transition-colors">
+            {children}
+          </tr>
+        );
+      },
+
+      th({ children }) {
+        return (
+          <th className="px-4 py-3 text-ink-400 font-semibold">{children}</th>
+        );
+      },
+
+      td({ children }) {
+        return <td className="px-4 py-3 text-ink-300">{children}</td>;
+      },
+    }),
+    []
+  );
 
   return (
     <div className="w-full text-ink-300 selection:bg-sand-400/50 selection:text-ink-400">
@@ -366,6 +523,15 @@ const MessageContent: React.FC<MessageContentProps> = ({ content, status }) => {
           />
         )}
       </article>
+
+      {previewUrl &&
+        createPortal(
+          <LinkPreviewModal
+            url={previewUrl}
+            onClose={() => setPreviewUrl(null)}
+          />,
+          document.body
+        )}
     </div>
   );
 };

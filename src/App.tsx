@@ -148,12 +148,14 @@ export default function App() {
         await seedDefaultModels();
       }
 
-      // 恢复上次活跃会话
+      // 恢复上次活跃会话，失效时 fallback 到最新会话
       const lastActiveId = localStorage.getItem("quick_chat_last_active_conv");
       if (lastActiveId) {
         const target = convs.find(c => c.id === lastActiveId);
         if (target) {
           await handleSelectConversation(target.id);
+        } else if (convs.length > 0) {
+          await handleSelectConversation(convs[0].id);
         }
       } else if (convs.length > 0) {
         await handleSelectConversation(convs[0].id);
@@ -744,18 +746,17 @@ export default function App() {
     }
   };
 
-  // --- 自动创建空对话（就绪后且无任何会话时）---
+  // --- 自动创建空对话（就绪后且无活跃会话时）---
   const didAutoCreateRef = useRef(false);
   useEffect(() => {
     if (didAutoCreateRef.current) return;
     if (!dbReady) return;
     if (!activeModelId) return;
     if (activeConversation) return;
-    if (conversations.length > 0) return;
 
     didAutoCreateRef.current = true;
     handleCreateConversation();
-  }, [dbReady, activeModelId, activeConversation, conversations]);
+  }, [dbReady, activeModelId, activeConversation]);
 
   // --- 未就绪遮罩 ---
   if (!dbReady) {

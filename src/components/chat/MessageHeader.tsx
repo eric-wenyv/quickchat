@@ -2,8 +2,15 @@ import React, { useState, useEffect, useRef } from 'react';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import type { Conversation, SystemPrompt, UUID } from '@/types/types';
 
+interface TokenStats {
+  totalTokens: number;
+  totalInput: number;
+  totalOutput: number;
+}
+
 interface MessageHeaderProps {
   conversation: Conversation;
+  tokenStats: TokenStats;
   onRename: (newTitle: string) => void;
   onUpdateSystemPrompt: (prompt: string | null) => void;
   savedPrompts: SystemPrompt[];
@@ -34,6 +41,7 @@ function generateDefaultTitle(existingTitles: string[]): string {
  */
 export const MessageHeader: React.FC<MessageHeaderProps> = ({
   conversation,
+  tokenStats,
   onRename,
   onUpdateSystemPrompt,
   savedPrompts,
@@ -173,19 +181,40 @@ export const MessageHeader: React.FC<MessageHeaderProps> = ({
               {conversation.title || '新对话'}
             </h1>
           )}
-          <div className="flex items-center gap-1.5">
-            <span className="relative flex h-2 w-2">
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-              <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
-            </span>
-            <span className="text-[10px] font-bold text-ink-200 uppercase tracking-[0.1em] font-mono">
-              {conversation.model_id}
-            </span>
+          <div className="flex items-center gap-2">
             {conversation.system_prompt && (
               <span className="text-[9px] bg-sand-300 dark:bg-sand-400 text-ink-200 px-1.5 py-0.5 rounded-md font-medium">
                 系统提示词
               </span>
             )}
+            <div className="flex items-center gap-1.5 text-[10px] font-medium text-ink-200/90">
+              {tokenStats.totalInput > 0 && (
+                <span className="flex items-center gap-0.5" title="累计输入 Token">
+                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M12 19V5"/><path d="M5 12l7-7 7 7"/>
+                  </svg>
+                  {tokenStats.totalInput.toLocaleString()}
+                </span>
+              )}
+              {tokenStats.totalOutput > 0 && (
+                <span className="flex items-center gap-0.5" title="累计输出 Token">
+                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M12 5v14"/><path d="M5 12l7 7 7-7"/>
+                  </svg>
+                  {tokenStats.totalOutput.toLocaleString()}
+                </span>
+              )}
+              {tokenStats.totalTokens > 0 && (
+                <span className="text-ink-200/70" title="累计总 Token">
+                  ∑ {tokenStats.totalTokens.toLocaleString()}
+                </span>
+              )}
+              {tokenStats.totalTokens === 0 && (
+                <span className="text-[10px] font-bold text-ink-200 uppercase tracking-[0.1em] font-mono">
+                  {conversation.model_id}
+                </span>
+              )}
+            </div>
           </div>
         </div>
 

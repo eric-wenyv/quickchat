@@ -259,6 +259,13 @@ async function consumeStream(stream: ReadableStream<Uint8Array>): Promise<SSEAcc
             const finishReason = parsed.choices?.[0]?.finish_reason;
             if (finishReason) acc.finishReason = finishReason;
             if (delta) mergeDelta(acc, delta);
+            if (parsed.usage) {
+              acc.usage = {
+                prompt_tokens: parsed.usage.prompt_tokens ?? parsed.usage.input_tokens ?? 0,
+                completion_tokens: parsed.usage.completion_tokens ?? parsed.usage.output_tokens ?? 0,
+                total_tokens: parsed.usage.total_tokens ?? 0,
+              };
+            }
           } catch {
             // ignore
           }

@@ -1,6 +1,12 @@
 import React, { useState, useMemo, useRef } from 'react';
 import type { Conversation, Message, ModelConfig, SystemPrompt, UUID } from '@/types/types';
 import { MessageHeader } from './MessageHeader';
+
+interface TokenStats {
+  totalTokens: number;
+  totalInput: number;
+  totalOutput: number;
+}
 import MessageList, { type MessageListHandle } from './MessageList';
 import { EmptyState } from './EmptyState';
 import { ChatInputFooter } from './ChatInputFooter';
@@ -100,6 +106,19 @@ export const MainChatArea: React.FC<MainChatAreaProps> = ({
 
   const showNavPanel = userMessages.length >= 2;
 
+  // ── 当前对话累计 Token 统计 ──
+  const tokenStats: TokenStats = useMemo(() => {
+    let totalTokens = 0;
+    let totalInput = 0;
+    let totalOutput = 0;
+    for (const msg of messages) {
+      if (msg.token_count != null) totalTokens += msg.token_count;
+      if (msg.input_tokens != null) totalInput += msg.input_tokens;
+      if (msg.output_tokens != null) totalOutput += msg.output_tokens;
+    }
+    return { totalTokens, totalInput, totalOutput };
+  }, [messages]);
+
   const handleNavClick = (userIdx: number) => {
     let userCount = 0;
     let globalIdx = -1;
@@ -132,6 +151,7 @@ export const MainChatArea: React.FC<MainChatAreaProps> = ({
           {/* 顶部导航与状态栏 */}
           <MessageHeader
             conversation={conversation}
+            tokenStats={tokenStats}
             onRename={(newTitle) => onRenameConversation(conversation.id, newTitle)}
             onUpdateSystemPrompt={onUpdateSystemPrompt}
             savedPrompts={systemPrompts}

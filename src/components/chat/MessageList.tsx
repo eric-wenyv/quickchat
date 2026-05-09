@@ -1,6 +1,6 @@
 import { useRef, useEffect, useState, useCallback, forwardRef, useImperativeHandle } from 'react';
 import type { Message } from '@/types/types';
-import { useAutoScroll } from '@/hooks/useAutoScroll';
+import { useChatScroll } from '@/hooks/useChatScroll';
 import MessageBubble from './MessageBubble';
 
 interface MessageListProps {
@@ -10,10 +10,12 @@ interface MessageListProps {
   isLoadingMore: boolean;
   onDeleteMessage?: (id: string) => void;
   onActiveIndexChange?: (index: number) => void;
+  onScrollStateChange?: (state: { isNearBottom: boolean; isAutoScrollEnabled: boolean }) => void;
 }
 
 export interface MessageListHandle {
   scrollToMessage: (index: number) => void;
+  enableAutoScroll: () => void;
 }
 
 /**
@@ -22,23 +24,33 @@ export interface MessageListHandle {
  * 职责：负责渲染消息流主体、管理消息到达时的自动滚动、以及向上滚动的流式分页加载。
  */
 const MessageList = forwardRef<MessageListHandle, MessageListProps>(
-  ({ messages, onLoadMore, hasMore, isLoadingMore, onDeleteMessage, onActiveIndexChange }, ref) => {
-    const scrollRef = useAutoScroll([messages]);
+  ({ messages, onLoadMore, hasMore, isLoadingMore, onDeleteMessage, onActiveIndexChange, onScrollStateChange }, ref) => {
+    const {
+      scrollRef,
+      isAutoScrollEnabled,
+      isNearBottom,
+      enableAutoScroll,
+      scrollToMessage,
+    } = useChatScroll({ messages });
     const loadMoreRef = useRef<HTMLDivElement>(null);
     const messageRefs = useRef<(HTMLDivElement | null)[]>([]);
     const [activeIndex, setActiveIndex] = useState(0);
     const rafRef = useRef<number | null>(null);
 
-    // 暴露 scrollToMessage 给父组件
+    // 暴露 scrollToMessage 和 enableAutoScroll 给父组件
     useImperativeHandle(ref, () => ({
       scrollToMessage: (index: number) => {
-        const el = messageRefs.current[index];
-        const container = scrollRef.current;
-        if (!el || !container) return;
-        const targetTop = el.offsetTop - 24;
-        container.scrollTo({ top: Math.max(0, targetTop), behavior: 'smooth' });
+        scrollToMessage(index);
+      },
+      enableAutoScroll: () => {
+        enableAutoScroll();
       },
     }));
+
+    // 通知父组件滚动状态变化
+    useEffect(() => {
+      onScrollStateChange?.({ isNearBottom, isAutoScrollEnabled });
+    }, [isNearBottom, isAutoScrollEnabled, onScrollStateChange]);
 
     // 通知父组件活跃索引变化
     useEffect(() => {
@@ -143,6 +155,7 @@ const MessageList = forwardRef<MessageListHandle, MessageListProps>(
             {messages.map((message, index) => (
               <div
                 key={message.id}
+                data-message-index={index}
                 ref={(el) => {
                   messageRefs.current[index] = el;
                 }}

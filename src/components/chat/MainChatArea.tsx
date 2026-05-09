@@ -95,6 +95,9 @@ export const MainChatArea: React.FC<MainChatAreaProps> = ({
   const [isNavHovered, setIsNavHovered] = useState(false);
   const [activeMessageIndex, setActiveMessageIndex] = useState(0);
 
+  // ── 滚动状态 ──
+  const [scrollState, setScrollState] = useState({ isNearBottom: true, isAutoScrollEnabled: false });
+
   const userMessages = useMemo(
     () => messages.filter((m) => m.role === 'user'),
     [messages]
@@ -239,7 +242,31 @@ export const MainChatArea: React.FC<MainChatAreaProps> = ({
                     isLoadingMore={isLoadingMore}
                     onDeleteMessage={onDeleteMessage}
                     onActiveIndexChange={setActiveMessageIndex}
+                    onScrollStateChange={setScrollState}
                   />
+
+                  {/* 固定跳转至底部按钮（不随消息列表滚动） */}
+                  {!scrollState.isNearBottom && (
+                    <button
+                      onClick={() => messageListRef.current?.enableAutoScroll()}
+                      className={`absolute bottom-6 right-6 z-30 flex items-center justify-center w-10 h-10 rounded-full shadow-panel backdrop-blur-xl border transition-all duration-300 animate-in fade-in zoom-in-95 cursor-pointer ${
+                        scrollState.isAutoScrollEnabled
+                          ? 'bg-blue-500/90 text-white border-blue-400/60'
+                          : 'bg-white/90 dark:bg-sand-200/90 text-ink-300 border-sand-400/40 hover:bg-sand-100 dark:hover:bg-sand-300'
+                      }`}
+                      title={scrollState.isAutoScrollEnabled ? '已开启自动追踪底部' : '跳转至最底部'}
+                    >
+                      <svg
+                        className={`w-4 h-4 transition-transform duration-300 ${scrollState.isAutoScrollEnabled ? 'animate-bounce' : ''}`}
+                        fill="none"
+                        viewBox="0 0 24 24"
+                        stroke="currentColor"
+                        strokeWidth={2}
+                      >
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M19 14l-7 7m0 0l-7-7m7 7V3" />
+                      </svg>
+                    </button>
+                  )}
                 </div>
 
                 {/* 输入框区域 */}

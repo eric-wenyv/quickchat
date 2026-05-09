@@ -143,7 +143,7 @@ async fn search_web(query: String, api_key: String) -> Result<Value, String> {
 // ---------------------------------------------------------------------------
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
-pub fn run() {
+pub fn run() { 
     tauri::Builder::default()
         // ── Intercept close request: hide to tray instead of quitting ───────
         .on_window_event(|window, event| {

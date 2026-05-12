@@ -1,66 +1,65 @@
 import React, { useState, useRef, useEffect } from 'react';
 
-export interface AgentTab {
-  id: string;
-  url: string;
-  title: string;
-}
-
 interface AgentBrowserProps {
-  tabs: AgentTab[];
-  activeTabId: string;
-  onUrlChange: (tabId: string, newUrl: string) => void;
-  onTitleChange: (tabId: string, title: string) => void;
-  onCloseTab: (tabId: string) => void;
-  onSwitchTab: (tabId: string) => void;
-  onAddTab: (url: string) => void;
+  url: string;
+  isSidebarOpen: boolean;
+  onToggleSidebar: () => void;
+  onUrlChange: (newUrl: string) => void;
+  onTitleChange: (title: string) => void;
   onExitAgentMode: () => void;
+  onNewChat?: () => void;
 }
 
 export const AgentBrowser: React.FC<AgentBrowserProps> = ({
-  tabs,
-  activeTabId,
+  url,
+  isSidebarOpen,
+  onToggleSidebar,
   onUrlChange,
   onTitleChange,
-  onCloseTab,
-  onSwitchTab,
-  onAddTab,
   onExitAgentMode,
+  onNewChat,
 }) => {
-  const activeTab = tabs.find((t) => t.id === activeTabId);
-  const [inputUrl, setInputUrl] = useState(activeTab?.url || '');
+  const [inputUrl, setInputUrl] = useState(url || '');
   const [isLoading, setIsLoading] = useState(false);
   const iframeRef = useRef<HTMLIFrameElement>(null);
+  const onNewChatRef = useRef(onNewChat);
+  onNewChatRef.current = onNewChat;
 
-  // 当切换标签时，同步地址栏
+  // 当外部 url 变化时，同步地址栏
   useEffect(() => {
-    if (activeTab) {
-      setInputUrl(activeTab.url);
-    }
-  }, [activeTabId, activeTab?.url]);
+    setInputUrl(url);
+  }, [url]);
+
+  // 监听 iframe 发送的 postMessage，支持 Agent 网页请求新建对话
+  useEffect(() => {
+    const handleMessage = (e: MessageEvent) => {
+      // 允许来自当前加载 url 同域或可信来源的消息
+      const data = e.data;
+      if (
+        data?.type === 'new-chat' ||
+        data?.type === 'new_chat' ||
+        data?.action === 'new-chat'
+      ) {
+        onNewChatRef.current?.();
+      }
+    };
+    window.addEventListener('message', handleMessage);
+    return () => window.removeEventListener('message', handleMessage);
+  }, []);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    let url = inputUrl.trim();
-    if (!url) return;
+    let finalUrl = inputUrl.trim();
+    if (!finalUrl) return;
 
     // 自动补全协议
-    if (!url.startsWith('http://') && !url.startsWith('https://')) {
-      url = 'http://' + url;
-      setInputUrl(url);
+    if (!finalUrl.startsWith('http://') && !finalUrl.startsWith('https://')) {
+      finalUrl = 'http://' + finalUrl;
+      setInputUrl(finalUrl);
     }
 
-    if (activeTab) {
-      onUrlChange(activeTab.id, url);
-      setIsLoading(true);
-    }
-  };
-
-  const handleRefresh = () => {
-    if (iframeRef.current && activeTab) {
-      setIsLoading(true);
-      iframeRef.current.src = activeTab.url;
-    }
+    onUrlChange(finalUrl);
+    setIsLoading(true);
   };
 
   const handleIframeLoad = () => {
@@ -68,43 +67,43 @@ export const AgentBrowser: React.FC<AgentBrowserProps> = ({
     // 尝试获取 iframe 标题（跨域可能失败，静默处理）
     try {
       if (iframeRef.current?.contentDocument?.title) {
-        onTitleChange(activeTabId, iframeRef.current.contentDocument.title);
+        const title = iframeRef.current.contentDocument.title;
+        onTitleChange(title);
       }
     } catch {
       // 跨域限制，忽略
     }
   };
 
-  const handleAddNewTab = () => {
-    const url = window.prompt('请输入 Agent 服务地址：', 'http://127.0.0.1:5494');
-    if (url?.trim()) {
-      let finalUrl = url.trim();
+  const handleChangeUrl = () => {
+    const newUrl = window.prompt('请输入 Agent 服务地址：', url || 'http://127.0.0.1:5494');
+    if (newUrl?.trim()) {
+      let finalUrl = newUrl.trim();
       if (!finalUrl.startsWith('http://') && !finalUrl.startsWith('https://')) {
         finalUrl = 'http://' + finalUrl;
       }
-      onAddTab(finalUrl);
+      onUrlChange(finalUrl);
+      setInputUrl(finalUrl);
+      setIsLoading(true);
     }
   };
 
   return (
-    <div className="flex flex-col h-full w-full bg-white">
-      {/* 工具栏 */}
-      <div className="flex items-center gap-2 px-3 py-2 bg-sand-200 border-b border-sand-400 flex-shrink-0">
-        {/* 导航按钮 */}
-        <div className="flex items-center gap-1">
+    <div className="flex flex-col h-full w-full bg-sand-100">
+      {/* 工具栏 — 悬浮样式，与顶部留出间隙 */}
+      <div className="flex items-center gap-2 mx-3 mt-3 mb-2 px-3 py-2 bg-sand-200 rounded-xl border border-sand-400/60 shadow-md flex-shrink-0">
+        {/* 展开侧边栏按钮（替代原刷新按钮位置） */}
+        {!isSidebarOpen && (
           <button
-            onClick={handleRefresh}
+            onClick={onToggleSidebar}
             className="p-1.5 rounded-lg text-ink-200 hover:text-ink-400 hover:bg-sand-300/50 transition-all cursor-pointer"
-            title="刷新"
+            title="展开侧边栏"
           >
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
-              <path d="M3 3v5h5" />
-              <path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16" />
-              <path d="M16 21h5v-5" />
+              <path d="M13 5l7 7-7 7M5 5l7 7-7 7" />
             </svg>
           </button>
-        </div>
+        )}
 
         {/* 地址栏 */}
         <form onSubmit={handleSubmit} className="flex-1 flex items-center gap-2">
@@ -130,11 +129,11 @@ export const AgentBrowser: React.FC<AgentBrowserProps> = ({
           </button>
         </form>
 
-        {/* 新建标签 */}
+        {/* 切换地址 */}
         <button
-          onClick={handleAddNewTab}
+          onClick={handleChangeUrl}
           className="p-1.5 rounded-lg text-ink-200 hover:text-ink-400 hover:bg-sand-300/50 transition-all cursor-pointer"
-          title="新建标签"
+          title="切换地址"
         >
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <path d="M12 5v14" />
@@ -155,51 +154,17 @@ export const AgentBrowser: React.FC<AgentBrowserProps> = ({
         </button>
       </div>
 
-      {/* 标签栏 */}
-      <div className="flex items-center gap-0 bg-sand-200 border-b border-sand-400 overflow-x-auto flex-shrink-0 custom-scrollbar">
-        {tabs.map((tab) => (
-          <div
-            key={tab.id}
-            onClick={() => onSwitchTab(tab.id)}
-            className={`flex items-center gap-1.5 px-3 py-1.5 text-xs cursor-pointer border-r border-sand-400/40 transition-all min-w-[120px] max-w-[200px] flex-shrink-0 ${
-              tab.id === activeTabId
-                ? 'bg-white text-ink-400 font-semibold'
-                : 'bg-sand-200/60 text-ink-200 hover:bg-sand-300/50'
-            }`}
-          >
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="flex-shrink-0">
-              <rect x="2" y="3" width="20" height="14" rx="2" ry="2" />
-              <line x1="8" y1="21" x2="16" y2="21" />
-              <line x1="12" y1="17" x2="12" y2="21" />
-            </svg>
-            <span className="truncate flex-1">{tab.title || tab.url}</span>
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                onCloseTab(tab.id);
-              }}
-              className="flex-shrink-0 p-0.5 rounded hover:bg-sand-400/50 text-ink-100 hover:text-ink-400 transition-all"
-            >
-              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M18 6 6 18" />
-                <path d="m6 6 12 12" />
-              </svg>
-            </button>
-          </div>
-        ))}
-      </div>
-
       {/* iframe 区域 */}
-      <div className="flex-1 relative bg-white overflow-hidden">
-        {activeTab ? (
+      <div className="flex-1 relative bg-white overflow-hidden mx-3 mb-3 rounded-xl border border-sand-400/40 shadow-sm">
+        {url ? (
           <iframe
             ref={iframeRef}
-            key={activeTab.id + activeTab.url} // 强制重新加载当 URL 改变时
-            src={activeTab.url}
-            className="w-full h-full border-0"
+            key={url} // 强制重新加载当 URL 改变时
+            src={url}
+            className="w-full h-full border-0 rounded-xl"
             sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
             onLoad={handleIframeLoad}
-            title={activeTab.title || activeTab.url}
+            title={url}
           />
         ) : (
           <div className="flex items-center justify-center h-full text-ink-200">
@@ -209,9 +174,9 @@ export const AgentBrowser: React.FC<AgentBrowserProps> = ({
                 <line x1="8" y1="21" x2="16" y2="21" />
                 <line x1="12" y1="17" x2="12" y2="21" />
               </svg>
-              <p className="text-sm">暂无 Agent 标签页</p>
+              <p className="text-sm">暂无 Agent 地址</p>
               <button
-                onClick={handleAddNewTab}
+                onClick={handleChangeUrl}
                 className="px-4 py-2 text-xs font-semibold text-white bg-ink-400 hover:bg-ink-300 rounded-xl transition-colors cursor-pointer"
               >
                 添加 Agent 地址

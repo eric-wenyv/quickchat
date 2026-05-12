@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import Sidebar from '../sidebar/Sidebar';
 import { MainChatArea } from '../chat/MainChatArea';
 import AgentBrowser from '../agent/AgentBrowser';
+import { listen } from '@tauri-apps/api/event';
 import type {
   ConversationSummary,
   Conversation,
@@ -10,7 +11,6 @@ import type {
   SystemPrompt,
   UUID,
 } from '@/types/types';
-import type { AgentTab } from '../agent/AgentBrowser';
 
 interface AppLayoutProps {
   // --- 主题 ---
@@ -72,14 +72,10 @@ interface AppLayoutProps {
   onDeleteMessage: (id: UUID) => void;
   // --- Agent 浏览器 ---
   agentMode: boolean;
-  agentTabs: AgentTab[];
-  activeAgentTabId: string | null;
+  agentUrl: string;
   onOpenAgentBrowser: () => void;
-  onCloseAgentTab: (tabId: string) => void;
-  onSwitchAgentTab: (tabId: string) => void;
-  onAgentUrlChange: (tabId: string, newUrl: string) => void;
-  onAgentTitleChange: (tabId: string, title: string) => void;
-  onAddAgentTab: (url: string) => void;
+  onAgentUrlChange: (newUrl: string) => void;
+  onAgentTitleChange: (title: string) => void;
   onExitAgentMode: () => void;
 }
 
@@ -127,14 +123,10 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
   onDeleteMessage,
   // Agent 浏览器
   agentMode,
-  agentTabs,
-  activeAgentTabId,
+  agentUrl,
   onOpenAgentBrowser,
-  onCloseAgentTab,
-  onSwitchAgentTab,
   onAgentUrlChange,
   onAgentTitleChange,
-  onAddAgentTab,
   onExitAgentMode,
 }) => {
   // 内部维护侧边栏开关状态，确保布局灵活性
@@ -193,8 +185,30 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
     window.addEventListener('mouseup', handleMouseUp);
   }, [sidebarWidth]);
 
-  // 全局快捷键：Ctrl+Shift+S 切换侧边栏，Ctrl+Shift+N 新建对话
+  // 使用 ref 保存最新回调，避免闭包问题导致监听 stale handler
+  const onCreateConversationRef = useRef(onCreateConversation);
+  onCreateConversationRef.current = onCreateConversation;
+
+  // 快捷键监听：Tauri 全局快捷键（可穿透 iframe）+ window fallback（主文档焦点时）
   useEffect(() => {
+    let unlistenToggle: (() => void) | undefined;
+    let unlistenNew: (() => void) | undefined;
+    let cancelled = false;
+
+    (async () => {
+      try {
+        unlistenToggle = await listen('shortcut-toggle-sidebar', () => {
+          if (!cancelled) setIsSidebarOpen(prev => !prev);
+        });
+        unlistenNew = await listen('shortcut-new-conversation', () => {
+          if (!cancelled) onCreateConversationRef.current();
+        });
+      } catch (e) {
+        console.warn('Tauri 全局快捷键监听未就绪:', e);
+      }
+    })();
+
+    // Fallback：当焦点在主文档时，仍可通过常规键盘事件响应
     const handleKeyDown = (e: KeyboardEvent) => {
       if (!e.ctrlKey || !e.shiftKey) return;
       const key = e.key.toLowerCase();
@@ -203,12 +217,18 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
         setIsSidebarOpen(prev => !prev);
       } else if (key === 'n') {
         e.preventDefault();
-        onCreateConversation();
+        onCreateConversationRef.current();
       }
     };
     window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [onCreateConversation]);
+
+    return () => {
+      cancelled = true;
+      unlistenToggle?.();
+      unlistenNew?.();
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, []); // 空依赖：只注册一次，回调通过 ref 保持最新
 
   return (
     <div className="flex h-screen w-screen bg-sand-100 text-ink-300 font-sans overflow-hidden selection:bg-sand-300/60 selection:text-ink-400 antialiased">
@@ -220,8 +240,8 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
       <aside
         ref={asideRef}
         className={`
-          relative flex-shrink-0 h-full border-r border-sand-400 transition-[width] duration-500 ease-out z-20 overflow-hidden
-          ${isSidebarOpen ? '' : 'w-0 pointer-events-none'}
+          relative flex-shrink-0 h-full transition-[width] duration-500 ease-out z-20 overflow-hidden
+          ${isSidebarOpen ? 'border-r border-sand-400' : 'w-0 min-w-0 pointer-events-none border-r-0'}
         `}
         style={{ width: isSidebarOpen ? sidebarWidth : 0 }}
       >
@@ -255,16 +275,16 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
         右侧主对话区区域 (C-1): 应用核心交互平面
         利用 flex-1 中自适应剩余空间。
       */}
-      <main className={`flex-1 min-w-0 h-full relative z-10 flex flex-col shadow-[inset_1px_0_0_rgba(255,255,255,0.4)] dark:shadow-[inset_1px_0_0_rgba(255,255,255,0.06)] transition-[padding] duration-500 ease-out ${!isSidebarOpen ? 'pl-10' : ''}`}>
+      <main className="flex-1 min-w-0 h-full relative z-10 flex flex-col shadow-[inset_1px_0_0_rgba(255,255,255,0.4)] dark:shadow-[inset_1px_0_0_rgba(255,255,255,0.06)]">
         
-        {/* 侧边栏唤醒触发器: 采用磨砂玻璃质感，仅在侧边栏关闭时漂浮显示 */}
-        {!isSidebarOpen && (
+        {/* 侧边栏唤醒触发器: 普通模式下在左侧浮动，Agent 模式下由 AgentBrowser 内部接管 */}
+        {!isSidebarOpen && !agentMode && (
           <button
             onClick={() => setIsSidebarOpen(true)}
-            className="absolute top-4 left-4 z-50 p-2.5 rounded-2xl bg-white/40 dark:bg-sand-100/60 border border-sand-400/40 backdrop-blur-xl shadow-panel text-ink-200 hover:text-ink-400 hover:bg-white/60 dark:hover:bg-sand-100/80 transition-all active:scale-90 group"
+            className="absolute top-16 left-3 z-50 p-2 rounded-xl bg-white/80 dark:bg-sand-200/80 border border-sand-400/60 backdrop-blur-xl shadow-lg text-ink-200 hover:text-ink-400 hover:bg-white dark:hover:bg-sand-300 transition-all active:scale-90 group"
             title="展开侧边栏"
           >
-            <svg className="w-5 h-5 transition-transform group-hover:translate-x-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <svg className="w-4 h-4 transition-transform group-hover:translate-x-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M13 5l7 7-7 7M5 5l7 7-7 7" />
             </svg>
           </button>
@@ -276,14 +296,13 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
         */}
         {agentMode ? (
           <AgentBrowser
-            tabs={agentTabs}
-            activeTabId={activeAgentTabId || ''}
+            url={agentUrl}
+            isSidebarOpen={isSidebarOpen}
+            onToggleSidebar={() => setIsSidebarOpen(true)}
             onUrlChange={onAgentUrlChange}
             onTitleChange={onAgentTitleChange}
-            onCloseTab={onCloseAgentTab}
-            onSwitchTab={onSwitchAgentTab}
-            onAddTab={onAddAgentTab}
             onExitAgentMode={onExitAgentMode}
+            onNewChat={onCreateConversation}
           />
         ) : (
           <MainChatArea

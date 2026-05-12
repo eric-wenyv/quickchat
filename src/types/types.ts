@@ -36,6 +36,8 @@ export interface ConversationSummary {
   last_message_preview: string;
   /** 会话内消息总数 */
   message_count: number;
+  /** 关联的 Agent 地址（若存在则点击会进入 Agent 浏览器） */
+  agent_url?: string | null;
 }
 
 /** 会话完整对象 — 进入会话详情时加载 */
@@ -48,6 +50,8 @@ export interface Conversation {
   system_prompt: string | null;
   created_at: EpochMillis;
   updated_at: EpochMillis;
+  /** 关联的 Agent 地址（若存在则点击会进入 Agent 浏览器） */
+  agent_url?: string | null;
 }
 
 // ---------------------------------------------------------------------------

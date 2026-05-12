@@ -65,9 +65,18 @@ const ConversationItem: React.FC<ConversationItemProps> = ({
       >
         {/* 第一行：标题与时间 */}
         <div className="flex items-center justify-between gap-2 overflow-hidden">
-          <h3 className={`text-sm font-semibold truncate flex-1 ${isActive ? 'text-ink-400' : 'text-ink-300'}`}>
-            {conversation.title || '新对话'}
-          </h3>
+          <div className="flex items-center gap-1.5 min-w-0 flex-1">
+            {conversation.agent_url && (
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={`shrink-0 ${isActive ? 'text-ink-400' : 'text-ink-200'}`}>
+                <rect x="2" y="3" width="20" height="14" rx="2" ry="2" />
+                <line x1="8" y1="21" x2="16" y2="21" />
+                <line x1="12" y1="17" x2="12" y2="21" />
+              </svg>
+            )}
+            <h3 className={`text-sm font-semibold truncate ${isActive ? 'text-ink-400' : 'text-ink-300'}`}>
+              {conversation.title || '新对话'}
+            </h3>
+          </div>
           <RelativeTime 
             timestamp={conversation.last_message_at} 
             className={`shrink-0 text-[10px] ${isActive ? 'text-ink-200' : 'text-ink-100 group-hover:text-ink-200'}`}

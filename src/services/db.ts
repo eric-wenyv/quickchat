@@ -68,6 +68,7 @@ export async function initDatabase(): Promise<void> {
     );
   `);
   await ensureMessageColumns(db);
+  await ensureConversationColumns(db);
   await db.execute(`
     CREATE INDEX IF NOT EXISTS idx_messages_conversation_time
       ON messages(conversation_id, created_at ASC);
@@ -169,6 +170,21 @@ async function ensureMessageColumns(db: Database): Promise<void> {
     }
   } catch (e) {
     console.error('[DB] ensureMessageColumns failed:', e);
+  }
+}
+
+async function ensureConversationColumns(db: Database): Promise<void> {
+  try {
+    const columns = await db.select<{ name: string }[]>('PRAGMA table_info(conversations);');
+    const colNames = new Set(columns.map((c: any) => c.name));
+    console.log('[DB] conversations table columns:', Array.from(colNames));
+
+    if (!colNames.has('agent_url')) {
+      await db.execute('ALTER TABLE conversations ADD COLUMN agent_url TEXT DEFAULT NULL;');
+      console.log('[DB] Added column: agent_url');
+    }
+  } catch (e) {
+    console.error('[DB] ensureConversationColumns failed:', e);
   }
 }
 
@@ -331,8 +347,8 @@ export async function deleteModelConfig(id: UUID): Promise<void> {
 export async function createConversation(conv: Conversation): Promise<void> {
   const db = await getDb();
   await db.execute(
-    'INSERT INTO conversations (id, title, model_id, system_prompt, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)',
-    [conv.id, conv.title, conv.model_id, conv.system_prompt, conv.created_at, conv.updated_at]
+    'INSERT INTO conversations (id, title, model_id, system_prompt, agent_url, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
+    [conv.id, conv.title, conv.model_id, conv.system_prompt, conv.agent_url ?? null, conv.created_at, conv.updated_at]
   );
 }
 
@@ -344,7 +360,7 @@ export async function getConversation(id: UUID): Promise<Conversation | null> {
 
 export async function updateConversation(
   id: UUID,
-  updates: Partial<Pick<Conversation, 'title' | 'model_id' | 'system_prompt' | 'updated_at'>>
+  updates: Partial<Pick<Conversation, 'title' | 'model_id' | 'system_prompt' | 'agent_url' | 'updated_at'>>
 ): Promise<void> {
   const db = await getDb();
   const sets: string[] = [];
@@ -353,6 +369,7 @@ export async function updateConversation(
   if (updates.title !== undefined) { sets.push('title = ?'); vals.push(updates.title); }
   if (updates.model_id !== undefined) { sets.push('model_id = ?'); vals.push(updates.model_id); }
   if (updates.system_prompt !== undefined) { sets.push('system_prompt = ?'); vals.push(updates.system_prompt); }
+  if (updates.agent_url !== undefined) { sets.push('agent_url = ?'); vals.push(updates.agent_url); }
   sets.push('updated_at = ?');
   vals.push(updates.updated_at ?? Date.now());
   vals.push(id);
@@ -374,11 +391,13 @@ export async function getConversations(limit = 100, offset = 0): Promise<Convers
     last_message_at: number | null;
     last_message_preview: string | null;
     message_count: number;
+    agent_url: string | null;
   }[]>(
     `SELECT
       c.id,
       c.title,
       c.created_at,
+      c.agent_url,
       COALESCE(last_msg.created_at, c.created_at) AS last_message_at,
       COALESCE(SUBSTR(last_msg.content, 1, 120), '') AS last_message_preview,
       COALESCE(msg_count.cnt, 0) AS message_count
@@ -403,6 +422,7 @@ export async function getConversations(limit = 100, offset = 0): Promise<Convers
     last_message_at: r.last_message_at ?? r.created_at,
     last_message_preview: r.last_message_preview ?? '',
     message_count: r.message_count,
+    agent_url: r.agent_url,
   }));
 }
 

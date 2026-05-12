@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useMemo } from "react";
+import React, { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import AppLayout from "./components/layout/AppLayout";
 import { useTheme } from "./hooks/useTheme";
 import ModelSettings from "./components/settings/ModelSettings";
@@ -32,7 +32,7 @@ import type {
   SystemPrompt,
   UUID,
 } from "./types/types";
-import type { AgentTab } from "./components/agent/AgentBrowser";
+
 import "./App.css";
 
 // -----------------------------------------------------------------------------
@@ -93,8 +93,7 @@ export default function App() {
   const [toast, setToast] = useState<{ id: number, title: string, desc?: string, type: "error" | "success" } | null>(null);
 
   // --- Agent 浏览器状态 ---
-  const [agentTabs, setAgentTabs] = useState<AgentTab[]>([]);
-  const [activeAgentTabId, setActiveAgentTabId] = useState<string | null>(null);
+  const [agentUrl, setAgentUrl] = useState('');
   const [agentMode, setAgentMode] = useState(false);
 
   const pendingUpdatesRef = useRef<Record<UUID, string>>({});
@@ -108,50 +107,56 @@ export default function App() {
       if (!finalUrl.startsWith('http://') && !finalUrl.startsWith('https://')) {
         finalUrl = 'http://' + finalUrl;
       }
-      const newTab: AgentTab = {
+
+      // 创建带 agent_url 的新会话并选中
+      const now = Date.now();
+      const newConv: Conversation = {
         id: crypto.randomUUID(),
-        url: finalUrl,
         title: finalUrl,
+        model_id: activeModelId,
+        system_prompt: null,
+        created_at: now,
+        updated_at: now,
+        agent_url: finalUrl,
       };
-      setAgentTabs(prev => [...prev, newTab]);
-      setActiveAgentTabId(newTab.id);
-      setAgentMode(true);
+
+      createConversation(newConv)
+        .then(() => {
+          setConversations(prev => [{
+            id: newConv.id,
+            title: newConv.title,
+            created_at: newConv.created_at,
+            last_message_at: now,
+            last_message_preview: '',
+            message_count: 0,
+            agent_url: finalUrl,
+          }, ...prev]);
+          return handleSelectConversation(newConv.id);
+        })
+        .catch((e) => {
+          console.error('创建 Agent 会话失败:', e);
+          showToast('创建失败', String(e));
+        });
     }
   };
 
-  const handleCloseAgentTab = (tabId: string) => {
-    setAgentTabs(prev => {
-      const filtered = prev.filter(t => t.id !== tabId);
-      if (filtered.length === 0) {
-        setAgentMode(false);
-        setActiveAgentTabId(null);
-      } else if (activeAgentTabId === tabId) {
-        setActiveAgentTabId(filtered[filtered.length - 1].id);
+  const handleAgentUrlChange = async (newUrl: string) => {
+    setAgentUrl(newUrl);
+    if (activeConversation) {
+      try {
+        await dbUpdateConversation(activeConversation.id, { agent_url: newUrl });
+        setActiveConversation(prev => prev ? { ...prev, agent_url: newUrl } : prev);
+        setConversations(prev => prev.map(c =>
+          c.id === activeConversation.id ? { ...c, agent_url: newUrl } : c
+        ));
+      } catch (e) {
+        console.error('更新 Agent URL 失败:', e);
       }
-      return filtered;
-    });
+    }
   };
 
-  const handleSwitchAgentTab = (tabId: string) => {
-    setActiveAgentTabId(tabId);
-  };
-
-  const handleAgentUrlChange = (tabId: string, newUrl: string) => {
-    setAgentTabs(prev => prev.map(t => t.id === tabId ? { ...t, url: newUrl } : t));
-  };
-
-  const handleAgentTitleChange = (tabId: string, title: string) => {
-    setAgentTabs(prev => prev.map(t => t.id === tabId ? { ...t, title } : t));
-  };
-
-  const handleAddAgentTab = (url: string) => {
-    const newTab: AgentTab = {
-      id: crypto.randomUUID(),
-      url,
-      title: url,
-    };
-    setAgentTabs(prev => [...prev, newTab]);
-    setActiveAgentTabId(newTab.id);
+  const handleAgentTitleChange = (_title: string) => {
+    // 标题变更由对话本身维护
   };
 
   const handleExitAgentMode = () => {
@@ -309,6 +314,13 @@ export default function App() {
 
       if (convDetail) {
         setActiveConversation(convDetail);
+        // 若会话绑定了 Agent 地址，自动进入 Agent 模式
+        if (convDetail.agent_url) {
+          setAgentUrl(convDetail.agent_url);
+          setAgentMode(true);
+        } else {
+          setAgentMode(false);
+        }
       } else {
         // 会话可能不存在，从列表找摘要信息
         const convs = await getConversations(100, 0);
@@ -322,7 +334,14 @@ export default function App() {
             system_prompt: null,
             created_at: s.created_at,
             updated_at: s.last_message_at,
+            agent_url: s.agent_url ?? null,
           });
+          if (s.agent_url) {
+            setAgentUrl(s.agent_url);
+            setAgentMode(true);
+          } else {
+            setAgentMode(false);
+          }
         }
       }
       setMessages(convMessages);
@@ -334,25 +353,35 @@ export default function App() {
     }
   };
 
-  const handleCreateConversation = async () => {
-    if (!activeModelId) {
+  const handleCreateConversation = useCallback(async () => {
+    let modelId = activeModelId;
+    // 如果 activeModelId 为空但已有模型配置，自动 fallback 到第一个可用模型
+    if (!modelId && models.length > 0) {
+      const fallback = models.find(m => m.is_default) || models[0];
+      modelId = fallback.id;
+      setActiveModelId(modelId);
+    }
+    if (!modelId) {
       showToast('无法创建', '请先配置 AI 模型');
       return;
     }
-    if (activeConversation && messages.length === 0) return;
+    // 在 Agent 模式下允许创建新对话（退出 Agent 模式），避免空对话拦截导致按钮无响应
+    if (activeConversation && messages.length === 0 && !agentMode) return;
 
     const now = Date.now();
     const newConv: Conversation = {
       id: crypto.randomUUID(),
       title: "New Chat",
-      model_id: activeModelId,
+      model_id: modelId,
       system_prompt: null,
       created_at: now,
       updated_at: now,
+      agent_url: null,
     };
     setActiveConversation(newConv);
     setMessages([]);
-  };
+    setAgentMode(false);
+  }, [activeModelId, models, activeConversation, messages, agentMode]);
 
   const handleDeleteConversation = async (id: UUID) => {
     try {
@@ -366,6 +395,7 @@ export default function App() {
           localStorage.removeItem("quick_chat_last_active_conv");
           setActiveConversation(null);
           setMessages([]);
+          setAgentMode(false);
         }
       }
       showToast('已删除', '对话已移除', 'success');
@@ -785,7 +815,8 @@ export default function App() {
       await saveModelConfig(config);
       const refreshed = await getModelConfigs();
       setModels(refreshed);
-      if (config.is_default) {
+      // 若是默认模型，或当前没有任何选中模型，则自动选中
+      if (config.is_default || !activeModelId) {
         setActiveModelId(config.id);
       }
       showToast('已保存', '模型配置已更新', 'success');
@@ -821,6 +852,14 @@ export default function App() {
     didAutoCreateRef.current = true;
     handleCreateConversation();
   }, [dbReady, activeModelId, activeConversation]);
+
+  // --- 模型自动恢复：若已加载模型但 activeModelId 为空，自动选中第一个 ---
+  useEffect(() => {
+    if (models.length > 0 && !activeModelId) {
+      const def = models.find(m => m.is_default) || models[0];
+      setActiveModelId(def.id);
+    }
+  }, [models, activeModelId]);
 
   // --- 未就绪遮罩 ---
   if (!dbReady) {
@@ -889,14 +928,10 @@ export default function App() {
         onDeleteMessage={handleDeleteMessage}
         // Agent 浏览器
         agentMode={agentMode}
-        agentTabs={agentTabs}
-        activeAgentTabId={activeAgentTabId}
+        agentUrl={agentUrl}
         onOpenAgentBrowser={handleOpenAgentBrowser}
-        onCloseAgentTab={handleCloseAgentTab}
-        onSwitchAgentTab={handleSwitchAgentTab}
         onAgentUrlChange={handleAgentUrlChange}
         onAgentTitleChange={handleAgentTitleChange}
-        onAddAgentTab={handleAddAgentTab}
         onExitAgentMode={handleExitAgentMode}
       />
     </ErrorBoundary>

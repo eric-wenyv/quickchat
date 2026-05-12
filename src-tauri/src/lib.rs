@@ -8,7 +8,7 @@
 //   - System tray integration (close → hide to tray, keep running in background)
 
 use serde_json::Value;
-use tauri::Manager;
+use tauri::{Emitter, Manager};
 use tauri_plugin_global_shortcut::{Code, Modifiers, ShortcutState};
 
 // ---------------------------------------------------------------------------
@@ -170,14 +170,19 @@ pub fn run() {
 
                 app.handle().plugin(
                     ShortcutBuilder::new()
-                        .with_shortcuts(["alt+space"])
-                        .expect("failed to register Alt+Space shortcut")
+                        .with_shortcuts(["alt+space", "ctrl+shift+s", "ctrl+shift+n"])
+                        .expect("failed to register global shortcuts")
                         .with_handler(|app, shortcut, event| {
                             // Act only on key-down to prevent double-firing.
-                            if event.state == ShortcutState::Pressed
-                                && shortcut.matches(Modifiers::ALT, Code::Space)
-                            {
+                            if event.state != ShortcutState::Pressed {
+                                return;
+                            }
+                            if shortcut.matches(Modifiers::ALT, Code::Space) {
                                 toggle_window_focus(app);
+                            } else if shortcut.matches(Modifiers::CONTROL | Modifiers::SHIFT, Code::KeyS) {
+                                let _ = app.emit("shortcut-toggle-sidebar", ());
+                            } else if shortcut.matches(Modifiers::CONTROL | Modifiers::SHIFT, Code::KeyN) {
+                                let _ = app.emit("shortcut-new-conversation", ());
                             }
                         })
                         .build(),

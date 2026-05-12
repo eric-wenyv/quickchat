@@ -185,15 +185,16 @@ export const MainChatArea: React.FC<MainChatAreaProps> = ({
                   {/* ── 右侧中间固定导航条（DeepSeek 风格）── */}
                   {showNavPanel && (
                     <div
-                      className="absolute right-5 top-1/2 -translate-y-1/2 z-20 flex flex-col items-center py-3 transition-all duration-200 overflow-hidden"
+                      className="absolute right-5 top-1/2 -translate-y-1/2 z-20 flex flex-col items-center py-3 overflow-hidden"
                       style={{
                         width: isNavHovered ? 192 : 20,
-                        backgroundColor: isNavHovered ? 'rgba(var(--sand-200-rgb), 0.9)' : 'transparent',
+                        backgroundColor: isNavHovered ? 'rgba(21, 22, 24, 0.95)' : 'transparent',
                         backdropFilter: isNavHovered ? 'blur(12px)' : 'none',
                         borderRadius: isNavHovered ? '12px 0 0 12px' : '0',
-                        border: isNavHovered ? '1px solid rgba(var(--sand-400-rgb), 0.4)' : 'none',
+                        border: isNavHovered ? '1px solid rgba(255,255,255,0.06)' : 'none',
                         borderRight: 'none',
-                        boxShadow: isNavHovered ? '0 4px 20px rgba(0,0,0,0.08)' : 'none',
+                        boxShadow: isNavHovered ? '0 4px 20px rgba(0,0,0,0.25)' : 'none',
+                        transition: 'all 0.25s var(--ease-snappy)',
                       }}
                       onMouseEnter={() => setIsNavHovered(true)}
                       onMouseLeave={() => setIsNavHovered(false)}
@@ -209,21 +210,26 @@ export const MainChatArea: React.FC<MainChatAreaProps> = ({
                             <button
                               key={msg.id}
                               onClick={() => handleNavClick(idx)}
-                              className="w-full flex items-center gap-2 px-2 py-1.5 transition-colors cursor-pointer"
+                              className="group w-full flex items-center gap-2 px-2 py-1.5 rounded-md cursor-pointer"
                               title={isNavHovered ? undefined : msg.content.slice(0, 100)}
                             >
                               {/* 短横线标记 */}
                               <div
-                                className={`h-px shrink-0 transition-all ${
-                                  isActive
+                                className={`h-[2px] shrink-0 rounded-full transition-all ${isActive
                                     ? 'bg-linear-accent'
-                                    : 'bg-linear-border hover:bg-linear-text-muted'
-                                }`}
-                                style={{ width: isNavHovered ? 16 : 12 }}
+                                    : 'bg-linear-border'
+                                  }`}
+                                style={{
+                                  width: isNavHovered ? 16 : 12,
+                                  transition: 'width 0.2s var(--ease-snappy), background-color 0.15s var(--ease-snappy)',
+                                }}
                               />
                               {/* 悬浮后显示的文字 */}
                               {isNavHovered && (
-                                <span className="text-xs text-linear-text-secondary truncate flex-1 text-left">
+                                <span className={`text-xs truncate flex-1 text-left transition-colors duration-150 ${isActive
+                                    ? 'text-linear-accent font-medium'
+                                    : 'text-linear-text-secondary group-hover:text-linear-text-primary'
+                                  }`}>
                                   {preview || '[空消息]'}
                                 </span>
                               )}
@@ -249,11 +255,10 @@ export const MainChatArea: React.FC<MainChatAreaProps> = ({
                   {!scrollState.isNearBottom && (
                     <button
                       onClick={() => messageListRef.current?.enableAutoScroll()}
-                      className={`absolute bottom-6 right-6 z-30 flex items-center justify-center w-10 h-10 rounded-full backdrop-blur-xl border transition-all duration-300 animate-in fade-in zoom-in-95 cursor-pointer ${
-                        scrollState.isAutoScrollEnabled
+                      className={`absolute bottom-6 right-6 z-30 flex items-center justify-center w-10 h-10 rounded-full backdrop-blur-xl border transition-all duration-300 animate-in fade-in zoom-in-95 cursor-pointer ${scrollState.isAutoScrollEnabled
                           ? 'bg-linear-accent text-white border-linear-accent'
                           : 'bg-linear-bg-elevated text-linear-text-secondary border-linear-border hover:bg-linear-surface'
-                      }`}
+                        }`}
                       title={scrollState.isAutoScrollEnabled ? '已开启自动追踪底部' : '跳转至最底部'}
                     >
                       <svg

@@ -19,14 +19,15 @@ const SendButton: React.FC<SendButtonProps> = ({ onClick, disabled }) => {
       onClick={onClick}
       disabled={disabled}
       className={`
-        relative flex items-center justify-center
-        w-7 h-7 rounded-full transition-all duration-200 ease-out
+        relative flex items-center justify-center overflow-hidden
+        w-7 h-7 rounded-full transition-all
         ${
           disabled
-            ? 'bg-transparent text-linear-text-muted cursor-not-allowed border border-linear-border'
-            : 'bg-linear-accent text-white border border-linear-accent hover:bg-linear-accent-hover active:scale-90 shadow-none'
+            ? 'bg-transparent text-linear-text-muted cursor-not-allowed border border-linear-border scale-95'
+            : 'bg-linear-accent text-white border border-linear-accent hover:bg-linear-accent-hover active:scale-90 shadow-none scale-100'
         }
       `}
+      style={{ transitionTimingFunction: 'var(--ease-snappy)', transitionDuration: '0.25s' }}
       aria-label="Send message"
     >
       <svg

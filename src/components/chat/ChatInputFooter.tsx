@@ -61,7 +61,10 @@ export const ChatInputFooter: React.FC<ChatInputFooterProps> = ({
   return (
     <footer className="w-full px-4 pt-2 pb-4 bg-linear-bg">
       <div className="max-w-3xl mx-auto">
-        <div className="relative group transition-all duration-300 ease-in-out bg-linear-bg-elevated border border-linear-border-hover rounded-lg hover:border-linear-border focus-within:border-linear-border-hover">
+        <div
+          className="relative group bg-linear-bg-elevated border border-linear-border-hover rounded-lg hover:border-linear-border focus-within:border-linear-accent/40 focus-within:shadow-[0_0_0_1px_rgba(107,124,237,0.15)]"
+          style={{ transition: 'border-color 0.1s var(--ease-snappy), box-shadow 0.1s var(--ease-snappy)' }}
+        >
           {/* 图片预览区 */}
           {pendingImages.length > 0 && (
             <div className="flex gap-2 px-4 pt-3 pb-1 overflow-x-auto scrollbar-hide">
@@ -109,7 +112,7 @@ export const ChatInputFooter: React.FC<ChatInputFooterProps> = ({
               />
               <div className="h-4 w-[1px] bg-linear-border mx-1" />
               <div className="flex items-center gap-1 px-2 py-1 rounded-md bg-linear-surface text-[10px] font-medium text-linear-text-tertiary uppercase tracking-tighter">
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" style={{ animation: 'status-breathe 3.5s ease-in-out infinite' }} />
                 Ready
               </div>
             </div>

@@ -2,52 +2,44 @@ import React, { useState, useCallback, useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { PrismLight as SyntaxHighlighter } from 'react-syntax-highlighter';
-import tsx from 'react-syntax-highlighter/dist/esm/languages/prism/tsx';
-import typescript from 'react-syntax-highlighter/dist/esm/languages/prism/typescript';
-import javascript from 'react-syntax-highlighter/dist/esm/languages/prism/javascript';
-import json from 'react-syntax-highlighter/dist/esm/languages/prism/json';
-import bash from 'react-syntax-highlighter/dist/esm/languages/prism/bash';
-import python from 'react-syntax-highlighter/dist/esm/languages/prism/python';
-import java from 'react-syntax-highlighter/dist/esm/languages/prism/java';
-import rust from 'react-syntax-highlighter/dist/esm/languages/prism/rust';
-import go from 'react-syntax-highlighter/dist/esm/languages/prism/go';
-import sql from 'react-syntax-highlighter/dist/esm/languages/prism/sql';
-import yaml from 'react-syntax-highlighter/dist/esm/languages/prism/yaml';
-import markdown from 'react-syntax-highlighter/dist/esm/languages/prism/markdown';
-import markup from 'react-syntax-highlighter/dist/esm/languages/prism/markup';
-import css from 'react-syntax-highlighter/dist/esm/languages/prism/css';
-import oneDark from 'react-syntax-highlighter/dist/esm/styles/prism/one-dark';
-import oneLight from 'react-syntax-highlighter/dist/esm/styles/prism/one-light';
+import remarkMath from 'remark-math';
+import rehypeKatex from 'rehype-katex';
+import remarkBreaks from 'remark-breaks';
+import { codeToHtml } from 'shiki';
 import type { Components } from 'react-markdown';
 import type { MessageStatus } from '@/types/types';
-
-SyntaxHighlighter.registerLanguage('tsx', tsx);
-SyntaxHighlighter.registerLanguage('typescript', typescript);
-SyntaxHighlighter.registerLanguage('javascript', javascript);
-SyntaxHighlighter.registerLanguage('js', javascript);
-SyntaxHighlighter.registerLanguage('json', json);
-SyntaxHighlighter.registerLanguage('bash', bash);
-SyntaxHighlighter.registerLanguage('shell', bash);
-SyntaxHighlighter.registerLanguage('sh', bash);
-SyntaxHighlighter.registerLanguage('python', python);
-SyntaxHighlighter.registerLanguage('py', python);
-SyntaxHighlighter.registerLanguage('java', java);
-SyntaxHighlighter.registerLanguage('rust', rust);
-SyntaxHighlighter.registerLanguage('rs', rust);
-SyntaxHighlighter.registerLanguage('go', go);
-SyntaxHighlighter.registerLanguage('sql', sql);
-SyntaxHighlighter.registerLanguage('yaml', yaml);
-SyntaxHighlighter.registerLanguage('yml', yaml);
-SyntaxHighlighter.registerLanguage('markdown', markdown);
-SyntaxHighlighter.registerLanguage('md', markdown);
-SyntaxHighlighter.registerLanguage('html', markup);
-SyntaxHighlighter.registerLanguage('xml', markup);
-SyntaxHighlighter.registerLanguage('css', css);
 
 interface MessageContentProps {
   content: string;
   status: MessageStatus;
+}
+
+/**
+ * 为流式 Markdown 做语法补全，防止未闭合标签导致整页结构闪烁/跳动。
+ * 目前主要处理未闭合的代码块（```），在内存中临时补全闭合符号。
+ */
+function normalizeStreamingMarkdown(content: string): string {
+  const lines = content.split('\n');
+  let inCodeBlock = false;
+  let lastFence = '';
+
+  for (const line of lines) {
+    const match = line.match(/^(```+)(\w*)/);
+    if (match) {
+      inCodeBlock = !inCodeBlock;
+      if (inCodeBlock) {
+        lastFence = match[1];
+      } else {
+        lastFence = '';
+      }
+    }
+  }
+
+  if (inCodeBlock && lastFence) {
+    return content + '\n' + lastFence + '\n';
+  }
+
+  return content;
 }
 
 const isTreeDiagram = (code: string): boolean => {
@@ -110,102 +102,108 @@ const useCopy = (text: string) => {
   return { copied, copy };
 };
 
-const CodeBlock: React.FC<{ code: string; language: string }> = ({
-  code,
-  language,
-}) => {
-  const { copied, copy } = useCopy(code);
-  const [isDark, setIsDark] = useState(() =>
-    document.documentElement.classList.contains('dark')
-  );
+const CodeBlock: React.FC<{ code: string; language: string }> = React.memo(
+  ({ code, language }) => {
+    const { copied, copy } = useCopy(code);
+    const [html, setHtml] = useState('');
+    const [isDark, setIsDark] = useState(() =>
+      document.documentElement.classList.contains('dark')
+    );
 
-  useEffect(() => {
-    const observer = new MutationObserver(() => {
-      setIsDark(document.documentElement.classList.contains('dark'));
-    });
-    observer.observe(document.documentElement, {
-      attributes: true,
-      attributeFilter: ['class'],
-    });
-    return () => observer.disconnect();
-  }, []);
+    useEffect(() => {
+      const observer = new MutationObserver(() => {
+        setIsDark(document.documentElement.classList.contains('dark'));
+      });
+      observer.observe(document.documentElement, {
+        attributes: true,
+        attributeFilter: ['class'],
+      });
+      return () => observer.disconnect();
+    }, []);
 
-  const displayLang = language || 'text';
-  const isTree = isTreeDiagram(code);
+    useEffect(() => {
+      let cancelled = false;
+      const highlight = async () => {
+        try {
+          const result = await codeToHtml(code, {
+            lang: language || 'text',
+            theme: isDark ? 'github-dark-dimmed' : 'github-light',
+          });
+          if (!cancelled) setHtml(result);
+        } catch (e) {
+          console.warn('Shiki highlight failed:', e);
+        }
+      };
+      highlight();
+      return () => { cancelled = true; };
+    }, [code, language, isDark]);
 
-  return (
-    <div className="group relative rounded-lg overflow-hidden border border-linear-border my-4">
-      {/* Header */}
-      <div className="flex items-center justify-between px-4 py-2 bg-linear-surface border-b border-linear-border">
-        <div className="flex items-center gap-2">
-          <span className="text-xs font-medium text-linear-text-tertiary uppercase tracking-wider">
-            {displayLang}
-          </span>
-          {isTree && (
-            <span className="text-[10px] px-1.5 py-0.5 rounded bg-linear-accent/10 text-linear-accent font-medium">
-              tree
+    const displayLang = language || 'text';
+    const isTree = isTreeDiagram(code);
+
+    return (
+      <div className="group relative rounded-lg overflow-hidden border border-linear-border my-4">
+        {/* Header */}
+        <div className="flex items-center justify-between px-4 py-2 bg-linear-surface border-b border-linear-border">
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-medium text-linear-text-tertiary uppercase tracking-wider">
+              {displayLang}
             </span>
+            {isTree && (
+              <span className="text-[10px] px-1.5 py-0.5 rounded bg-linear-accent/10 text-linear-accent font-medium">
+                tree
+              </span>
+            )}
+          </div>
+          <button
+            onClick={copy}
+            className="flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium text-linear-text-tertiary hover:text-linear-text-secondary hover:bg-linear-surface-hover transition-colors opacity-0 group-hover:opacity-100 focus:opacity-100"
+            title="复制代码"
+          >
+            {copied ? (
+              <>
+                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                </svg>
+                <span>已复制</span>
+              </>
+            ) : (
+              <>
+                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                </svg>
+                <span>复制</span>
+              </>
+            )}
+          </button>
+        </div>
+
+        {/* Code Body */}
+        <div className="overflow-x-auto">
+          {isTree ? (
+            <pre className="p-4 bg-linear-bg-elevated text-linear-text-secondary whitespace-pre leading-relaxed text-sm font-mono">
+              {code.split('\n').map((line, i) => (
+                <div key={i}>
+                  <TreeLine line={line} />
+                </div>
+              ))}
+            </pre>
+          ) : html ? (
+            <div
+              className="shiki-code-block"
+              dangerouslySetInnerHTML={{ __html: html }}
+            />
+          ) : (
+            <pre className="p-4 text-linear-text-secondary whitespace-pre leading-relaxed text-sm font-mono">
+              {code}
+            </pre>
           )}
         </div>
-        <button
-          onClick={copy}
-          className="flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium text-linear-text-tertiary hover:text-linear-text-secondary hover:bg-linear-surface-hover transition-colors"
-          title="复制代码"
-        >
-          {copied ? (
-            <>
-              <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-              </svg>
-              <span>已复制</span>
-            </>
-          ) : (
-            <>
-              <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
-              </svg>
-              <span>复制</span>
-            </>
-          )}
-        </button>
       </div>
-
-      {/* Code Body */}
-      <div className="overflow-x-auto">
-        {isTree ? (
-          <pre className="p-4 bg-linear-bg-elevated text-linear-text-secondary whitespace-pre leading-relaxed text-sm font-mono">
-            {code.split('\n').map((line, i) => (
-              <div key={i}>
-                <TreeLine line={line} />
-              </div>
-            ))}
-          </pre>
-        ) : (
-          <SyntaxHighlighter
-            language={language || 'text'}
-            style={isDark ? oneDark : oneLight}
-            customStyle={{
-              margin: 0,
-              padding: '1rem',
-              background: 'transparent',
-              fontSize: '0.875rem',
-              lineHeight: '1.7',
-            }}
-            codeTagProps={{
-              style: {
-                fontFamily:
-                  'ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace',
-              },
-            }}
-            wrapLongLines={false}
-          >
-            {code}
-          </SyntaxHighlighter>
-        )}
-      </div>
-    </div>
-  );
-};
+    );
+  }
+);
+CodeBlock.displayName = 'CodeBlock';
 
 const LinkPreviewModal: React.FC<{
   url: string;
@@ -417,37 +415,37 @@ const MessageContent: React.FC<MessageContentProps> = ({ content, status }) => {
       >
         {isThinking ? (
           <div className="flex items-center gap-3 py-2 select-none">
-            <div className="flex items-center gap-1.5">
-              <span
-                className="w-2 h-2 rounded-full bg-linear-text-tertiary animate-bounce"
-                style={{ animationDuration: '0.6s', animationDelay: '0ms' }}
-              />
-              <span
-                className="w-2 h-2 rounded-full bg-linear-text-tertiary animate-bounce"
-                style={{ animationDuration: '0.6s', animationDelay: '0.15s' }}
-              />
-              <span
-                className="w-2 h-2 rounded-full bg-linear-text-tertiary animate-bounce"
-                style={{ animationDuration: '0.6s', animationDelay: '0.3s' }}
+            {/* Shimmer pill */}
+            <div className="relative overflow-hidden rounded-full px-3 py-1.5 bg-linear-surface border border-linear-border">
+              <span className="relative z-10 text-xs text-linear-text-tertiary font-medium tracking-wide">思考中...</span>
+              <div
+                className="absolute inset-0 z-0"
+                style={{
+                  background: 'linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.06) 50%, transparent 100%)',
+                  animation: 'shimmer 1.5s linear infinite',
+                }}
               />
             </div>
-            <span className="text-sm text-linear-text-tertiary font-medium">思考中...</span>
           </div>
         ) : (
-          <ReactMarkdown
-            remarkPlugins={[remarkGfm]}
-            components={markdownComponents}
-            urlTransform={(url) => {
-              if (url.startsWith('data:')) return url;
-              return url;
-            }}
-          >
-            {content}
-          </ReactMarkdown>
+          <div className="prose prose-invert">
+            <ReactMarkdown
+              remarkPlugins={[remarkGfm, remarkMath, remarkBreaks]}
+              rehypePlugins={[rehypeKatex]}
+              components={markdownComponents}
+              urlTransform={(url) => {
+                if (url.startsWith('data:')) return url;
+                return url;
+              }}
+            >
+              {normalizeStreamingMarkdown(content)}
+            </ReactMarkdown>
+          </div>
         )}
         {status === 'streaming' && !isThinking && (
           <span
-            className="inline-block w-[2px] h-[1.1em] ml-1 bg-linear-text-secondary animate-pulse rounded-full align-middle -translate-y-[1px]"
+            className="inline-block w-[2px] h-[1.1em] ml-1 bg-linear-accent rounded-sm align-middle -translate-y-[1px]"
+            style={{ animation: 'terminal-blink 1.2s ease-in-out infinite' }}
             aria-hidden="true"
           />
         )}

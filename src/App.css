@@ -33,8 +33,89 @@
   --color-accent-600: #5E6AD2;
 }
 
+:root {
+  /* Linear-style snappy easing: fast start, smooth damping end */
+  --ease-snappy: cubic-bezier(0.16, 1, 0.3, 1);
+}
+
 .dark {
   color-scheme: dark;
+}
+
+/* ── Keyframes ── */
+
+/* Shimmer sweep for AI thinking state */
+@keyframes shimmer {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(100%);
+  }
+}
+
+/* Terminal cursor blink: slow, deliberate breathing */
+@keyframes terminal-blink {
+  0%, 100% {
+    opacity: 0.25;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+/* Status indicator: ultra-slow subtle pulse */
+@keyframes status-breathe {
+  0%, 100% {
+    opacity: 0.6;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.15);
+  }
+}
+
+/* Dropdown / popover entrance: scale + translateY */
+@keyframes menu-enter {
+  0% {
+    opacity: 0;
+    transform: scale(0.95) translateY(5px);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+/* Message bubble entrance fade */
+@keyframes message-enter {
+  0% {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Shiki code block overrides - blend into Linear dark theme */
+.shiki-code-block pre {
+  margin: 0;
+  padding: 1rem;
+  font-size: 0.875rem;
+  line-height: 1.7;
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+}
+
+.shiki-code-block pre code {
+  font-family: inherit;
+}
+
+/* KaTeX overrides for dark theme harmony */
+.dark .katex {
+  color: #e8e8e8;
 }
 
 /* Custom Scrollbar - ultra minimal */

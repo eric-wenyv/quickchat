@@ -72,7 +72,11 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({ message, onDelete }) => {
       <div
         ref={bubbleRef}
         onContextMenu={handleContextMenu}
-        className="flex w-full group py-5 px-4 md:px-8 transition-colors duration-200 ease-in-out hover:bg-linear-surface/30"
+        className="flex w-full group py-5 px-4 md:px-8 hover:bg-linear-surface/30"
+        style={{
+          animation: 'message-enter 0.25s var(--ease-snappy) both',
+          transition: 'background-color 0.15s var(--ease-snappy)',
+        }}
       >
         {/* 左侧：头像 + 身份标识列 */}
         <div className="flex-shrink-0 mr-4">

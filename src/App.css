@@ -5,19 +5,20 @@
 
 @theme {
   /* Linear-style dark palette: extremely restrained, monochrome-first */
-  --color-linear-bg: #111111;
-  --color-linear-bg-elevated: #151618;
-  --color-linear-border: rgba(255, 255, 255, 0.06);
-  --color-linear-border-hover: rgba(255, 255, 255, 0.10);
-  --color-linear-text-primary: #F4F4F5;
-  --color-linear-text-secondary: #A1A1AA;
+  --color-linear-bg: #0E0F11; /* True Linear main background */
+  --color-linear-sidebar: #17181A; /* Sidebar background */
+  --color-linear-bg-elevated: #1C1E21; /* For inputs and popovers */
+  --color-linear-border: rgba(255, 255, 255, 0.08);
+  --color-linear-border-hover: rgba(255, 255, 255, 0.15);
+  --color-linear-text-primary: #F2F3F5;
+  --color-linear-text-secondary: #8A8D93;
   --color-linear-text-tertiary: #71717A;
   --color-linear-text-muted: #52525B;
-  --color-linear-text-body: #A1A1AA;
-  --color-linear-surface: rgba(255, 255, 255, 0.05);
+  --color-linear-text-body: #D1D5DB;
+  --color-linear-surface: rgba(255, 255, 255, 0.04);
   --color-linear-surface-hover: rgba(255, 255, 255, 0.08);
-  --color-linear-accent: #6B7CED;
-  --color-linear-accent-hover: #5E6AD2;
+  --color-linear-accent: #5E6AD2;
+  --color-linear-accent-hover: #6B7CED;
 
   /* Legacy sand/ink mappings kept for compatibility, but remapped to Linear dark */
   --color-sand-100: #111111;

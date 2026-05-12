@@ -72,7 +72,7 @@ const ThinkingLevelSelector: React.FC<ThinkingLevelSelectorProps> = ({
       </button>
 
       {isOpen && (
-        <div className="absolute bottom-full left-0 mb-2 w-28 bg-linear-bg-elevated/95 backdrop-blur-md border border-linear-border rounded-lg shadow-2xl z-50 animate-in fade-in slide-in-from-bottom-2 duration-200">
+        <div className="absolute bottom-full left-0 mb-2 w-28 bg-linear-bg-elevated backdrop-blur-md border border-[rgba(255,255,255,0.08)] shadow-linear-highlight rounded-lg z-50 animate-in fade-in slide-in-from-bottom-2 duration-200">
           {(['LOW', 'MEDIUM', 'HIGH'] as const).map(level => (
             <button
               key={level}

@@ -55,8 +55,8 @@ const ConversationItem: React.FC<ConversationItemProps> = ({
         className={`
           group relative flex flex-col gap-1 p-2.5 cursor-pointer rounded-lg select-none overflow-hidden
           ${isActive
-            ? 'bg-linear-surface/80'
-            : 'hover:bg-linear-surface active:scale-[0.98]'
+            ? 'bg-[#1C1E21] shadow-linear-highlight border border-[rgba(255,255,255,0.04)]'
+            : 'border border-transparent hover:bg-linear-surface active:scale-[0.98]'
           }
         `}
         style={{ transition: 'background-color 0.15s var(--ease-snappy), transform 0.15s var(--ease-snappy)' }}
@@ -128,7 +128,7 @@ const ConversationItem: React.FC<ConversationItemProps> = ({
       {showContextMenu && (
         <div
           ref={menuRef}
-          className="fixed z-[9999] min-w-[140px] bg-linear-bg-elevated backdrop-blur-xl border border-linear-border rounded-lg shadow-2xl py-1.5 animate-in fade-in zoom-in-95 duration-150"
+          className="fixed z-[9999] min-w-[140px] bg-linear-bg-elevated backdrop-blur-xl border border-[rgba(255,255,255,0.08)] shadow-linear-highlight rounded-lg py-1.5 animate-in fade-in zoom-in-95 duration-150"
           style={{ left: menuPos.x, top: menuPos.y }}
         >
           <button

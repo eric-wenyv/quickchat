@@ -67,6 +67,11 @@ const ConversationList: React.FC<ConversationListProps> = ({
     <div 
       className="flex-1 overflow-y-auto px-2 py-1 flex flex-col gap-0.5 transition-opacity duration-300 ease-in-out custom-scrollbar"
     >
+      <div className="px-2 pt-2 pb-1.5">
+        <span className="text-[11px] font-semibold text-[#8A8D93] uppercase tracking-wider select-none">
+          Recents
+        </span>
+      </div>
       {conversations.map((conv) => (
         <ConversationItem
           key={conv.id}

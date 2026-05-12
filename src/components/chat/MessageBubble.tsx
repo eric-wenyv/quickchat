@@ -66,13 +66,10 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({ message, onDelete }) => {
 
   return (
     <>
-      {/* 分隔线：每条消息上方（第一条除外由父级控制） */}
-      <div className="w-full border-t border-linear-border" />
-
       <div
         ref={bubbleRef}
         onContextMenu={handleContextMenu}
-        className="flex w-full group py-5 px-4 md:px-8 hover:bg-linear-surface/30"
+        className="flex w-full group py-6 px-4 md:px-8 hover:bg-linear-surface/30"
         style={{
           animation: 'message-enter 0.25s var(--ease-snappy) both',
           transition: 'background-color 0.15s var(--ease-snappy)',
@@ -114,7 +111,7 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({ message, onDelete }) => {
       {showContextMenu && onDelete && (
         <div
           ref={menuRef}
-          className="fixed z-[9999] min-w-[140px] bg-linear-bg-elevated backdrop-blur-xl border border-linear-border rounded-lg shadow-2xl py-1.5 animate-in fade-in zoom-in-95 duration-150"
+          className="fixed z-[9999] min-w-[140px] bg-linear-bg-elevated backdrop-blur-xl border border-[rgba(255,255,255,0.08)] shadow-linear-highlight rounded-lg py-1.5 animate-in fade-in zoom-in-95 duration-150"
           style={{ left: menuPos.x, top: menuPos.y }}
         >
           <button

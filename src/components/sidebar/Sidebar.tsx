@@ -51,7 +51,7 @@ const Sidebar: React.FC<SidebarProps> = ({
   onToggleTheme,
 }) => {
   return (
-    <aside className="relative flex flex-col h-full w-full bg-linear-bg-elevated border-r border-linear-border overflow-hidden select-none">
+    <aside className="relative flex flex-col h-full w-full bg-linear-sidebar border-r border-linear-border overflow-hidden select-none">
       {/* 操作与搜索区域 — 整体作为拖拽区，内部按钮/搜索框可交互 */}
       <div
         data-tauri-drag-region

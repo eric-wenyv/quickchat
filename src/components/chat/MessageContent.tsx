@@ -142,7 +142,7 @@ const CodeBlock: React.FC<{ code: string; language: string }> = React.memo(
     const isTree = isTreeDiagram(code);
 
     return (
-      <div className="group relative rounded-lg overflow-hidden border border-linear-border my-4">
+      <div className="group relative rounded-lg overflow-hidden border border-linear-border bg-linear-bg-elevated shadow-linear-highlight my-4">
         {/* Header */}
         <div className="flex items-center justify-between px-4 py-2 bg-linear-surface border-b border-linear-border">
           <div className="flex items-center gap-2">

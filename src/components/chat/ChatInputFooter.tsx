@@ -59,10 +59,11 @@ export const ChatInputFooter: React.FC<ChatInputFooterProps> = ({
   const canSend = (!!content.trim() || pendingImages.length > 0) && !disabled;
 
   return (
-    <footer className="w-full px-4 pt-2 pb-4 bg-linear-bg">
+    <footer className="w-full px-4 pt-2 pb-4 bg-linear-bg relative">
+      <div className="absolute top-0 left-0 right-0 h-[1px] bg-gradient-to-r from-transparent via-linear-border to-transparent opacity-50" />
       <div className="max-w-3xl mx-auto">
         <div
-          className="relative group bg-linear-bg-elevated border border-linear-border-hover rounded-lg hover:border-linear-border focus-within:border-linear-accent/40 focus-within:shadow-[0_0_0_1px_rgba(107,124,237,0.15)]"
+          className="relative group bg-linear-bg-elevated border border-[rgba(255,255,255,0.08)] shadow-linear-highlight rounded-lg hover:border-linear-border-hover focus-within:border-linear-accent focus-within:shadow-linear-highlight-strong"
           style={{ transition: 'border-color 0.1s var(--ease-snappy), box-shadow 0.1s var(--ease-snappy)' }}
         >
           {/* 图片预览区 */}

@@ -1,14 +1,16 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import Sidebar from '../sidebar/Sidebar';
 import { MainChatArea } from '../chat/MainChatArea';
-import type { 
-  ConversationSummary, 
-  Conversation, 
-  Message, 
-  ModelConfig, 
+import AgentBrowser from '../agent/AgentBrowser';
+import type {
+  ConversationSummary,
+  Conversation,
+  Message,
+  ModelConfig,
   SystemPrompt,
-  UUID 
+  UUID,
 } from '@/types/types';
+import type { AgentTab } from '../agent/AgentBrowser';
 
 interface AppLayoutProps {
   // --- 主题 ---
@@ -68,6 +70,17 @@ interface AppLayoutProps {
   onDeleteSystemPromptPreset: (id: UUID) => void;
   /** 删除单条消息 */
   onDeleteMessage: (id: UUID) => void;
+  // --- Agent 浏览器 ---
+  agentMode: boolean;
+  agentTabs: AgentTab[];
+  activeAgentTabId: string | null;
+  onOpenAgentBrowser: () => void;
+  onCloseAgentTab: (tabId: string) => void;
+  onSwitchAgentTab: (tabId: string) => void;
+  onAgentUrlChange: (tabId: string, newUrl: string) => void;
+  onAgentTitleChange: (tabId: string, title: string) => void;
+  onAddAgentTab: (url: string) => void;
+  onExitAgentMode: () => void;
 }
 
 const MIN_SIDEBAR_WIDTH = 180;
@@ -112,6 +125,17 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
   onSaveSystemPromptPreset,
   onDeleteSystemPromptPreset,
   onDeleteMessage,
+  // Agent 浏览器
+  agentMode,
+  agentTabs,
+  activeAgentTabId,
+  onOpenAgentBrowser,
+  onCloseAgentTab,
+  onSwitchAgentTab,
+  onAgentUrlChange,
+  onAgentTitleChange,
+  onAddAgentTab,
+  onExitAgentMode,
 }) => {
   // 内部维护侧边栏开关状态，确保布局灵活性
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
@@ -212,6 +236,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
           searchQuery={searchQuery}
           onToggleCollapse={() => setIsSidebarOpen(false)}
           onOpenSettings={onOpenSettings}
+          onOpenAgentBrowser={onOpenAgentBrowser}
           theme={theme}
           onToggleTheme={onToggleTheme}
         />
@@ -249,25 +274,38 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
           集成主对话区容器 
           内部已包含 Header, MessageList, EmptyState 与 ChatInputFooter (含 Enter 发送拦截与高度增长逻辑)
         */}
-        <MainChatArea
-          conversation={activeConversation}
-          messages={messages}
-          isLoadingMessages={isLoadingMessages}
-          onSendMessage={onSendMessage}
-          onLoadMore={onLoadMoreMessages}
-          hasMore={hasMoreMessages}
-          models={models}
-          activeModelId={activeModelId}
-          onModelSelect={onModelSelect}
-          isSending={isSending}
-          onRenameConversation={onRenameConversation}
-          onUpdateSystemPrompt={onUpdateSystemPrompt}
-          onUpdateModelThinkingLevel={onUpdateModelThinkingLevel}
-          systemPrompts={systemPrompts}
-          onSaveSystemPromptPreset={onSaveSystemPromptPreset}
-          onDeleteSystemPromptPreset={onDeleteSystemPromptPreset}
-          onDeleteMessage={onDeleteMessage}
-        />
+        {agentMode ? (
+          <AgentBrowser
+            tabs={agentTabs}
+            activeTabId={activeAgentTabId || ''}
+            onUrlChange={onAgentUrlChange}
+            onTitleChange={onAgentTitleChange}
+            onCloseTab={onCloseAgentTab}
+            onSwitchTab={onSwitchAgentTab}
+            onAddTab={onAddAgentTab}
+            onExitAgentMode={onExitAgentMode}
+          />
+        ) : (
+          <MainChatArea
+            conversation={activeConversation}
+            messages={messages}
+            isLoadingMessages={isLoadingMessages}
+            onSendMessage={onSendMessage}
+            onLoadMore={onLoadMoreMessages}
+            hasMore={hasMoreMessages}
+            models={models}
+            activeModelId={activeModelId}
+            onModelSelect={onModelSelect}
+            isSending={isSending}
+            onRenameConversation={onRenameConversation}
+            onUpdateSystemPrompt={onUpdateSystemPrompt}
+            onUpdateModelThinkingLevel={onUpdateModelThinkingLevel}
+            systemPrompts={systemPrompts}
+            onSaveSystemPromptPreset={onSaveSystemPromptPreset}
+            onDeleteSystemPromptPreset={onDeleteSystemPromptPreset}
+            onDeleteMessage={onDeleteMessage}
+          />
+        )}
       </main>
 
     </div>

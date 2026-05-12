@@ -32,6 +32,7 @@ import type {
   SystemPrompt,
   UUID,
 } from "./types/types";
+import type { AgentTab } from "./components/agent/AgentBrowser";
 import "./App.css";
 
 // -----------------------------------------------------------------------------
@@ -91,8 +92,71 @@ export default function App() {
   const [searchQuery, setSearchQuery] = useState("");
   const [toast, setToast] = useState<{ id: number, title: string, desc?: string, type: "error" | "success" } | null>(null);
 
+  // --- Agent 浏览器状态 ---
+  const [agentTabs, setAgentTabs] = useState<AgentTab[]>([]);
+  const [activeAgentTabId, setActiveAgentTabId] = useState<string | null>(null);
+  const [agentMode, setAgentMode] = useState(false);
+
   const pendingUpdatesRef = useRef<Record<UUID, string>>({});
   const rafRef = useRef<number | null>(null);
+
+  // --- Agent 浏览器操作 ---
+  const handleOpenAgentBrowser = () => {
+    const url = window.prompt('请输入 Agent 服务地址：', 'http://127.0.0.1:5494');
+    if (url?.trim()) {
+      let finalUrl = url.trim();
+      if (!finalUrl.startsWith('http://') && !finalUrl.startsWith('https://')) {
+        finalUrl = 'http://' + finalUrl;
+      }
+      const newTab: AgentTab = {
+        id: crypto.randomUUID(),
+        url: finalUrl,
+        title: finalUrl,
+      };
+      setAgentTabs(prev => [...prev, newTab]);
+      setActiveAgentTabId(newTab.id);
+      setAgentMode(true);
+    }
+  };
+
+  const handleCloseAgentTab = (tabId: string) => {
+    setAgentTabs(prev => {
+      const filtered = prev.filter(t => t.id !== tabId);
+      if (filtered.length === 0) {
+        setAgentMode(false);
+        setActiveAgentTabId(null);
+      } else if (activeAgentTabId === tabId) {
+        setActiveAgentTabId(filtered[filtered.length - 1].id);
+      }
+      return filtered;
+    });
+  };
+
+  const handleSwitchAgentTab = (tabId: string) => {
+    setActiveAgentTabId(tabId);
+  };
+
+  const handleAgentUrlChange = (tabId: string, newUrl: string) => {
+    setAgentTabs(prev => prev.map(t => t.id === tabId ? { ...t, url: newUrl } : t));
+  };
+
+  const handleAgentTitleChange = (tabId: string, title: string) => {
+    setAgentTabs(prev => prev.map(t => t.id === tabId ? { ...t, title } : t));
+  };
+
+  const handleAddAgentTab = (url: string) => {
+    const newTab: AgentTab = {
+      id: crypto.randomUUID(),
+      url,
+      title: url,
+    };
+    setAgentTabs(prev => [...prev, newTab]);
+    setActiveAgentTabId(newTab.id);
+  };
+
+  const handleExitAgentMode = () => {
+    setAgentMode(false);
+  };
 
   // --- Toast 注册 ---
   useEffect(() => {
@@ -823,6 +887,17 @@ export default function App() {
         onSaveSystemPromptPreset={handleSaveSystemPromptPreset}
         onDeleteSystemPromptPreset={handleDeleteSystemPromptPreset}
         onDeleteMessage={handleDeleteMessage}
+        // Agent 浏览器
+        agentMode={agentMode}
+        agentTabs={agentTabs}
+        activeAgentTabId={activeAgentTabId}
+        onOpenAgentBrowser={handleOpenAgentBrowser}
+        onCloseAgentTab={handleCloseAgentTab}
+        onSwitchAgentTab={handleSwitchAgentTab}
+        onAgentUrlChange={handleAgentUrlChange}
+        onAgentTitleChange={handleAgentTitleChange}
+        onAddAgentTab={handleAddAgentTab}
+        onExitAgentMode={handleExitAgentMode}
       />
     </ErrorBoundary>
   );

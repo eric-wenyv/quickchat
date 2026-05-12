@@ -57,7 +57,7 @@ const ThinkingLevelSelector: React.FC<ThinkingLevelSelectorProps> = ({
     <div className="relative" ref={dropdownRef}>
       <button
         onClick={() => setIsOpen(!isOpen)}
-        className="flex items-center gap-1.5 px-2 py-1 rounded-lg bg-sand-200/50 hover:bg-sand-300 border border-sand-400/30 hover:border-sand-400/60 transition-all duration-200 text-[10px] font-bold text-ink-200 hover:text-ink-400"
+        className="flex items-center gap-1.5 px-2 py-1 rounded-lg bg-linear-surface hover:bg-linear-surface-hover border border-linear-border hover:border-linear-border-hover transition-all duration-200 text-[10px] font-medium text-linear-text-tertiary hover:text-linear-text-secondary"
         title="思考深度"
       >
         <span className={`w-1.5 h-1.5 rounded-full ${LEVEL_COLORS[currentLevel]}`} />
@@ -72,7 +72,7 @@ const ThinkingLevelSelector: React.FC<ThinkingLevelSelectorProps> = ({
       </button>
 
       {isOpen && (
-        <div className="absolute bottom-full left-0 mb-2 w-28 bg-sand-100/95 dark:bg-sand-200/95 backdrop-blur-md border border-sand-400/60 rounded-xl shadow-panel z-50 animate-in fade-in slide-in-from-bottom-2 duration-200">
+        <div className="absolute bottom-full left-0 mb-2 w-28 bg-linear-bg-elevated/95 backdrop-blur-md border border-linear-border rounded-lg shadow-2xl z-50 animate-in fade-in slide-in-from-bottom-2 duration-200">
           {(['LOW', 'MEDIUM', 'HIGH'] as const).map(level => (
             <button
               key={level}
@@ -80,10 +80,10 @@ const ThinkingLevelSelector: React.FC<ThinkingLevelSelectorProps> = ({
                 onUpdateThinkingLevel(activeModel.id, level);
                 setIsOpen(false);
               }}
-              className={`w-full flex items-center gap-2 px-3 py-2 text-left transition-all duration-200 first:rounded-t-xl last:rounded-b-xl ${
+              className={`w-full flex items-center gap-2 px-3 py-2 text-left transition-all duration-200 first:rounded-t-lg last:rounded-b-lg ${
                 currentLevel === level
-                  ? 'bg-sand-300 text-ink-400'
-                  : 'text-ink-200 hover:bg-sand-200 hover:text-ink-300'
+                  ? 'bg-linear-surface-hover text-linear-text-primary'
+                  : 'text-linear-text-tertiary hover:bg-linear-surface hover:text-linear-text-secondary'
               }`}
             >
               <span className={`w-2 h-2 rounded-full ${LEVEL_COLORS[level]}`} />

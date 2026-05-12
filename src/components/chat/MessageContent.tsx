@@ -22,9 +22,6 @@ import oneLight from 'react-syntax-highlighter/dist/esm/styles/prism/one-light';
 import type { Components } from 'react-markdown';
 import type { MessageStatus } from '@/types/types';
 
-// ------------------------------------------------------------------
-// 注册常用语言（按需加载，减小包体积）
-// ------------------------------------------------------------------
 SyntaxHighlighter.registerLanguage('tsx', tsx);
 SyntaxHighlighter.registerLanguage('typescript', typescript);
 SyntaxHighlighter.registerLanguage('javascript', javascript);
@@ -53,9 +50,6 @@ interface MessageContentProps {
   status: MessageStatus;
 }
 
-// ------------------------------------------------------------------
-// 工具函数：检测树状图（ASCII Tree）
-// ------------------------------------------------------------------
 const isTreeDiagram = (code: string): boolean => {
   const lines = code.split('\n').filter((l) => l.trim().length > 0);
   if (lines.length < 2) return false;
@@ -64,9 +58,6 @@ const isTreeDiagram = (code: string): boolean => {
   return treeLineCount >= 1 && treeLineCount / lines.length >= 0.3;
 };
 
-// ------------------------------------------------------------------
-// 树状图渲染：为连接线字符添加高亮色
-// ------------------------------------------------------------------
 const TREE_CHAR_REGEX = /[├└│─┬┼┤┌┐┘┴]/g;
 
 const TreeLine: React.FC<{ line: string }> = ({ line }) => {
@@ -83,7 +74,7 @@ const TreeLine: React.FC<{ line: string }> = ({ line }) => {
     parts.push(
       <span
         key={`t-${match.index}`}
-        className="text-accent-500 dark:text-accent-500 font-bold"
+        className="text-linear-accent font-bold"
       >
         {match[0]}
       </span>
@@ -98,9 +89,6 @@ const TreeLine: React.FC<{ line: string }> = ({ line }) => {
   return <>{parts}</>;
 };
 
-// ------------------------------------------------------------------
-// 复制按钮 Hook
-// ------------------------------------------------------------------
 const useCopy = (text: string) => {
   const [copied, setCopied] = useState(false);
 
@@ -122,9 +110,6 @@ const useCopy = (text: string) => {
   return { copied, copy };
 };
 
-// ------------------------------------------------------------------
-// 代码块组件（含语法高亮、复制、语言标签、树状图支持）
-// ------------------------------------------------------------------
 const CodeBlock: React.FC<{ code: string; language: string }> = ({
   code,
   language,
@@ -149,55 +134,35 @@ const CodeBlock: React.FC<{ code: string; language: string }> = ({
   const isTree = isTreeDiagram(code);
 
   return (
-    <div className="group relative rounded-xl overflow-hidden border border-sand-400 my-4">
+    <div className="group relative rounded-lg overflow-hidden border border-linear-border my-4">
       {/* Header */}
-      <div className="flex items-center justify-between px-4 py-2 bg-sand-200 dark:bg-sand-300 border-b border-sand-400">
+      <div className="flex items-center justify-between px-4 py-2 bg-linear-surface border-b border-linear-border">
         <div className="flex items-center gap-2">
-          <span className="text-xs font-medium text-ink-200 uppercase tracking-wider">
+          <span className="text-xs font-medium text-linear-text-tertiary uppercase tracking-wider">
             {displayLang}
           </span>
           {isTree && (
-            <span className="text-[10px] px-1.5 py-0.5 rounded bg-accent-500/10 text-accent-600 dark:text-accent-500 font-medium">
+            <span className="text-[10px] px-1.5 py-0.5 rounded bg-linear-accent/10 text-linear-accent font-medium">
               tree
             </span>
           )}
         </div>
         <button
           onClick={copy}
-          className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium text-ink-200 hover:text-ink-400 hover:bg-sand-300 dark:hover:bg-sand-400 transition-colors"
+          className="flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium text-linear-text-tertiary hover:text-linear-text-secondary hover:bg-linear-surface-hover transition-colors"
           title="复制代码"
         >
           {copied ? (
             <>
-              <svg
-                className="w-3.5 h-3.5"
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke="currentColor"
-                strokeWidth={2}
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  d="M5 13l4 4L19 7"
-                />
+              <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
               </svg>
               <span>已复制</span>
             </>
           ) : (
             <>
-              <svg
-                className="w-3.5 h-3.5"
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke="currentColor"
-                strokeWidth={2}
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"
-                />
+              <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
               </svg>
               <span>复制</span>
             </>
@@ -208,7 +173,7 @@ const CodeBlock: React.FC<{ code: string; language: string }> = ({
       {/* Code Body */}
       <div className="overflow-x-auto">
         {isTree ? (
-          <pre className="p-4 bg-sand-200 dark:bg-sand-300 text-ink-300 dark:text-ink-300 whitespace-pre leading-relaxed text-sm font-mono">
+          <pre className="p-4 bg-linear-bg-elevated text-linear-text-secondary whitespace-pre leading-relaxed text-sm font-mono">
             {code.split('\n').map((line, i) => (
               <div key={i}>
                 <TreeLine line={line} />
@@ -242,9 +207,6 @@ const CodeBlock: React.FC<{ code: string; language: string }> = ({
   );
 };
 
-// ------------------------------------------------------------------
-// 链接预览悬浮框
-// ------------------------------------------------------------------
 const LinkPreviewModal: React.FC<{
   url: string;
   onClose: () => void;
@@ -258,7 +220,6 @@ const LinkPreviewModal: React.FC<{
     }
   }, [url]);
 
-  // ESC 关闭
   useEffect(() => {
     const handleEsc = (e: KeyboardEvent) => {
       if (e.key === 'Escape') onClose();
@@ -282,79 +243,49 @@ const LinkPreviewModal: React.FC<{
       onClick={onClose}
     >
       <div
-        className="relative flex flex-col w-[90vw] h-[88vh] max-w-6xl bg-white dark:bg-sand-200 rounded-2xl shadow-2xl border border-sand-400/60 overflow-hidden animate-in zoom-in-95 duration-150"
+        className="relative flex flex-col w-[90vw] h-[88vh] max-w-6xl bg-linear-bg-elevated rounded-xl shadow-2xl border border-linear-border overflow-hidden animate-in zoom-in-95 duration-150"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
-        <div className="flex items-center justify-between px-4 py-3 border-b border-sand-400/60 bg-sand-100 dark:bg-sand-300 flex-shrink-0">
+        <div className="flex items-center justify-between px-4 py-3 border-b border-linear-border bg-linear-bg flex-shrink-0">
           <div className="flex items-center gap-2.5 min-w-0">
-            <svg
-              className="w-4 h-4 text-ink-200 flex-shrink-0"
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke="currentColor"
-              strokeWidth={2}
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m-9 9a9 9 0 019-9"
-              />
+            <svg className="w-4 h-4 text-linear-text-tertiary flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m-9 9a9 9 0 019-9" />
             </svg>
-            <span className="text-sm text-ink-300 font-medium truncate">
+            <span className="text-sm text-linear-text-secondary font-medium truncate">
               {domain}
             </span>
           </div>
           <div className="flex items-center gap-1 flex-shrink-0">
             <button
               onClick={handleOpenExternal}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-ink-200 hover:text-ink-400 hover:bg-sand-300 dark:hover:bg-sand-400 transition-colors"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-linear-text-tertiary hover:text-linear-text-secondary hover:bg-linear-surface transition-colors"
               title="在浏览器中打开"
             >
-              <svg
-                className="w-3.5 h-3.5"
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke="currentColor"
-                strokeWidth={2}
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"
-                />
+              <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
               </svg>
               外部打开
             </button>
             <button
               onClick={onClose}
-              className="p-1.5 rounded-lg text-ink-200 hover:text-ink-400 hover:bg-sand-300 dark:hover:bg-sand-400 transition-colors"
+              className="p-1.5 rounded-lg text-linear-text-tertiary hover:text-linear-text-secondary hover:bg-linear-surface transition-colors"
               title="关闭"
             >
-              <svg
-                className="w-4 h-4"
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke="currentColor"
-                strokeWidth={2}
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  d="M6 18L18 6M6 6l12 12"
-                />
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
               </svg>
             </button>
           </div>
         </div>
 
         {/* Body */}
-        <div className="flex-1 relative bg-white">
+        <div className="flex-1 relative bg-linear-bg">
           {loading && (
-            <div className="absolute inset-0 flex items-center justify-center bg-sand-100/60 z-10">
+            <div className="absolute inset-0 flex items-center justify-center bg-linear-bg/60 z-10">
               <div className="flex items-center gap-3">
-                <div className="w-5 h-5 border-2 border-sand-400 border-t-ink-400 rounded-full animate-spin" />
-                <span className="text-sm text-ink-200">正在加载网页...</span>
+                <div className="w-5 h-5 border-2 border-linear-border border-t-linear-text-secondary rounded-full animate-spin" />
+                <span className="text-sm text-linear-text-tertiary">正在加载网页...</span>
               </div>
             </div>
           )}
@@ -371,9 +302,6 @@ const LinkPreviewModal: React.FC<{
   );
 };
 
-// ------------------------------------------------------------------
-// MessageContent
-// ------------------------------------------------------------------
 const MessageContent: React.FC<MessageContentProps> = ({ content, status }) => {
   const isThinking = content.trim() === '' && status === 'streaming';
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
@@ -393,9 +321,10 @@ const MessageContent: React.FC<MessageContentProps> = ({ content, status }) => {
           return <CodeBlock code={code} language={language} />;
         }
 
+        // Inline code: Linear-style 素雅行内代码
         return (
           <code
-            className={`${className || ''} text-ink-400 bg-sand-300/50 dark:bg-sand-400/50 px-1.5 py-0.5 rounded-md font-medium text-[0.875em]`}
+            className={`${className || ''} text-linear-text-secondary bg-linear-surface-hover border border-linear-border px-1.5 py-0.5 rounded-[4px] font-medium text-[0.875em]`}
             {...props}
           >
             {children}
@@ -424,7 +353,7 @@ const MessageContent: React.FC<MessageContentProps> = ({ content, status }) => {
               e.preventDefault();
               setPreviewUrl(href);
             }}
-            className="cursor-pointer"
+            className="cursor-pointer text-linear-text-secondary underline underline-offset-4 hover:text-linear-text-primary transition-colors"
           >
             {children}
           </a>
@@ -433,7 +362,7 @@ const MessageContent: React.FC<MessageContentProps> = ({ content, status }) => {
 
       table({ children }) {
         return (
-          <div className="overflow-x-auto my-4 rounded-xl border border-sand-400">
+          <div className="overflow-x-auto my-4 rounded-lg border border-linear-border">
             <table className="w-full text-sm text-left border-collapse">
               {children}
             </table>
@@ -443,7 +372,7 @@ const MessageContent: React.FC<MessageContentProps> = ({ content, status }) => {
 
       thead({ children }) {
         return (
-          <thead className="bg-sand-200 dark:bg-sand-300 text-ink-400 font-semibold">
+          <thead className="bg-linear-surface text-linear-text-primary font-semibold">
             {children}
           </thead>
         );
@@ -451,7 +380,7 @@ const MessageContent: React.FC<MessageContentProps> = ({ content, status }) => {
 
       tr({ children }) {
         return (
-          <tr className="border-b border-sand-400 last:border-b-0 hover:bg-sand-200/50 dark:hover:bg-sand-300/50 transition-colors">
+          <tr className="border-b border-linear-border last:border-b-0 hover:bg-linear-surface/50 transition-colors">
             {children}
           </tr>
         );
@@ -459,50 +388,50 @@ const MessageContent: React.FC<MessageContentProps> = ({ content, status }) => {
 
       th({ children }) {
         return (
-          <th className="px-4 py-3 text-ink-400 font-semibold">{children}</th>
+          <th className="px-4 py-3 text-linear-text-primary font-semibold">{children}</th>
         );
       },
 
       td({ children }) {
-        return <td className="px-4 py-3 text-ink-300">{children}</td>;
+        return <td className="px-4 py-3 text-linear-text-secondary">{children}</td>;
       },
     }),
     []
   );
 
   return (
-    <div className="w-full text-ink-300 selection:bg-sand-400/50 selection:text-ink-400">
+    <div className="w-full text-white selection:bg-linear-surface-hover selection:text-linear-text-primary">
       <article
         className="prose prose-sm md:prose-base max-w-none dark:prose-invert
         leading-[1.75]
-        prose-p:leading-[1.85] prose-p:my-3
-        prose-headings:text-ink-400 prose-headings:font-bold prose-headings:mt-6 prose-headings:mb-3
-        prose-a:text-ink-400 prose-a:underline prose-a:underline-offset-4 hover:prose-a:text-ink-300
-        prose-code:text-ink-400 prose-code:bg-sand-300/50 dark:prose-code:bg-sand-400/50 prose-code:px-1.5 prose-code:py-0.5 prose-code:rounded-md prose-code:font-medium prose-code:before:content-none prose-code:after:content-none
+        prose-p:leading-[1.85] prose-p:my-3 prose-p:text-white
+        prose-headings:text-linear-text-primary prose-headings:font-semibold prose-headings:mt-6 prose-headings:mb-3
+        prose-a:text-linear-text-secondary prose-a:underline prose-a:underline-offset-4 hover:prose-a:text-linear-text-primary
+        prose-code:text-linear-text-secondary prose-code:bg-linear-surface-hover prose-code:border prose-code:border-linear-border prose-code:px-1.5 prose-code:py-0.5 prose-code:rounded-[4px] prose-code:font-medium prose-code:before:content-none prose-code:after:content-none
         prose-pre:bg-transparent prose-pre:p-0
-        prose-blockquote:border-l-sand-500 prose-blockquote:text-ink-200 prose-blockquote:pl-4 prose-blockquote:italic
+        prose-blockquote:border-l-linear-border prose-blockquote:text-linear-text-tertiary prose-blockquote:pl-4 prose-blockquote:italic
         prose-ul:list-disc prose-ul:pl-5 prose-ol:list-decimal prose-ol:pl-5
-        prose-li:my-1.5
-        prose-hr:border-sand-400 prose-hr:my-6
-        prose-img:rounded-xl prose-img:shadow-panel"
+        prose-li:my-1.5 prose-li:text-white
+        prose-hr:border-linear-border prose-hr:my-6
+        prose-img:rounded-lg prose-img:shadow-none"
       >
         {isThinking ? (
           <div className="flex items-center gap-3 py-2 select-none">
             <div className="flex items-center gap-1.5">
               <span
-                className="w-2 h-2 rounded-full bg-ink-300 animate-bounce"
+                className="w-2 h-2 rounded-full bg-linear-text-tertiary animate-bounce"
                 style={{ animationDuration: '0.6s', animationDelay: '0ms' }}
               />
               <span
-                className="w-2 h-2 rounded-full bg-ink-300 animate-bounce"
+                className="w-2 h-2 rounded-full bg-linear-text-tertiary animate-bounce"
                 style={{ animationDuration: '0.6s', animationDelay: '0.15s' }}
               />
               <span
-                className="w-2 h-2 rounded-full bg-ink-300 animate-bounce"
+                className="w-2 h-2 rounded-full bg-linear-text-tertiary animate-bounce"
                 style={{ animationDuration: '0.6s', animationDelay: '0.3s' }}
               />
             </div>
-            <span className="text-sm text-ink-200 font-medium">思考中...</span>
+            <span className="text-sm text-linear-text-tertiary font-medium">思考中...</span>
           </div>
         ) : (
           <ReactMarkdown
@@ -518,7 +447,7 @@ const MessageContent: React.FC<MessageContentProps> = ({ content, status }) => {
         )}
         {status === 'streaming' && !isThinking && (
           <span
-            className="inline-block w-[2px] h-[1.1em] ml-1 bg-ink-400 animate-pulse rounded-full align-middle -translate-y-[1px]"
+            className="inline-block w-[2px] h-[1.1em] ml-1 bg-linear-text-secondary animate-pulse rounded-full align-middle -translate-y-[1px]"
             aria-hidden="true"
           />
         )}

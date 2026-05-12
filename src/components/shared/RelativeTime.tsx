@@ -17,7 +17,7 @@ const RelativeTime: React.FC<RelativeTimeProps> = ({ timestamp, className = '' }
 
   return (
     <span 
-      className={`text-ink-200 text-xs tabular-nums select-none ${className}`}
+      className={`text-linear-text-tertiary text-xs tabular-nums select-none ${className}`}
       title={new Date(timestamp).toLocaleString()}
     >
       {displayTime}

@@ -4,35 +4,40 @@
 @variant dark (&:where(.dark, .dark *));
 
 @theme {
-  --color-sand-100: #FAF9F6;
-  --color-sand-200: #F4F2EC;
-  --color-sand-300: #EBE8E0;
-  --color-sand-400: #E2DFD8;
-  --color-sand-500: #D4D0C8;
-  --color-ink-100: #8C8C8C;
-  --color-ink-200: #595959;
-  --color-ink-300: #333333;
-  --color-ink-400: #1A1A1A;
-  --color-accent-500: #d97706;
-  --color-accent-600: #b45309;
+  /* Linear-style dark palette: extremely restrained, monochrome-first */
+  --color-linear-bg: #111111;
+  --color-linear-bg-elevated: #151618;
+  --color-linear-border: rgba(255, 255, 255, 0.06);
+  --color-linear-border-hover: rgba(255, 255, 255, 0.10);
+  --color-linear-text-primary: #ffffff;
+  --color-linear-text-secondary: #888888;
+  --color-linear-text-tertiary: #555555;
+  --color-linear-text-muted: #444444;
+  --color-linear-text-body: #E8E8E8;
+  --color-linear-surface: rgba(255, 255, 255, 0.05);
+  --color-linear-surface-hover: rgba(255, 255, 255, 0.08);
+  --color-linear-accent: #6B7CED;
+  --color-linear-accent-hover: #5E6AD2;
+
+  /* Legacy sand/ink mappings kept for compatibility, but remapped to Linear dark */
+  --color-sand-100: #111111;
+  --color-sand-200: #151618;
+  --color-sand-300: #1a1a1a;
+  --color-sand-400: #222222;
+  --color-sand-500: #333333;
+  --color-ink-100: #555555;
+  --color-ink-200: #888888;
+  --color-ink-300: #D1D5DB;
+  --color-ink-400: #ffffff;
+  --color-accent-500: #6B7CED;
+  --color-accent-600: #5E6AD2;
 }
 
 .dark {
-  --color-sand-100: #1a1a1a;
-  --color-sand-200: #262626;
-  --color-sand-300: #333333;
-  --color-sand-400: #404040;
-  --color-sand-500: #525252;
-  --color-ink-100: #737373;
-  --color-ink-200: #a3a3a3;
-  --color-ink-300: #d4d4d4;
-  --color-ink-400: #e5e5e5;
-  --color-accent-500: #f97316;
-  --color-accent-600: #ea580c;
   color-scheme: dark;
 }
 
-/* Custom Scrollbar */
+/* Custom Scrollbar - ultra minimal */
 @layer utilities {
   .custom-scrollbar::-webkit-scrollbar {
     width: 6px;
@@ -42,10 +47,10 @@
     background: transparent;
   }
   .custom-scrollbar::-webkit-scrollbar-thumb {
-    background: var(--color-sand-400);
+    background: rgba(255, 255, 255, 0.08);
     border-radius: 10px;
   }
   .custom-scrollbar::-webkit-scrollbar-thumb:hover {
-    background: var(--color-sand-500);
+    background: rgba(255, 255, 255, 0.14);
   }
 }

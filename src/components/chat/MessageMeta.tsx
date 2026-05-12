@@ -10,41 +10,46 @@ interface MessageMetaProps {
   role: string;
 }
 
+/**
+ * MessageMeta (Linear-style)
+ * 时间戳和 Token 信息用极暗灰色小字号展示。
+ */
 export default function MessageMeta({ createdAt, tokenCount, inputTokens, outputTokens, modelId, role }: MessageMetaProps) {
   const hasTokenInfo = tokenCount !== null || (inputTokens !== null && outputTokens !== null);
 
   return (
-    <div className="flex items-center gap-3 mt-1.5 text-[11px] font-medium text-ink-200/80 tracking-tight select-none">
+    <div className="flex items-center gap-2 text-[11px] font-normal text-linear-text-muted tracking-tight select-none">
+      <span>·</span>
       <RelativeTime timestamp={createdAt} />
 
       {modelId && role === 'assistant' && (
-        <div className="flex items-center gap-2">
-          <span className="text-ink-100/50">•</span>
-          <span className="uppercase tracking-widest opacity-90">{modelId}</span>
-        </div>
+        <>
+          <span>·</span>
+          <span className="uppercase tracking-wider">{modelId}</span>
+        </>
       )}
 
       {hasTokenInfo && role === 'assistant' && (
-        <div className="flex items-center gap-2">
-          <span className="text-ink-100/50">•</span>
+        <>
+          <span>·</span>
           <div className="flex items-center gap-1.5">
             {inputTokens !== null && (
-              <span className="text-ink-200/70" title="Input tokens">
+              <span title="Input tokens">
                 ↑{inputTokens}
               </span>
             )}
             {outputTokens !== null && (
-              <span className="text-ink-200/70" title="Output tokens">
+              <span title="Output tokens">
                 ↓{outputTokens}
               </span>
             )}
             {tokenCount !== null && (
-              <span className="text-ink-200/90">
+              <span>
                 = {tokenCount}
               </span>
             )}
           </div>
-        </div>
+        </>
       )}
     </div>
   );

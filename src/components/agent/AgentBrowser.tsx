@@ -89,14 +89,14 @@ export const AgentBrowser: React.FC<AgentBrowserProps> = ({
   };
 
   return (
-    <div className="flex flex-col h-full w-full bg-sand-100">
+    <div className="flex flex-col h-full w-full bg-linear-bg">
       {/* 工具栏 — 悬浮样式，与顶部留出间隙 */}
-      <div className="flex items-center gap-2 mx-3 mt-3 mb-2 px-3 py-2 bg-sand-200 rounded-xl border border-sand-400/60 shadow-md flex-shrink-0">
+      <div className="flex items-center gap-2 mx-3 mt-3 mb-2 px-3 py-2 bg-linear-bg-elevated rounded-lg border border-linear-border flex-shrink-0">
         {/* 展开侧边栏按钮（替代原刷新按钮位置） */}
         {!isSidebarOpen && (
           <button
             onClick={onToggleSidebar}
-            className="p-1.5 rounded-lg text-ink-200 hover:text-ink-400 hover:bg-sand-300/50 transition-all cursor-pointer"
+            className="p-1.5 rounded-lg text-linear-text-tertiary hover:text-linear-text-secondary hover:bg-linear-surface transition-all cursor-pointer"
             title="展开侧边栏"
           >
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -113,17 +113,17 @@ export const AgentBrowser: React.FC<AgentBrowserProps> = ({
               value={inputUrl}
               onChange={(e) => setInputUrl(e.target.value)}
               placeholder="输入地址，如 http://127.0.0.1:5494"
-              className="w-full bg-sand-100 dark:bg-sand-300/50 text-ink-300 text-sm px-3 py-1.5 rounded-lg border border-sand-400/40 focus:border-sand-500 outline-none transition-all"
+              className="w-full bg-linear-bg text-linear-text-secondary text-sm px-3 py-1.5 rounded-lg border border-linear-border focus:border-linear-border-hover outline-none transition-all"
             />
             {isLoading && (
               <div className="absolute right-2 top-1/2 -translate-y-1/2">
-                <div className="w-3.5 h-3.5 border-2 border-sand-400 border-t-ink-400 rounded-full animate-spin" />
+                <div className="w-3.5 h-3.5 border-2 border-linear-border border-t-linear-text-secondary rounded-full animate-spin" />
               </div>
             )}
           </div>
           <button
             type="submit"
-            className="px-3 py-1.5 text-xs font-semibold text-white bg-ink-400 hover:bg-ink-300 rounded-lg transition-colors cursor-pointer"
+            className="px-3 py-1.5 text-xs font-semibold text-white bg-linear-accent hover:bg-linear-accent-hover rounded-lg transition-colors cursor-pointer"
           >
             访问
           </button>
@@ -132,7 +132,7 @@ export const AgentBrowser: React.FC<AgentBrowserProps> = ({
         {/* 切换地址 */}
         <button
           onClick={handleChangeUrl}
-          className="p-1.5 rounded-lg text-ink-200 hover:text-ink-400 hover:bg-sand-300/50 transition-all cursor-pointer"
+          className="p-1.5 rounded-lg text-linear-text-tertiary hover:text-linear-text-secondary hover:bg-linear-surface transition-all cursor-pointer"
           title="切换地址"
         >
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -144,7 +144,7 @@ export const AgentBrowser: React.FC<AgentBrowserProps> = ({
         {/* 关闭 Agent 模式 */}
         <button
           onClick={onExitAgentMode}
-          className="p-1.5 rounded-lg text-ink-200 hover:text-red-500 hover:bg-red-50 transition-all cursor-pointer"
+          className="p-1.5 rounded-lg text-linear-text-tertiary hover:text-red-400 hover:bg-red-500/10 transition-all cursor-pointer"
           title="关闭 Agent 浏览器"
         >
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -155,7 +155,7 @@ export const AgentBrowser: React.FC<AgentBrowserProps> = ({
       </div>
 
       {/* iframe 区域 */}
-      <div className="flex-1 relative bg-white overflow-hidden mx-3 mb-3 rounded-xl border border-sand-400/40 shadow-sm">
+      <div className="flex-1 relative bg-linear-bg overflow-hidden mx-3 mb-3 rounded-lg border border-linear-border">
         {url ? (
           <iframe
             ref={iframeRef}
@@ -167,9 +167,9 @@ export const AgentBrowser: React.FC<AgentBrowserProps> = ({
             title={url}
           />
         ) : (
-          <div className="flex items-center justify-center h-full text-ink-200">
+          <div className="flex items-center justify-center h-full text-linear-text-tertiary">
             <div className="text-center space-y-3">
-              <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="mx-auto text-sand-400">
+              <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="mx-auto text-linear-border">
                 <rect x="2" y="3" width="20" height="14" rx="2" ry="2" />
                 <line x1="8" y1="21" x2="16" y2="21" />
                 <line x1="12" y1="17" x2="12" y2="21" />
@@ -177,7 +177,7 @@ export const AgentBrowser: React.FC<AgentBrowserProps> = ({
               <p className="text-sm">暂无 Agent 地址</p>
               <button
                 onClick={handleChangeUrl}
-                className="px-4 py-2 text-xs font-semibold text-white bg-ink-400 hover:bg-ink-300 rounded-xl transition-colors cursor-pointer"
+                className="px-4 py-2 text-xs font-semibold text-white bg-linear-accent hover:bg-linear-accent-hover rounded-lg transition-colors cursor-pointer"
               >
                 添加 Agent 地址
               </button>

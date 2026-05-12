@@ -48,11 +48,11 @@ class ErrorBoundary extends React.Component<{ children: React.ReactNode }, { has
   render() {
     if (this.state.hasError) {
       return (
-        <div className="flex items-center justify-center h-screen w-screen bg-sand-100 text-ink-300">
+        <div className="flex items-center justify-center h-screen w-screen bg-linear-bg text-linear-text-secondary">
           <div className="text-center space-y-4">
-            <h1 className="text-2xl font-bold text-red-500 dark:text-red-400">Something went wrong</h1>
-            <p className="text-sm text-ink-200">The application encountered a fatal error. Please restart.</p>
-            <button onClick={() => window.location.reload()} className="px-4 py-2 bg-sand-300 dark:bg-sand-400 rounded-xl text-ink-400 dark:text-ink-300 font-medium">Reload</button>
+            <h1 className="text-2xl font-bold text-red-400">Something went wrong</h1>
+            <p className="text-sm text-linear-text-tertiary">The application encountered a fatal error. Please restart.</p>
+            <button onClick={() => window.location.reload()} className="px-4 py-2 bg-linear-surface rounded-lg text-linear-text-primary font-medium border border-linear-border">Reload</button>
           </div>
         </div>
       );
@@ -864,10 +864,10 @@ export default function App() {
   // --- 未就绪遮罩 ---
   if (!dbReady) {
     return (
-      <div className="flex items-center justify-center h-screen w-screen bg-sand-100 text-ink-300">
+      <div className="flex items-center justify-center h-screen w-screen bg-linear-bg text-linear-text-secondary">
         <div className="text-center space-y-3">
-          <div className="w-8 h-8 border-2 border-sand-400 border-t-ink-400 rounded-full animate-spin mx-auto" />
-          <p className="text-sm font-medium text-ink-200">正在初始化数据库...</p>
+          <div className="w-8 h-8 border-2 border-linear-border border-t-linear-text-secondary rounded-full animate-spin mx-auto" />
+          <p className="text-sm font-medium text-linear-text-tertiary">正在初始化数据库...</p>
         </div>
       </div>
     );
@@ -877,11 +877,11 @@ export default function App() {
     <ErrorBoundary>
       {/* Toast */}
       {toast && (
-        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-[9999] bg-white/90 dark:bg-sand-200/90 backdrop-blur-xl border border-sand-400/40 shadow-panel px-6 py-4 rounded-2xl animate-in fade-in slide-in-from-top-4 flex items-start gap-3">
-          <div className={`mt-0.5 w-2 h-2 rounded-full flex-shrink-0 shadow-[0_0_8px_currentColor] ${toast.type === 'error' ? 'text-red-500 bg-red-500' : 'text-emerald-500 bg-emerald-500'}`} />
+        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-[9999] bg-linear-bg-elevated/95 backdrop-blur-xl border border-linear-border shadow-2xl px-6 py-4 rounded-xl animate-in fade-in slide-in-from-top-4 flex items-start gap-3">
+          <div className={`mt-0.5 w-2 h-2 rounded-full flex-shrink-0 shadow-[0_0_8px_currentColor] ${toast.type === 'error' ? 'text-red-400 bg-red-400' : 'text-emerald-400 bg-emerald-400'}`} />
           <div className="flex flex-col gap-1">
-            <h3 className="text-sm font-bold text-ink-400">{toast.title}</h3>
-            {toast.desc && <p className="text-xs text-ink-200 break-words max-w-sm">{toast.desc}</p>}
+            <h3 className="text-sm font-bold text-linear-text-primary">{toast.title}</h3>
+            {toast.desc && <p className="text-xs text-linear-text-tertiary break-words max-w-sm">{toast.desc}</p>}
           </div>
         </div>
       )}

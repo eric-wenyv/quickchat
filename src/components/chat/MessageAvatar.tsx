@@ -5,28 +5,31 @@ interface MessageAvatarProps {
   role: MessageRole;
 }
 
+/**
+ * MessageAvatar (Linear-style)
+ * 极小、圆角的头像标识。用户用小人图标，AI 用终端/机器人图标。
+ */
 const MessageAvatar: React.FC<MessageAvatarProps> = ({ role }) => {
   const isAssistant = role === 'assistant';
   const isUser = role === 'user';
-  const isSystem = role === 'system';
 
   return (
     <div 
       className={`
-        flex h-8 w-8 shrink-0 select-none items-center justify-center rounded-lg border transition-all duration-200
+        flex h-6 w-6 shrink-0 select-none items-center justify-center rounded-[4px] transition-all duration-200
         ${isAssistant 
-          ? 'bg-ink-400 border-ink-400 text-sand-100 shadow-sm ring-1 ring-ink-400/10' 
+          ? 'bg-linear-accent/10 border border-linear-accent/20 text-linear-accent' 
           : isUser
-          ? 'bg-white dark:bg-sand-300 border-sand-400 text-ink-300 shadow-sm'
-          : 'bg-sand-300 border-sand-400 text-ink-200'
+          ? 'bg-linear-surface border border-linear-border text-linear-text-secondary'
+          : 'bg-linear-surface border border-linear-border text-linear-text-tertiary'
         }
       `}
     >
       {isAssistant && (
         <svg 
           xmlns="http://www.w3.org/2000/svg" 
-          width="18" 
-          height="18" 
+          width="14" 
+          height="14" 
           viewBox="0 0 24 24" 
           fill="none" 
           stroke="currentColor" 
@@ -46,8 +49,8 @@ const MessageAvatar: React.FC<MessageAvatarProps> = ({ role }) => {
       {isUser && (
         <svg 
           xmlns="http://www.w3.org/2000/svg" 
-          width="18" 
-          height="18" 
+          width="14" 
+          height="14" 
           viewBox="0 0 24 24" 
           fill="none" 
           stroke="currentColor" 
@@ -58,22 +61,6 @@ const MessageAvatar: React.FC<MessageAvatarProps> = ({ role }) => {
         >
           <path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2" />
           <circle cx="12" cy="7" r="4" />
-        </svg>
-      )}
-      {isSystem && (
-        <svg 
-          xmlns="http://www.w3.org/2000/svg" 
-          width="16" 
-          height="16" 
-          viewBox="0 0 24 24" 
-          fill="none" 
-          stroke="currentColor" 
-          strokeWidth="2" 
-          strokeLinecap="round" 
-          strokeLinejoin="round"
-          className="opacity-60"
-        >
-          <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10" />
         </svg>
       )}
     </div>

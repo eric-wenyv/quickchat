@@ -51,7 +51,7 @@ const Sidebar: React.FC<SidebarProps> = ({
   onToggleTheme,
 }) => {
   return (
-    <aside className="relative flex flex-col h-full w-full bg-sand-200 border-r border-sand-400 overflow-hidden select-none">
+    <aside className="relative flex flex-col h-full w-full bg-linear-bg-elevated border-r border-linear-border overflow-hidden select-none">
       {/* 操作与搜索区域 — 整体作为拖拽区，内部按钮/搜索框可交互 */}
       <div
         data-tauri-drag-region
@@ -66,7 +66,7 @@ const Sidebar: React.FC<SidebarProps> = ({
           {onToggleCollapse && (
             <button
               onClick={onToggleCollapse}
-              className="flex-shrink-0 flex items-center justify-center w-7 h-7 rounded-lg text-ink-100 hover:text-ink-300 hover:bg-sand-300/50 transition-all duration-200 cursor-pointer"
+              className="flex-shrink-0 flex items-center justify-center w-7 h-7 rounded-lg text-linear-text-tertiary hover:text-linear-text-secondary hover:bg-linear-surface transition-all duration-200 cursor-pointer"
               title="收起侧边栏"
               aria-label="Collapse sidebar"
             >
@@ -113,11 +113,11 @@ const Sidebar: React.FC<SidebarProps> = ({
       </div>
 
       {/* 4. 底部设置与主题切换 */}
-      <div className="flex-shrink-0 px-3 py-3 border-t border-sand-400/40 flex items-center gap-2">
+      <div className="flex-shrink-0 px-3 py-3 border-t border-linear-border flex items-center gap-2">
         {onOpenAgentBrowser && (
           <button
             onClick={onOpenAgentBrowser}
-            className="flex-1 flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-semibold text-ink-200 hover:text-ink-400 hover:bg-sand-300/50 transition-all cursor-pointer"
+            className="flex-1 flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-semibold text-linear-text-secondary hover:text-linear-text-primary hover:bg-linear-surface transition-all cursor-pointer"
           >
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <rect x="2" y="3" width="20" height="14" rx="2" ry="2"/>
@@ -130,7 +130,7 @@ const Sidebar: React.FC<SidebarProps> = ({
         {onOpenSettings && (
           <button
             onClick={onOpenSettings}
-            className="flex items-center justify-center w-8 h-8 rounded-xl text-ink-200 hover:text-ink-400 hover:bg-sand-300/50 transition-all cursor-pointer"
+            className="flex items-center justify-center w-8 h-8 rounded-lg text-linear-text-secondary hover:text-linear-text-primary hover:bg-linear-surface transition-all cursor-pointer"
             title="模型设置"
             aria-label="模型设置"
           >
@@ -143,7 +143,7 @@ const Sidebar: React.FC<SidebarProps> = ({
         {onToggleTheme && (
           <button
             onClick={onToggleTheme}
-            className="flex items-center justify-center w-8 h-8 rounded-xl text-ink-200 hover:text-ink-400 hover:bg-sand-300/50 transition-all cursor-pointer"
+            className="flex items-center justify-center w-8 h-8 rounded-lg text-linear-text-secondary hover:text-linear-text-primary hover:bg-linear-surface transition-all cursor-pointer"
             title={theme === 'dark' ? '切换到浅色模式' : '切换到暗色模式'}
             aria-label="Toggle theme"
           >

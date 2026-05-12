@@ -10,9 +10,8 @@ interface ConversationItemProps {
 }
 
 /**
- * B-5: 会话项组件
- * 职责：展示单条会话的摘要卡片（标题、预览、时间、消息数）
- * 右键菜单：删除对话
+ * B-5: 会话项组件 (Linear-style)
+ * 选中状态调暗，去掉左侧粗亮条，标题前加彩色小图标。
  */
 const ConversationItem: React.FC<ConversationItemProps> = ({
   conversation,
@@ -27,12 +26,10 @@ const ConversationItem: React.FC<ConversationItemProps> = ({
   const handleContextMenu = (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    // 计算菜单位置（相对于视口）
     setMenuPos({ x: e.clientX, y: e.clientY });
     setShowContextMenu(true);
   };
 
-  // 点击外部关闭
   useEffect(() => {
     if (!showContextMenu) return;
     const handleClick = (e: MouseEvent) => {
@@ -58,34 +55,37 @@ const ConversationItem: React.FC<ConversationItemProps> = ({
         className={`
           group flex flex-col gap-1 p-2.5 cursor-pointer rounded-lg transition-all duration-200 select-none
           ${isActive 
-            ? 'bg-sand-400/70 shadow-sm' 
-            : 'hover:bg-sand-300/60 active:scale-[0.98] active:bg-sand-400/70'
+            ? 'bg-linear-surface' 
+            : 'hover:bg-linear-surface active:scale-[0.98]'
           }
         `}
       >
         {/* 第一行：标题与时间 */}
         <div className="flex items-center justify-between gap-2 overflow-hidden">
           <div className="flex items-center gap-1.5 min-w-0 flex-1">
-            {conversation.agent_url && (
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={`shrink-0 ${isActive ? 'text-ink-400' : 'text-ink-200'}`}>
+            {/* 彩色小图标 - Linear 风格高饱和点缀 */}
+            {conversation.agent_url ? (
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0 text-linear-accent">
                 <rect x="2" y="3" width="20" height="14" rx="2" ry="2" />
                 <line x1="8" y1="21" x2="16" y2="21" />
                 <line x1="12" y1="17" x2="12" y2="21" />
               </svg>
+            ) : (
+              <span className="shrink-0 w-2 h-2 rounded-sm bg-linear-accent opacity-80" />
             )}
-            <h3 className={`text-sm font-semibold truncate ${isActive ? 'text-ink-400' : 'text-ink-300'}`}>
+            <h3 className={`text-sm font-medium truncate ${isActive ? 'text-linear-text-primary' : 'text-linear-text-secondary'}`}>
               {conversation.title || '新对话'}
             </h3>
           </div>
           <RelativeTime 
             timestamp={conversation.last_message_at} 
-            className={`shrink-0 text-[10px] ${isActive ? 'text-ink-200' : 'text-ink-100 group-hover:text-ink-200'}`}
+            className={`shrink-0 text-[10px] ${isActive ? 'text-linear-text-tertiary' : 'text-linear-text-muted group-hover:text-linear-text-tertiary'}`}
           />
         </div>
         
         {/* 第二行：预览与消息数 */}
         <div className="flex items-center justify-between gap-3 overflow-hidden">
-          <p className="text-xs text-ink-100 truncate flex-1 leading-relaxed">
+          <p className="text-xs text-linear-text-muted truncate flex-1 leading-relaxed">
             {conversation.last_message_preview || '尚未开始对话...'}
           </p>
           
@@ -93,8 +93,8 @@ const ConversationItem: React.FC<ConversationItemProps> = ({
             <span className={`
               text-[10px] min-w-[18px] h-[18px] flex items-center justify-center px-1 rounded-md font-medium shrink-0
               ${isActive 
-                ? 'bg-sand-200 text-ink-300' 
-                : 'bg-sand-300 text-ink-100 group-hover:bg-sand-400 group-hover:text-ink-200 transition-colors'
+                ? 'bg-linear-bg text-linear-text-secondary' 
+                : 'bg-linear-surface text-linear-text-tertiary group-hover:bg-linear-surface-hover group-hover:text-linear-text-secondary transition-colors'
               }
             `}>
               {conversation.message_count}
@@ -107,12 +107,12 @@ const ConversationItem: React.FC<ConversationItemProps> = ({
       {showContextMenu && (
         <div
           ref={menuRef}
-          className="fixed z-[9999] min-w-[140px] bg-white/95 dark:bg-sand-200/95 backdrop-blur-xl border border-sand-400/60 rounded-xl shadow-panel py-1.5 animate-in fade-in zoom-in-95 duration-150"
+          className="fixed z-[9999] min-w-[140px] bg-linear-bg-elevated backdrop-blur-xl border border-linear-border rounded-lg shadow-2xl py-1.5 animate-in fade-in zoom-in-95 duration-150"
           style={{ left: menuPos.x, top: menuPos.y }}
         >
           <button
             onClick={handleDelete}
-            className="w-full flex items-center gap-2.5 px-3.5 py-2 text-sm text-red-500 hover:bg-red-50 dark:hover:bg-red-950 transition-colors cursor-pointer"
+            className="w-full flex items-center gap-2.5 px-3.5 py-2 text-sm text-red-400 hover:bg-red-500/10 transition-colors cursor-pointer"
           >
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <path d="M3 6h18" /><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6" /><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2" />

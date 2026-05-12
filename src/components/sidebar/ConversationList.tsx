@@ -28,15 +28,15 @@ const ConversationList: React.FC<ConversationListProps> = ({
         {[...Array(6)].map((_, i) => (
           <div 
             key={i} 
-            className="flex flex-col gap-2.5 p-3 rounded-xl bg-sand-200/50 border border-transparent animate-pulse"
+            className="flex flex-col gap-2.5 p-3 rounded-lg bg-linear-surface border border-transparent animate-pulse"
           >
             <div className="flex justify-between items-center">
-              <div className="h-4 w-24 bg-sand-400/60 rounded-md" />
-              <div className="h-3 w-8 bg-sand-400/40 rounded-md" />
+              <div className="h-4 w-24 bg-linear-surface-hover rounded-md" />
+              <div className="h-3 w-8 bg-linear-surface-hover/60 rounded-md" />
             </div>
             <div className="space-y-1.5">
-              <div className="h-3 w-full bg-sand-400/30 rounded-md" />
-              <div className="h-3 w-4/5 bg-sand-400/20 rounded-md" />
+              <div className="h-3 w-full bg-linear-surface-hover/40 rounded-md" />
+              <div className="h-3 w-4/5 bg-linear-surface-hover/30 rounded-md" />
             </div>
           </div>
         ))}
@@ -49,13 +49,13 @@ const ConversationList: React.FC<ConversationListProps> = ({
     return (
       <div className="flex-1 flex flex-col items-center justify-center p-6 text-center select-none">
         <div className="relative mb-6">
-          <div className="w-16 h-16 bg-sand-300 rounded-3xl rotate-12 animate-pulse shadow-sm flex items-center justify-center">
-            <div className="w-8 h-8 border-2 border-ink-100/20 rounded-lg -rotate-12" />
+          <div className="w-16 h-16 bg-linear-surface rounded-2xl rotate-12 animate-pulse flex items-center justify-center">
+            <div className="w-8 h-8 border-2 border-linear-border rounded-lg -rotate-12" />
           </div>
-          <div className="absolute -bottom-1 -right-1 w-6 h-6 bg-sand-400 rounded-full border-4 border-sand-200" />
+          <div className="absolute -bottom-1 -right-1 w-6 h-6 bg-linear-bg-elevated rounded-full border-4 border-linear-bg" />
         </div>
-        <h3 className="text-sm font-semibold text-ink-300 mb-1">开启新的灵感</h3>
-        <p className="text-xs text-ink-100 leading-relaxed max-w-[160px] mx-auto">
+        <h3 className="text-sm font-medium text-linear-text-secondary mb-1">开启新的灵感</h3>
+        <p className="text-xs text-linear-text-muted leading-relaxed max-w-[160px] mx-auto">
           点击上方按钮开始您的第一个 AI 对话
         </p>
       </div>

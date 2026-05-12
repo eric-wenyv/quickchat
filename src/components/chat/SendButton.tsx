@@ -5,6 +5,12 @@ interface SendButtonProps {
   disabled: boolean;
 }
 
+/**
+ * SendButton (Linear-style)
+ * 小圆圈里的向上箭头：
+ * - 平时：暗灰线框 + 暗灰箭头
+ * - 激活（有内容时）：背景变成主高亮色 #6B7CED，箭头变白
+ */
 const SendButton: React.FC<SendButtonProps> = ({ onClick, disabled }) => {
   return (
     <button
@@ -14,11 +20,11 @@ const SendButton: React.FC<SendButtonProps> = ({ onClick, disabled }) => {
       disabled={disabled}
       className={`
         relative flex items-center justify-center
-        w-8 h-8 rounded-lg transition-all duration-200 ease-out
+        w-7 h-7 rounded-full transition-all duration-200 ease-out
         ${
           disabled
-            ? 'bg-transparent text-ink-100 cursor-not-allowed opacity-30'
-            : 'bg-ink-400 dark:bg-accent-600 text-sand-100 hover:bg-ink-300 dark:hover:bg-accent-500 active:scale-90 shadow-sm hover:shadow-input-hover'
+            ? 'bg-transparent text-linear-text-muted cursor-not-allowed border border-linear-border'
+            : 'bg-linear-accent text-white border border-linear-accent hover:bg-linear-accent-hover active:scale-90 shadow-none'
         }
       `}
       aria-label="Send message"
@@ -28,10 +34,10 @@ const SendButton: React.FC<SendButtonProps> = ({ onClick, disabled }) => {
         viewBox="0 0 24 24"
         fill="none"
         stroke="currentColor"
-        strokeWidth="3"
+        strokeWidth="2.5"
         strokeLinecap="round"
         strokeLinejoin="round"
-        className="w-4 h-4"
+        className="w-3.5 h-3.5"
       >
         <path d="m5 12 7-7 7 7" />
         <path d="M12 19V5" />

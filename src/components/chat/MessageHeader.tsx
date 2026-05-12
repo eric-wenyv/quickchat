@@ -154,7 +154,7 @@ export const MessageHeader: React.FC<MessageHeaderProps> = ({
     <>
       <header
         data-tauri-drag-region
-        className="sticky top-0 z-30 flex items-center justify-between w-full bg-sand-100/80 backdrop-blur-md border-b border-sand-400/50 transition-all duration-300 select-none"
+        className="sticky top-0 z-30 flex items-center justify-between w-full bg-linear-bg/80 backdrop-blur-md border-b border-linear-border transition-all duration-300 select-none"
         style={{ WebkitAppRegion: 'drag' } as React.CSSProperties}
       >
         {/* 左侧: 标题 (可点击编辑) + 模型标识 */}
@@ -169,25 +169,37 @@ export const MessageHeader: React.FC<MessageHeaderProps> = ({
               onChange={(e) => setEditTitle(e.target.value)}
               onBlur={commitTitle}
               onKeyDown={handleTitleKeyDown}
-              className="text-base md:text-lg font-semibold text-ink-400 tracking-tight leading-tight bg-transparent border-b-2 border-sand-500 outline-none px-0 py-0 w-full max-w-xs"
+              className="text-base md:text-lg font-semibold text-linear-text-primary tracking-tight leading-tight bg-transparent border-b-2 border-linear-border outline-none px-0 py-0 w-full max-w-xs"
               maxLength={100}
             />
           ) : (
             <h1
               onClick={handleTitleClick}
-              className="text-base md:text-lg font-semibold text-ink-400 truncate tracking-tight leading-tight cursor-pointer hover:text-ink-300 transition-colors"
+              className="text-base md:text-lg font-semibold text-linear-text-primary truncate tracking-tight leading-tight cursor-pointer hover:text-linear-text-secondary transition-colors"
               title="点击修改标题"
             >
               {conversation.title || '新对话'}
             </h1>
           )}
           <div className="flex items-center gap-2">
-            {conversation.system_prompt && (
-              <span className="text-[9px] bg-sand-300 dark:bg-sand-400 text-ink-200 px-1.5 py-0.5 rounded-md font-medium">
+            {conversation.system_prompt ? (
+              <button
+                onClick={() => setShowSystemPromptModal(true)}
+                className="text-[9px] bg-linear-surface text-linear-text-tertiary hover:text-linear-text-secondary px-1.5 py-0.5 rounded-md font-medium transition-colors cursor-pointer border border-linear-border hover:border-linear-border-hover"
+                title="编辑系统提示词"
+              >
                 系统提示词
-              </span>
+              </button>
+            ) : (
+              <button
+                onClick={() => setShowSystemPromptModal(true)}
+                className="text-[9px] text-linear-text-muted hover:text-linear-text-tertiary transition-colors cursor-pointer"
+                title="添加系统提示词"
+              >
+                + 添加系统提示词
+              </button>
             )}
-            <div className="flex items-center gap-1.5 text-[10px] font-medium text-ink-200/90">
+            <div className="flex items-center gap-1.5 text-[10px] font-medium text-linear-text-tertiary">
               {tokenStats.totalInput > 0 && (
                 <span className="flex items-center gap-0.5" title="累计输入 Token">
                   <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
@@ -205,12 +217,12 @@ export const MessageHeader: React.FC<MessageHeaderProps> = ({
                 </span>
               )}
               {tokenStats.totalTokens > 0 && (
-                <span className="text-ink-200/70" title="累计总 Token">
+                <span className="text-linear-text-tertiary" title="累计总 Token">
                   ∑ {tokenStats.totalTokens.toLocaleString()}
                 </span>
               )}
               {tokenStats.totalTokens === 0 && (
-                <span className="text-[10px] font-bold text-ink-200 uppercase tracking-[0.1em] font-mono">
+                <span className="text-[10px] font-bold text-linear-text-tertiary uppercase tracking-[0.1em] font-mono">
                   {conversation.model_id}
                 </span>
               )}
@@ -223,19 +235,6 @@ export const MessageHeader: React.FC<MessageHeaderProps> = ({
           className="flex items-center h-full"
           style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
         >
-          {/* 设置按钮 → 系统提示词编辑 */}
-          <button 
-            title="编辑系统提示词"
-            onClick={() => setShowSystemPromptModal(true)}
-            className="p-2 text-ink-100 hover:text-ink-400 hover:bg-sand-300 rounded-lg transition-colors group mr-2 cursor-pointer"
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="group-active:rotate-90 transition-transform duration-300">
-              <circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1Z"/>
-            </svg>
-          </button>
-
-          {/* 分隔线 */}
-          <div className="w-px h-5 bg-sand-400/50 mr-1" />
 
           {/* Windows 窗口控制按钮 */}
           <button
@@ -292,24 +291,24 @@ export const MessageHeader: React.FC<MessageHeaderProps> = ({
          ════════════════════════════════════════════════════════════════════════ */}
       {showSystemPromptModal && (
         <div
-          className="absolute inset-0 z-[100] flex items-center justify-center bg-black/30 backdrop-blur-sm"
+          className="absolute inset-0 z-[100] flex items-center justify-center bg-black/40 backdrop-blur-sm"
           onClick={() => setShowSystemPromptModal(false)}
         >
           <div
-            className="bg-white/95 dark:bg-sand-200/95 backdrop-blur-xl border border-sand-400/60 rounded-2xl shadow-2xl w-full max-w-lg mx-4 animate-in fade-in zoom-in-95 duration-200 max-h-[85vh] flex flex-col"
+            className="bg-linear-bg-elevated backdrop-blur-xl border border-linear-border rounded-xl shadow-2xl w-full max-w-lg mx-4 animate-in fade-in zoom-in-95 duration-200 max-h-[85vh] flex flex-col"
             onClick={(e) => e.stopPropagation()}
           >
             {/* 弹窗头部 */}
-            <div className="flex items-center justify-between px-6 py-4 border-b border-sand-400/30 flex-shrink-0">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-linear-border flex-shrink-0">
               <div className="flex items-center gap-2">
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-ink-300">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-linear-text-secondary">
                   <path d="M12 20h9" /><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z" />
                 </svg>
-                <h2 className="text-base font-bold text-ink-400">系统提示词</h2>
+                <h2 className="text-base font-bold text-linear-text-primary">系统提示词</h2>
               </div>
               <button
                 onClick={() => setShowSystemPromptModal(false)}
-                className="p-1.5 text-ink-200 hover:text-ink-400 hover:bg-sand-300 rounded-lg transition-colors cursor-pointer"
+                className="p-1.5 text-linear-text-tertiary hover:text-linear-text-secondary hover:bg-linear-surface rounded-lg transition-colors cursor-pointer"
               >
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                   <path d="M18 6 6 18" /><path d="m6 6 12 12" />
@@ -322,14 +321,14 @@ export const MessageHeader: React.FC<MessageHeaderProps> = ({
               {/* 已保存预设选择 */}
               {savedPrompts.length > 0 && (
                 <div className="mb-4">
-                  <label className="block text-xs font-medium text-ink-300 mb-1.5">
+                  <label className="block text-xs font-medium text-linear-text-secondary mb-1.5">
                     选择已保存的提示词
                   </label>
                   <div className="relative">
                     <select
                       value={selectedPresetId}
                       onChange={(e) => handleSelectPreset(e.target.value)}
-                      className="w-full bg-sand-200/50 text-ink-300 text-sm px-3 py-2.5 rounded-xl border border-sand-400/40 focus:border-sand-500 focus:shadow-input-hover outline-none transition-all duration-200 appearance-none cursor-pointer"
+                      className="w-full bg-linear-surface text-linear-text-secondary text-sm px-3 py-2.5 rounded-lg border border-linear-border focus:border-linear-border-hover outline-none transition-all duration-200 appearance-none cursor-pointer"
                     >
                       <option value="">-- 选择预设 --</option>
                       {savedPrompts.map((p) => (
@@ -338,7 +337,7 @@ export const MessageHeader: React.FC<MessageHeaderProps> = ({
                         </option>
                       ))}
                     </select>
-                    <svg className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-ink-200 pointer-events-none" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <svg className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-linear-text-tertiary pointer-events-none" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                       <path d="m6 9 6 6 6-6" />
                     </svg>
                   </div>
@@ -350,15 +349,15 @@ export const MessageHeader: React.FC<MessageHeaderProps> = ({
                           onClick={() => handleSelectPreset(p.id)}
                           className={`group flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs border transition-all cursor-pointer ${
                             selectedPresetId === p.id
-                              ? 'bg-ink-400 text-white border-ink-400'
-                              : 'bg-sand-200/50 text-ink-300 border-sand-400/40 hover:border-sand-500'
+                              ? 'bg-linear-accent text-white border-linear-accent'
+                              : 'bg-linear-surface text-linear-text-secondary border-linear-border hover:border-linear-border-hover'
                           }`}
                         >
                           <span>{p.title}</span>
                           <span
                             onClick={(e) => handleDeletePreset(p.id, e)}
                             className={`w-4 h-4 rounded-full flex items-center justify-center text-[10px] opacity-0 group-hover:opacity-100 transition-opacity ${
-                              selectedPresetId === p.id ? 'hover:bg-white/20' : 'hover:bg-sand-300'
+                              selectedPresetId === p.id ? 'hover:bg-white/20' : 'hover:bg-linear-surface-hover'
                             }`}
                             title="删除预设"
                           >
@@ -371,7 +370,7 @@ export const MessageHeader: React.FC<MessageHeaderProps> = ({
                 </div>
               )}
 
-              <p className="text-xs text-ink-200 mb-3">
+              <p className="text-xs text-linear-text-tertiary mb-3">
                 设置系统提示词来定义 AI 的行为方式。留空则使用默认行为。
               </p>
               <textarea
@@ -380,10 +379,10 @@ export const MessageHeader: React.FC<MessageHeaderProps> = ({
                 onChange={(e) => setSystemPromptDraft(e.target.value)}
                 placeholder="例如：你是一个专业的编程助手，请用中文回复..."
                 rows={6}
-                className="w-full bg-sand-200/50 text-ink-300 text-sm placeholder:text-ink-100 px-4 py-3 rounded-xl border border-sand-400/40 focus:border-sand-500 focus:shadow-input-hover outline-none transition-all duration-200 resize-none"
+                className="w-full bg-linear-surface text-linear-text-secondary text-sm placeholder:text-linear-text-muted px-4 py-3 rounded-lg border border-linear-border focus:border-linear-border-hover outline-none transition-all duration-200 resize-none"
               />
               <div className="flex items-center justify-between mt-1">
-                <span className="text-[10px] text-ink-100">{systemPromptDraft.length} 字符</span>
+                <span className="text-[10px] text-linear-text-muted">{systemPromptDraft.length} 字符</span>
               </div>
 
               {/* 保存为新预设 */}
@@ -414,7 +413,7 @@ export const MessageHeader: React.FC<MessageHeaderProps> = ({
             </div>
 
             {/* 弹窗底部 */}
-            <div className="flex items-center justify-end gap-2 px-6 py-4 border-t border-sand-400/30 flex-shrink-0">
+            <div className="flex items-center justify-end gap-2 px-6 py-4 border-t border-linear-border flex-shrink-0">
               {conversation.system_prompt && (
                 <button
                   onClick={() => {
@@ -422,20 +421,20 @@ export const MessageHeader: React.FC<MessageHeaderProps> = ({
                     onUpdateSystemPrompt(null);
                     setShowSystemPromptModal(false);
                   }}
-                  className="px-4 py-2 text-sm text-red-500 hover:bg-red-50 dark:hover:bg-red-950 rounded-xl transition-colors cursor-pointer"
+                  className="px-4 py-2 text-sm text-red-400 hover:bg-red-500/10 rounded-lg transition-colors cursor-pointer"
                 >
                   清除
                 </button>
               )}
               <button
                 onClick={() => setShowSystemPromptModal(false)}
-                className="px-4 py-2 text-sm text-ink-200 hover:text-ink-400 hover:bg-sand-200 rounded-xl transition-colors cursor-pointer"
+                className="px-4 py-2 text-sm text-linear-text-tertiary hover:text-linear-text-secondary hover:bg-linear-surface rounded-lg transition-colors cursor-pointer"
               >
                 取消
               </button>
               <button
                 onClick={handleSaveSystemPrompt}
-                className="px-5 py-2 text-sm font-semibold text-white bg-ink-400 hover:bg-ink-300 dark:bg-accent-600 dark:hover:bg-accent-500 rounded-xl transition-colors shadow-sm cursor-pointer"
+                className="px-5 py-2 text-sm font-semibold text-white bg-linear-accent hover:bg-linear-accent-hover rounded-lg transition-colors cursor-pointer"
               >
                 应用
               </button>

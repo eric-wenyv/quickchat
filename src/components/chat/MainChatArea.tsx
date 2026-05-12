@@ -140,7 +140,7 @@ export const MainChatArea: React.FC<MainChatAreaProps> = ({
   };
 
   return (
-    <div className="relative flex flex-col h-full w-full overflow-hidden bg-sand-100">
+    <div className="relative flex flex-col h-full w-full overflow-hidden bg-linear-bg">
       {showNoConversation ? (
         <>
           {/* 无会话时：顶部拖拽区 + 窗口控制按钮 */}
@@ -216,14 +216,14 @@ export const MainChatArea: React.FC<MainChatAreaProps> = ({
                               <div
                                 className={`h-px shrink-0 transition-all ${
                                   isActive
-                                    ? 'bg-blue-500'
-                                    : 'bg-sand-400/50 hover:bg-sand-400'
+                                    ? 'bg-linear-accent'
+                                    : 'bg-linear-border hover:bg-linear-text-muted'
                                 }`}
                                 style={{ width: isNavHovered ? 16 : 12 }}
                               />
                               {/* 悬浮后显示的文字 */}
                               {isNavHovered && (
-                                <span className="text-xs text-ink-300 truncate flex-1 text-left">
+                                <span className="text-xs text-linear-text-secondary truncate flex-1 text-left">
                                   {preview || '[空消息]'}
                                 </span>
                               )}
@@ -249,10 +249,10 @@ export const MainChatArea: React.FC<MainChatAreaProps> = ({
                   {!scrollState.isNearBottom && (
                     <button
                       onClick={() => messageListRef.current?.enableAutoScroll()}
-                      className={`absolute bottom-6 right-6 z-30 flex items-center justify-center w-10 h-10 rounded-full shadow-panel backdrop-blur-xl border transition-all duration-300 animate-in fade-in zoom-in-95 cursor-pointer ${
+                      className={`absolute bottom-6 right-6 z-30 flex items-center justify-center w-10 h-10 rounded-full backdrop-blur-xl border transition-all duration-300 animate-in fade-in zoom-in-95 cursor-pointer ${
                         scrollState.isAutoScrollEnabled
-                          ? 'bg-blue-500/90 text-white border-blue-400/60'
-                          : 'bg-white/90 dark:bg-sand-200/90 text-ink-300 border-sand-400/40 hover:bg-sand-100 dark:hover:bg-sand-300'
+                          ? 'bg-linear-accent text-white border-linear-accent'
+                          : 'bg-linear-bg-elevated text-linear-text-secondary border-linear-border hover:bg-linear-surface'
                       }`}
                       title={scrollState.isAutoScrollEnabled ? '已开启自动追踪底部' : '跳转至最底部'}
                     >

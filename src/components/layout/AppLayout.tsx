@@ -231,7 +231,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
   }, []); // 空依赖：只注册一次，回调通过 ref 保持最新
 
   return (
-    <div className="flex h-screen w-screen bg-sand-100 text-ink-300 font-sans overflow-hidden selection:bg-sand-300/60 selection:text-ink-400 antialiased">
+    <div className="flex h-screen w-screen bg-linear-bg text-linear-text-secondary font-sans overflow-hidden selection:bg-linear-surface-hover selection:text-linear-text-primary antialiased">
       
       {/* 
         左侧边栏区域 (B-1): 负责导航与历史管理
@@ -241,7 +241,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
         ref={asideRef}
         className={`
           relative flex-shrink-0 h-full transition-[width] duration-500 ease-out z-20 overflow-hidden
-          ${isSidebarOpen ? 'border-r border-sand-400' : 'w-0 min-w-0 pointer-events-none border-r-0'}
+          ${isSidebarOpen ? 'border-r border-linear-border' : 'w-0 min-w-0 pointer-events-none border-r-0'}
         `}
         style={{ width: isSidebarOpen ? sidebarWidth : 0 }}
       >
@@ -275,13 +275,13 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
         右侧主对话区区域 (C-1): 应用核心交互平面
         利用 flex-1 中自适应剩余空间。
       */}
-      <main className="flex-1 min-w-0 h-full relative z-10 flex flex-col shadow-[inset_1px_0_0_rgba(255,255,255,0.4)] dark:shadow-[inset_1px_0_0_rgba(255,255,255,0.06)]">
+      <main className="flex-1 min-w-0 h-full relative z-10 flex flex-col">
         
         {/* 侧边栏唤醒触发器: 普通模式下在左侧浮动，Agent 模式下由 AgentBrowser 内部接管 */}
         {!isSidebarOpen && !agentMode && (
           <button
             onClick={() => setIsSidebarOpen(true)}
-            className="absolute top-16 left-3 z-50 p-2 rounded-xl bg-white/80 dark:bg-sand-200/80 border border-sand-400/60 backdrop-blur-xl shadow-lg text-ink-200 hover:text-ink-400 hover:bg-white dark:hover:bg-sand-300 transition-all active:scale-90 group"
+            className="absolute top-16 left-3 z-50 p-2 rounded-lg bg-linear-bg-elevated/90 border border-linear-border backdrop-blur-xl text-linear-text-secondary hover:text-linear-text-primary hover:bg-linear-surface transition-all active:scale-90 group"
             title="展开侧边栏"
           >
             <svg className="w-4 h-4 transition-transform group-hover:translate-x-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">

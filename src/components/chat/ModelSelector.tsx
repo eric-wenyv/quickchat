@@ -79,7 +79,7 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({
         id="model-selector-trigger"
         type="button"
         onClick={() => setIsOpen(!isOpen)}
-        className="group flex items-center gap-2 px-3 py-1.5 rounded-xl bg-sand-200/80 hover:bg-sand-300 border border-sand-400/40 hover:border-sand-400/80 transition-all duration-300 text-ink-200 hover:text-ink-400 text-xs font-semibold backdrop-blur-sm shadow-sm"
+        className="group flex items-center gap-2 px-3 py-1.5 rounded-lg bg-linear-surface hover:bg-linear-surface-hover border border-linear-border hover:border-linear-border-hover transition-all duration-300 text-linear-text-tertiary hover:text-linear-text-secondary text-xs font-medium backdrop-blur-sm"
       >
         <div className="relative">
           <div className="w-2 h-2 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]" />
@@ -102,7 +102,7 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({
 
       {isOpen && (
         <div 
-          className="absolute bottom-full left-0 mb-3 w-64 bg-sand-100/95 dark:bg-sand-200/95 backdrop-blur-md border border-sand-400/60 rounded-2xl shadow-panel z-50 animate-in fade-in slide-in-from-bottom-2 duration-300 origin-bottom"
+          className="absolute bottom-full left-0 mb-3 w-64 bg-linear-bg-elevated/95 backdrop-blur-md border border-linear-border rounded-xl shadow-2xl z-50 animate-in fade-in slide-in-from-bottom-2 duration-300 origin-bottom"
         >
           <div className="p-2 space-y-1">
             <div className="px-2 py-1.5 mb-1">
@@ -112,7 +112,7 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({
                 onChange={(e) => setSearchQuery(e.target.value)}
                 placeholder="Search models..."
                 rows={1}
-                className="w-full bg-sand-200/50 dark:bg-sand-300/50 text-ink-300 text-xs placeholder:text-ink-100 px-3 py-2 rounded-xl border border-sand-400/40 focus:border-sand-500 focus:shadow-input-hover outline-none transition-all duration-200 resize-none overflow-hidden"
+                className="w-full bg-linear-surface text-linear-text-secondary text-xs placeholder:text-linear-text-muted px-3 py-2 rounded-lg border border-linear-border focus:border-linear-border-hover outline-none transition-all duration-200 resize-none overflow-hidden"
               />
             </div>
 
@@ -126,14 +126,14 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({
                       setIsOpen(false);
                       setSearchQuery('');
                     }}
-                    className={`group w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-left transition-all duration-200 ${
+                    className={`group w-full flex items-center justify-between px-3 py-2.5 rounded-lg text-left transition-all duration-200 ${
                       model.id === activeModelId
-                        ? 'bg-sand-300 text-ink-400'
-                        : 'text-ink-200 hover:bg-sand-200 hover:text-ink-300'
+                        ? 'bg-linear-surface-hover text-linear-text-primary'
+                        : 'text-linear-text-tertiary hover:bg-linear-surface hover:text-linear-text-secondary'
                     }`}
                   >
                     <div className="flex items-center gap-2 min-w-0">
-                      <span className={`flex-shrink-0 w-5 h-5 rounded-md ${PROVIDER_BADGES[model.provider]?.color || 'bg-gray-400 dark:bg-gray-600'} text-white flex items-center justify-center text-[8px] font-bold`}>
+                      <span className={`flex-shrink-0 w-5 h-5 rounded-[4px] ${PROVIDER_BADGES[model.provider]?.color || 'bg-gray-500'} text-white flex items-center justify-center text-[8px] font-bold`}>
                         {PROVIDER_BADGES[model.provider]?.label || '?'}
                       </span>
                       <div className="flex flex-col gap-0.5 min-w-0">
@@ -142,7 +142,7 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({
                       </div>
                     </div>
                     {model.id === activeModelId && (
-                      <div className="bg-ink-400 text-sand-100 rounded-full p-0.5 shadow-sm flex-shrink-0">
+                      <div className="bg-linear-accent text-white rounded-full p-0.5 shadow-sm flex-shrink-0">
                         <svg
                           xmlns="http://www.w3.org/2000/svg"
                           className="w-3 h-3"
@@ -160,7 +160,7 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({
                   </button>
                 ))
               ) : (
-                <div className="px-4 py-8 text-center text-ink-100 text-xs italic">
+                <div className="px-4 py-8 text-center text-linear-text-muted text-xs italic">
                   No models found
                 </div>
               )}

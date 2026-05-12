@@ -86,8 +86,8 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({ message, onDelete }) => {
         {/* 右侧：身份名称/时间 + 内容 */}
         <div className="flex flex-col min-w-0 flex-1">
           {/* 身份行 */}
-          <div className="flex items-center gap-2 mb-1.5">
-            <span className="text-[13px] font-medium text-linear-text-secondary">
+          <div className="flex items-center gap-2 mb-2.5">
+            <span className="text-[12px] font-medium text-linear-text-secondary">
               {isUser ? 'You' : 'AI Agent'}
             </span>
             <MessageMeta

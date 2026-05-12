@@ -53,14 +53,20 @@ const ConversationItem: React.FC<ConversationItemProps> = ({
         onClick={onSelect}
         onContextMenu={handleContextMenu}
         className={`
-          group flex flex-col gap-1 p-2.5 cursor-pointer rounded-lg select-none
+          group relative flex flex-col gap-1 p-2.5 cursor-pointer rounded-lg select-none overflow-hidden
           ${isActive
-            ? 'bg-linear-surface'
+            ? 'bg-linear-surface/80'
             : 'hover:bg-linear-surface active:scale-[0.98]'
           }
         `}
         style={{ transition: 'background-color 0.15s var(--ease-snappy), transform 0.15s var(--ease-snappy)' }}
       >
+        {isActive && (
+          <span
+            className="absolute left-0 top-2 bottom-2 w-0.5 rounded-full bg-linear-accent"
+            aria-hidden="true"
+          />
+        )}
         {/* 第一行：标题与时间 */}
         <div className="flex items-center justify-between gap-2 overflow-hidden">
           <div className="flex items-center gap-1.5 min-w-0 flex-1">
@@ -72,7 +78,7 @@ const ConversationItem: React.FC<ConversationItemProps> = ({
                 <line x1="12" y1="17" x2="12" y2="21" />
               </svg>
             ) : (
-              <span className="shrink-0 w-2 h-2 rounded-sm bg-linear-accent opacity-80" />
+              <span className="shrink-0 w-3 h-3" aria-hidden="true" />
             )}
             <h3 className={`text-sm font-medium truncate ${isActive ? 'text-linear-text-primary' : 'text-linear-text-secondary'}`}>
               {conversation.title || '新对话'}
@@ -97,18 +103,18 @@ const ConversationItem: React.FC<ConversationItemProps> = ({
             />
           </div>
         </div>
-        
+
         {/* 第二行：预览与消息数 */}
         <div className="flex items-center justify-between gap-3 overflow-hidden">
-          <p className="text-xs text-linear-text-muted truncate flex-1 leading-relaxed">
+          <p className="text-xs text-linear-text-secondary truncate flex-1 leading-snug">
             {conversation.last_message_preview || '尚未开始对话...'}
           </p>
-          
+
           {conversation.message_count > 0 && (
             <span className={`
               text-[10px] min-w-[18px] h-[18px] flex items-center justify-center px-1 rounded-md font-medium shrink-0
-              ${isActive 
-                ? 'bg-linear-bg text-linear-text-secondary' 
+              ${isActive
+                ? 'bg-linear-bg text-linear-text-secondary'
                 : 'bg-linear-surface text-linear-text-tertiary group-hover:bg-linear-surface-hover group-hover:text-linear-text-secondary transition-colors'
               }
             `}>

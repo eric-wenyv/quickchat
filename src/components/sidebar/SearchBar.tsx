@@ -49,9 +49,9 @@ const SearchBar: React.FC<SearchBarProps> = ({ onSearch, placeholder = 'Search..
         onBlur={() => setIsFocused(false)}
         placeholder={placeholder}
         className={`
-          w-full text-sm placeholder:text-linear-text-tertiary text-linear-text-primary pl-9 pr-8 py-2 rounded-lg outline-none transition-all duration-200
-          ${showBg 
-            ? 'bg-linear-surface border border-linear-border' 
+          w-full text-sm placeholder:text-linear-text-tertiary text-linear-text-body pl-9 pr-8 py-2 rounded-lg outline-none transition-all duration-200
+          ${showBg
+            ? 'bg-linear-surface border border-linear-border'
             : 'bg-transparent border border-transparent hover:bg-linear-surface hover:border-linear-border'
           }
         `}

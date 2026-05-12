@@ -322,7 +322,7 @@ const MessageContent: React.FC<MessageContentProps> = ({ content, status }) => {
         // Inline code: Linear-style 素雅行内代码
         return (
           <code
-            className={`${className || ''} text-linear-text-secondary bg-linear-surface-hover border border-linear-border px-1.5 py-0.5 rounded-[4px] font-medium text-[0.875em]`}
+            className={`${className || ''} text-linear-text-primary bg-linear-surface-hover border border-linear-border px-1.5 py-0.5 rounded-[4px] font-medium text-[0.875em]`}
             {...props}
           >
             {children}
@@ -391,28 +391,15 @@ const MessageContent: React.FC<MessageContentProps> = ({ content, status }) => {
       },
 
       td({ children }) {
-        return <td className="px-4 py-3 text-linear-text-secondary">{children}</td>;
+        return <td className="px-4 py-3 text-linear-text-body">{children}</td>;
       },
     }),
     []
   );
 
   return (
-    <div className="w-full text-white selection:bg-linear-surface-hover selection:text-linear-text-primary">
-      <article
-        className="prose prose-sm md:prose-base max-w-none dark:prose-invert
-        leading-[1.75]
-        prose-p:leading-[1.85] prose-p:my-3 prose-p:text-white
-        prose-headings:text-linear-text-primary prose-headings:font-semibold prose-headings:mt-6 prose-headings:mb-3
-        prose-a:text-linear-text-secondary prose-a:underline prose-a:underline-offset-4 hover:prose-a:text-linear-text-primary
-        prose-code:text-linear-text-secondary prose-code:bg-linear-surface-hover prose-code:border prose-code:border-linear-border prose-code:px-1.5 prose-code:py-0.5 prose-code:rounded-[4px] prose-code:font-medium prose-code:before:content-none prose-code:after:content-none
-        prose-pre:bg-transparent prose-pre:p-0
-        prose-blockquote:border-l-linear-border prose-blockquote:text-linear-text-tertiary prose-blockquote:pl-4 prose-blockquote:italic
-        prose-ul:list-disc prose-ul:pl-5 prose-ol:list-decimal prose-ol:pl-5
-        prose-li:my-1.5 prose-li:text-white
-        prose-hr:border-linear-border prose-hr:my-6
-        prose-img:rounded-lg prose-img:shadow-none"
-      >
+    <div className="w-full text-linear-text-body selection:bg-linear-surface-hover selection:text-linear-text-primary">
+      <article className="w-full">
         {isThinking ? (
           <div className="flex items-center gap-3 py-2 select-none">
             {/* Shimmer pill */}
@@ -428,7 +415,7 @@ const MessageContent: React.FC<MessageContentProps> = ({ content, status }) => {
             </div>
           </div>
         ) : (
-          <div className="prose prose-invert">
+          <div className="prose prose-sm max-w-none dark:prose-invert leading-[1.6] prose-p:leading-[1.6] prose-p:my-2.5 prose-p:text-linear-text-body prose-headings:text-linear-text-primary prose-headings:font-semibold prose-headings:tracking-tight prose-headings:leading-tight prose-headings:mt-5 prose-headings:mb-2 prose-h1:text-[1.15em] prose-h2:text-[1.08em] prose-h3:text-[1.05em] prose-strong:text-linear-text-primary prose-strong:font-semibold prose-a:text-linear-text-secondary prose-a:underline prose-a:underline-offset-4 hover:prose-a:text-linear-text-primary prose-code:text-linear-text-primary prose-code:bg-linear-surface-hover prose-code:border prose-code:border-linear-border prose-code:px-1.5 prose-code:py-0.5 prose-code:rounded-[4px] prose-code:font-medium prose-code:before:content-none prose-code:after:content-none prose-pre:bg-transparent prose-pre:p-0 prose-blockquote:border-l-linear-border prose-blockquote:text-linear-text-tertiary prose-blockquote:pl-4 prose-blockquote:italic prose-ul:list-disc prose-ul:pl-5 prose-ol:list-decimal prose-ol:pl-5 prose-li:my-1 prose-li:text-linear-text-body prose-hr:border-linear-border prose-hr:my-5 prose-img:rounded-lg prose-img:shadow-none">
             <ReactMarkdown
               remarkPlugins={[remarkGfm, remarkMath, remarkBreaks]}
               rehypePlugins={[rehypeKatex]}

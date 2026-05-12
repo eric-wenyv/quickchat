@@ -21,10 +21,9 @@ const SendButton: React.FC<SendButtonProps> = ({ onClick, disabled }) => {
       className={`
         relative flex items-center justify-center overflow-hidden
         w-7 h-7 rounded-full transition-all
-        ${
-          disabled
-            ? 'bg-transparent text-linear-text-muted cursor-not-allowed border border-linear-border scale-95'
-            : 'bg-linear-accent text-white border border-linear-accent hover:bg-linear-accent-hover active:scale-90 shadow-none scale-100'
+        ${disabled
+          ? 'bg-linear-surface/70 text-linear-text-tertiary cursor-not-allowed border border-linear-border scale-95'
+          : 'bg-linear-accent text-white border border-linear-accent hover:bg-linear-accent-hover active:scale-90 shadow-[0_6px_18px_rgba(107,124,237,0.22)] scale-100'
         }
       `}
       style={{ transitionTimingFunction: 'var(--ease-snappy)', transitionDuration: '0.25s' }}

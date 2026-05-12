@@ -18,7 +18,7 @@ export default function MessageMeta({ createdAt, tokenCount, inputTokens, output
   const hasTokenInfo = tokenCount !== null || (inputTokens !== null && outputTokens !== null);
 
   return (
-    <div className="flex items-center gap-2 text-[11px] font-normal text-linear-text-muted tracking-tight select-none">
+    <div className="flex items-center gap-2 text-[11px] font-normal text-linear-text-tertiary tracking-tight select-none">
       <span>·</span>
       <RelativeTime timestamp={createdAt} />
 

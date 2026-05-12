@@ -9,11 +9,11 @@
   --color-linear-bg-elevated: #151618;
   --color-linear-border: rgba(255, 255, 255, 0.06);
   --color-linear-border-hover: rgba(255, 255, 255, 0.10);
-  --color-linear-text-primary: #ffffff;
-  --color-linear-text-secondary: #888888;
-  --color-linear-text-tertiary: #555555;
-  --color-linear-text-muted: #444444;
-  --color-linear-text-body: #E8E8E8;
+  --color-linear-text-primary: #F4F4F5;
+  --color-linear-text-secondary: #A1A1AA;
+  --color-linear-text-tertiary: #71717A;
+  --color-linear-text-muted: #52525B;
+  --color-linear-text-body: #A1A1AA;
   --color-linear-surface: rgba(255, 255, 255, 0.05);
   --color-linear-surface-hover: rgba(255, 255, 255, 0.08);
   --color-linear-accent: #6B7CED;
@@ -25,10 +25,10 @@
   --color-sand-300: #1a1a1a;
   --color-sand-400: #222222;
   --color-sand-500: #333333;
-  --color-ink-100: #555555;
-  --color-ink-200: #888888;
-  --color-ink-300: #D1D5DB;
-  --color-ink-400: #ffffff;
+  --color-ink-100: #52525B;
+  --color-ink-200: #71717A;
+  --color-ink-300: #A1A1AA;
+  --color-ink-400: #F4F4F5;
   --color-accent-500: #6B7CED;
   --color-accent-600: #5E6AD2;
 }
@@ -49,6 +49,7 @@
   0% {
     transform: translateX(-100%);
   }
+
   100% {
     transform: translateX(100%);
   }
@@ -56,9 +57,12 @@
 
 /* Terminal cursor blink: slow, deliberate breathing */
 @keyframes terminal-blink {
-  0%, 100% {
+
+  0%,
+  100% {
     opacity: 0.25;
   }
+
   50% {
     opacity: 1;
   }
@@ -66,10 +70,13 @@
 
 /* Status indicator: ultra-slow subtle pulse */
 @keyframes status-breathe {
-  0%, 100% {
+
+  0%,
+  100% {
     opacity: 0.6;
     transform: scale(1);
   }
+
   50% {
     opacity: 1;
     transform: scale(1.15);
@@ -82,6 +89,7 @@
     opacity: 0;
     transform: scale(0.95) translateY(5px);
   }
+
   100% {
     opacity: 1;
     transform: scale(1) translateY(0);
@@ -94,6 +102,7 @@
     opacity: 0;
     transform: translateY(4px);
   }
+
   100% {
     opacity: 1;
     transform: translateY(0);
@@ -124,13 +133,16 @@
     width: 6px;
     height: 6px;
   }
+
   .custom-scrollbar::-webkit-scrollbar-track {
     background: transparent;
   }
+
   .custom-scrollbar::-webkit-scrollbar-thumb {
     background: rgba(255, 255, 255, 0.08);
     border-radius: 10px;
   }
+
   .custom-scrollbar::-webkit-scrollbar-thumb:hover {
     background: rgba(255, 255, 255, 0.14);
   }

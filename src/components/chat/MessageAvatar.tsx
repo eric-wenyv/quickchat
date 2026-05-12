@@ -14,29 +14,29 @@ const MessageAvatar: React.FC<MessageAvatarProps> = ({ role }) => {
   const isUser = role === 'user';
 
   return (
-    <div 
+    <div
       className={`
-        flex h-6 w-6 shrink-0 select-none items-center justify-center rounded-[4px] transition-all duration-200
-        ${isAssistant 
-          ? 'bg-linear-accent/10 border border-linear-accent/20 text-linear-accent' 
+        flex h-[22px] w-[22px] shrink-0 select-none items-center justify-center rounded-[4px] transition-all duration-200
+        ${isAssistant
+          ? 'bg-linear-accent/8 border border-linear-accent/12 text-linear-accent'
           : isUser
-          ? 'bg-linear-surface border border-linear-border text-linear-text-secondary'
-          : 'bg-linear-surface border border-linear-border text-linear-text-tertiary'
+            ? 'bg-linear-surface border border-linear-border text-linear-text-secondary'
+            : 'bg-linear-surface border border-linear-border text-linear-text-tertiary'
         }
       `}
     >
       {isAssistant && (
-        <svg 
-          xmlns="http://www.w3.org/2000/svg" 
-          width="14" 
-          height="14" 
-          viewBox="0 0 24 24" 
-          fill="none" 
-          stroke="currentColor" 
-          strokeWidth="2" 
-          strokeLinecap="round" 
+        <svg
+          xmlns="http://www.w3.org/2000/svg"
+          width="14"
+          height="14"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+          strokeLinecap="round"
           strokeLinejoin="round"
-          className="opacity-90"
+          className="opacity-85"
         >
           <path d="M12 8V4H8" />
           <rect width="16" height="12" x="4" y="8" rx="2" />
@@ -47,15 +47,15 @@ const MessageAvatar: React.FC<MessageAvatarProps> = ({ role }) => {
         </svg>
       )}
       {isUser && (
-        <svg 
-          xmlns="http://www.w3.org/2000/svg" 
-          width="14" 
-          height="14" 
-          viewBox="0 0 24 24" 
-          fill="none" 
-          stroke="currentColor" 
-          strokeWidth="2" 
-          strokeLinecap="round" 
+        <svg
+          xmlns="http://www.w3.org/2000/svg"
+          width="14"
+          height="14"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+          strokeLinecap="round"
           strokeLinejoin="round"
           className="opacity-80"
         >

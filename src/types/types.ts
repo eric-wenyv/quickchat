@@ -38,6 +38,8 @@ export interface ConversationSummary {
   message_count: number;
   /** 关联的 Agent 地址（若存在则点击会进入 Agent 浏览器） */
   agent_url?: string | null;
+  /** 是否固定置顶 */
+  pinned?: number | null;
 }
 
 /** 会话完整对象 — 进入会话详情时加载 */
@@ -52,6 +54,8 @@ export interface Conversation {
   updated_at: EpochMillis;
   /** 关联的 Agent 地址（若存在则点击会进入 Agent 浏览器） */
   agent_url?: string | null;
+  /** 是否固定置顶 */
+  pinned?: number | null;
 }
 
 // ---------------------------------------------------------------------------

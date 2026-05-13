@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
+import { getCurrentWindow } from '@tauri-apps/api/window';
 
 interface AgentBrowserProps {
   url: string;
@@ -24,6 +25,21 @@ export const AgentBrowser: React.FC<AgentBrowserProps> = ({
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const onNewChatRef = useRef(onNewChat);
   onNewChatRef.current = onNewChat;
+
+  // 窗口控制状态
+  const [isWindowMaximized, setIsWindowMaximized] = useState(false);
+  const [isHoveringClose, setIsHoveringClose] = useState(false);
+  const [isHoveringMinimize, setIsHoveringMinimize] = useState(false);
+  const [isHoveringMaximize, setIsHoveringMaximize] = useState(false);
+  const appWindow = getCurrentWindow();
+
+  useEffect(() => {
+    const unlisten = appWindow.onResized(async () => {
+      setIsWindowMaximized(await appWindow.isMaximized());
+    });
+    appWindow.isMaximized().then(setIsWindowMaximized);
+    return () => { unlisten.then(f => f()); };
+  }, [appWindow]);
 
   // 当外部 url 变化时，同步地址栏
   useEffect(() => {
@@ -90,23 +106,41 @@ export const AgentBrowser: React.FC<AgentBrowserProps> = ({
 
   return (
     <div className="flex flex-col h-full w-full bg-linear-bg">
-      {/* 工具栏 — 悬浮样式，与顶部留出间隙 */}
-      <div className="flex items-center gap-2 mx-3 mt-3 mb-2 px-3 py-2 bg-linear-bg-elevated rounded-lg border border-linear-border flex-shrink-0">
-        {/* 展开侧边栏按钮（替代原刷新按钮位置） */}
-        {!isSidebarOpen && (
+      {/* 工具栏 — 悬浮样式，与顶部留出间隙，支持拖拽 */}
+      <div
+        data-tauri-drag-region
+        className="flex items-center gap-2 mx-3 mt-3 mb-2 px-3 py-2 bg-linear-bg-elevated rounded-lg border border-linear-border flex-shrink-0"
+        style={{ WebkitAppRegion: 'drag' } as React.CSSProperties}
+      >
+        <div className="flex items-center gap-1.5" style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
+          {/* 展开侧边栏按钮（侧边栏收起时显示） */}
+          {!isSidebarOpen && (
+            <button
+              onClick={onToggleSidebar}
+              className="p-1.5 rounded-lg text-linear-text-tertiary hover:text-linear-text-secondary hover:bg-linear-surface transition-all cursor-pointer"
+              title="展开侧边栏"
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M13 5l7 7-7 7M5 5l7 7-7 7" />
+              </svg>
+            </button>
+          )}
+
+          {/* 退出 Agent 模式 — 使用返回箭头，避免与窗口关闭按钮混淆 */}
           <button
-            onClick={onToggleSidebar}
+            onClick={onExitAgentMode}
             className="p-1.5 rounded-lg text-linear-text-tertiary hover:text-linear-text-secondary hover:bg-linear-surface transition-all cursor-pointer"
-            title="展开侧边栏"
+            title="返回对话"
           >
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M13 5l7 7-7 7M5 5l7 7-7 7" />
+              <path d="M9 14 4 9l5-5" />
+              <path d="M4 9h10.5a5.5 5.5 0 0 1 5.5 5.5v0a5.5 5.5 0 0 1-5.5 5.5H11" />
             </svg>
           </button>
-        )}
+        </div>
 
         {/* 地址栏 */}
-        <form onSubmit={handleSubmit} className="flex-1 flex items-center gap-2">
+        <form onSubmit={handleSubmit} className="flex-1 flex items-center gap-2" style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
           <div className="flex-1 relative">
             <input
               type="text"
@@ -133,6 +167,7 @@ export const AgentBrowser: React.FC<AgentBrowserProps> = ({
         <button
           onClick={handleChangeUrl}
           className="p-1.5 rounded-lg text-linear-text-tertiary hover:text-linear-text-secondary hover:bg-linear-surface transition-all cursor-pointer"
+          style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
           title="切换地址"
         >
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -141,17 +176,55 @@ export const AgentBrowser: React.FC<AgentBrowserProps> = ({
           </svg>
         </button>
 
-        {/* 关闭 Agent 模式 */}
-        <button
-          onClick={onExitAgentMode}
-          className="p-1.5 rounded-lg text-linear-text-tertiary hover:text-red-400 hover:bg-red-500/10 transition-all cursor-pointer"
-          title="关闭 Agent 浏览器"
-        >
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M18 6 6 18" />
-            <path d="m6 6 12 12" />
-          </svg>
-        </button>
+        {/* Windows 窗口控制按钮 — 保持与 MessageHeader / TauriDragRegion 一致 */}
+        <div className="flex items-center" style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
+          <button
+            onClick={() => appWindow.minimize()}
+            onMouseEnter={() => setIsHoveringMinimize(true)}
+            onMouseLeave={() => setIsHoveringMinimize(false)}
+            className="w-10 h-7 flex items-center justify-center transition-colors duration-150 cursor-pointer rounded"
+            style={{ backgroundColor: isHoveringMinimize ? 'rgba(0,0,0,0.06)' : 'transparent' }}
+            aria-label="Minimize"
+          >
+            <svg width="10" height="1" viewBox="0 0 10 1" fill="none">
+              <rect width="10" height="1" rx="0.5" fill="currentColor" opacity="0.7" />
+            </svg>
+          </button>
+          <button
+            onClick={() => appWindow.toggleMaximize()}
+            onMouseEnter={() => setIsHoveringMaximize(true)}
+            onMouseLeave={() => setIsHoveringMaximize(false)}
+            className="w-10 h-7 flex items-center justify-center transition-colors duration-150 cursor-pointer rounded"
+            style={{ backgroundColor: isHoveringMaximize ? 'rgba(0,0,0,0.06)' : 'transparent' }}
+            aria-label={isWindowMaximized ? 'Restore' : 'Maximize'}
+          >
+            {isWindowMaximized ? (
+              <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
+                <rect x="2" y="0" width="8" height="8" rx="0.5" stroke="currentColor" strokeWidth="1" opacity="0.7" fill="none" />
+                <rect x="0" y="2" width="8" height="8" rx="0.5" stroke="currentColor" strokeWidth="1" opacity="0.7" className="fill-white dark:fill-sand-100" />
+              </svg>
+            ) : (
+              <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
+                <rect x="0.5" y="0.5" width="9" height="9" rx="0.5" stroke="currentColor" strokeWidth="1" opacity="0.7" />
+              </svg>
+            )}
+          </button>
+          <button
+            onClick={() => appWindow.close()}
+            onMouseEnter={() => setIsHoveringClose(true)}
+            onMouseLeave={() => setIsHoveringClose(false)}
+            className="w-10 h-7 flex items-center justify-center transition-colors duration-150 cursor-pointer rounded"
+            style={{
+              backgroundColor: isHoveringClose ? '#e81123' : 'transparent',
+              color: isHoveringClose ? '#ffffff' : 'inherit',
+            }}
+            aria-label="Close"
+          >
+            <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
+              <path d="M1 1L9 9M9 1L1 9" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" opacity={isHoveringClose ? 1 : 0.7} />
+            </svg>
+          </button>
+        </div>
       </div>
 
       {/* iframe 区域 */}

@@ -183,6 +183,10 @@ async function ensureConversationColumns(db: Database): Promise<void> {
       await db.execute('ALTER TABLE conversations ADD COLUMN agent_url TEXT DEFAULT NULL;');
       console.log('[DB] Added column: agent_url');
     }
+    if (!colNames.has('pinned')) {
+      await db.execute('ALTER TABLE conversations ADD COLUMN pinned INTEGER DEFAULT 0;');
+      console.log('[DB] Added column: pinned');
+    }
   } catch (e) {
     console.error('[DB] ensureConversationColumns failed:', e);
   }
@@ -347,8 +351,8 @@ export async function deleteModelConfig(id: UUID): Promise<void> {
 export async function createConversation(conv: Conversation): Promise<void> {
   const db = await getDb();
   await db.execute(
-    'INSERT INTO conversations (id, title, model_id, system_prompt, agent_url, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
-    [conv.id, conv.title, conv.model_id, conv.system_prompt, conv.agent_url ?? null, conv.created_at, conv.updated_at]
+    'INSERT INTO conversations (id, title, model_id, system_prompt, agent_url, pinned, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+    [conv.id, conv.title, conv.model_id, conv.system_prompt, conv.agent_url ?? null, conv.pinned ?? 0, conv.created_at, conv.updated_at]
   );
 }
 
@@ -360,7 +364,7 @@ export async function getConversation(id: UUID): Promise<Conversation | null> {
 
 export async function updateConversation(
   id: UUID,
-  updates: Partial<Pick<Conversation, 'title' | 'model_id' | 'system_prompt' | 'agent_url' | 'updated_at'>>
+  updates: Partial<Pick<Conversation, 'title' | 'model_id' | 'system_prompt' | 'agent_url' | 'pinned' | 'updated_at'>>
 ): Promise<void> {
   const db = await getDb();
   const sets: string[] = [];
@@ -370,6 +374,7 @@ export async function updateConversation(
   if (updates.model_id !== undefined) { sets.push('model_id = ?'); vals.push(updates.model_id); }
   if (updates.system_prompt !== undefined) { sets.push('system_prompt = ?'); vals.push(updates.system_prompt); }
   if (updates.agent_url !== undefined) { sets.push('agent_url = ?'); vals.push(updates.agent_url); }
+  if (updates.pinned !== undefined) { sets.push('pinned = ?'); vals.push(updates.pinned); }
   sets.push('updated_at = ?');
   vals.push(updates.updated_at ?? Date.now());
   vals.push(id);
@@ -392,12 +397,14 @@ export async function getConversations(limit = 100, offset = 0): Promise<Convers
     last_message_preview: string | null;
     message_count: number;
     agent_url: string | null;
+    pinned: number | null;
   }[]>(
     `SELECT
       c.id,
       c.title,
       c.created_at,
       c.agent_url,
+      c.pinned,
       COALESCE(last_msg.created_at, c.created_at) AS last_message_at,
       COALESCE(SUBSTR(last_msg.content, 1, 120), '') AS last_message_preview,
       COALESCE(msg_count.cnt, 0) AS message_count
@@ -410,7 +417,7 @@ export async function getConversations(limit = 100, offset = 0): Promise<Convers
     LEFT JOIN (
       SELECT conversation_id, COUNT(*) AS cnt FROM messages GROUP BY conversation_id
     ) msg_count ON msg_count.conversation_id = c.id
-    ORDER BY last_message_at DESC
+    ORDER BY c.pinned DESC, last_message_at DESC
     LIMIT ? OFFSET ?`,
     [limit, offset]
   );
@@ -423,6 +430,7 @@ export async function getConversations(limit = 100, offset = 0): Promise<Convers
     last_message_preview: r.last_message_preview ?? '',
     message_count: r.message_count,
     agent_url: r.agent_url,
+    pinned: r.pinned,
   }));
 }
 

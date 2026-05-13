@@ -10,6 +10,7 @@ interface SidebarProps {
   onSelectConversation: (id: UUID) => void;
   onCreateConversation: () => void;
   onDeleteConversation: (id: UUID) => void;
+  onPinConversation?: (id: UUID) => void;
   onSearchChange: (query: string) => void;
   isLoading: boolean;
   /** 当前搜索关键词 */
@@ -41,6 +42,7 @@ const Sidebar: React.FC<SidebarProps> = ({
   onSelectConversation,
   onCreateConversation,
   onDeleteConversation,
+  onPinConversation,
   onSearchChange,
   isLoading,
   searchQuery,
@@ -108,6 +110,7 @@ const Sidebar: React.FC<SidebarProps> = ({
           activeId={activeConversationId}
           onSelect={onSelectConversation}
           onDelete={onDeleteConversation}
+          onPin={onPinConversation}
           isLoading={isLoading}
         />
       </div>

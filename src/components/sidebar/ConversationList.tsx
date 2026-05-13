@@ -7,6 +7,7 @@ interface ConversationListProps {
   activeId: UUID | null;
   onSelect: (id: UUID) => void;
   onDelete: (id: UUID) => void;
+  onPin?: (id: UUID) => void;
   isLoading: boolean;
 }
 
@@ -19,6 +20,7 @@ const ConversationList: React.FC<ConversationListProps> = ({
   activeId,
   onSelect,
   onDelete,
+  onPin,
   isLoading,
 }) => {
   // 加载态：渲染 6 个骨架屏卡片
@@ -63,22 +65,45 @@ const ConversationList: React.FC<ConversationListProps> = ({
   }
 
   // 正常列表态
+  const pinnedConversations = conversations.filter(c => c.pinned);
+  const recentConversations = conversations.filter(c => !c.pinned);
+
   return (
     <div 
       className="flex-1 overflow-y-auto px-2 py-1 flex flex-col gap-0.5 transition-opacity duration-300 ease-in-out custom-scrollbar"
     >
-      <div className="px-2 pt-2 pb-1.5">
-        <span className="text-[11px] font-semibold text-[#8A8D93] uppercase tracking-wider select-none">
-          Recents
-        </span>
-      </div>
-      {conversations.map((conv) => (
+      {pinnedConversations.length > 0 && (
+        <div className="px-2 pt-2 pb-1.5">
+          <span className="text-[11px] font-semibold text-[#8A8D93] uppercase tracking-wider select-none">
+            Pinned
+          </span>
+        </div>
+      )}
+      {pinnedConversations.map((conv) => (
         <ConversationItem
           key={conv.id}
           conversation={conv}
           isActive={conv.id === activeId}
           onSelect={() => onSelect(conv.id)}
           onDelete={() => onDelete(conv.id)}
+          onPin={() => onPin?.(conv.id)}
+        />
+      ))}
+      {recentConversations.length > 0 && (
+        <div className="px-2 pt-2 pb-1.5">
+          <span className="text-[11px] font-semibold text-[#8A8D93] uppercase tracking-wider select-none">
+            Recents
+          </span>
+        </div>
+      )}
+      {recentConversations.map((conv) => (
+        <ConversationItem
+          key={conv.id}
+          conversation={conv}
+          isActive={conv.id === activeId}
+          onSelect={() => onSelect(conv.id)}
+          onDelete={() => onDelete(conv.id)}
+          onPin={() => onPin?.(conv.id)}
         />
       ))}
     </div>

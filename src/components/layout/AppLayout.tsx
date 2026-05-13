@@ -45,6 +45,8 @@ interface AppLayoutProps {
   onCreateConversation: () => void;
   /** 删除会话 */
   onDeleteConversation: (id: UUID) => void;
+  /** 固定/取消固定会话 */
+  onPinConversation?: (id: UUID) => void;
   /** 重命名会话 */
   onRenameConversation: (id: UUID, newTitle: string) => void;
   /** 搜索会话 */
@@ -108,6 +110,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
   onSelectConversation,
   onCreateConversation,
   onDeleteConversation,
+  onPinConversation,
   onRenameConversation,
   onSearchConversations,
   searchQuery,
@@ -251,6 +254,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
           onSelectConversation={onSelectConversation}
           onCreateConversation={onCreateConversation}
           onDeleteConversation={onDeleteConversation}
+          onPinConversation={onPinConversation}
           onSearchChange={onSearchConversations}
           isLoading={isLoadingConversations}
           searchQuery={searchQuery}

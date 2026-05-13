@@ -99,6 +99,15 @@ export default function App() {
   const pendingUpdatesRef = useRef<Record<UUID, string>>({});
   const rafRef = useRef<number | null>(null);
 
+  // 统一的会话排序：置顶优先，再按最后消息时间降序
+  const sortConversations = (convs: ConversationSummary[]) =>
+    [...convs].sort((a, b) => {
+      if ((b.pinned ?? 0) !== (a.pinned ?? 0)) {
+        return (b.pinned ?? 0) - (a.pinned ?? 0);
+      }
+      return b.last_message_at - a.last_message_at;
+    });
+
   // --- Agent 浏览器操作 ---
   const handleOpenAgentBrowser = () => {
     const url = window.prompt('请输入 Agent 服务地址：', 'http://127.0.0.1:5494');
@@ -122,7 +131,7 @@ export default function App() {
 
       createConversation(newConv)
         .then(() => {
-          setConversations(prev => [{
+          setConversations(prev => sortConversations([{
             id: newConv.id,
             title: newConv.title,
             created_at: newConv.created_at,
@@ -130,7 +139,8 @@ export default function App() {
             last_message_preview: '',
             message_count: 0,
             agent_url: finalUrl,
-          }, ...prev]);
+            pinned: 0,
+          }, ...prev]));
           return handleSelectConversation(newConv.id);
         })
         .catch((e) => {
@@ -404,6 +414,20 @@ export default function App() {
     }
   };
 
+  const handlePinConversation = async (id: UUID) => {
+    try {
+      const conv = conversations.find(c => c.id === id);
+      if (!conv) return;
+      const newPinned = conv.pinned ? 0 : 1;
+      await dbUpdateConversation(id, { pinned: newPinned });
+      const convs = await getConversations(100, 0);
+      setConversations(convs);
+      showToast(newPinned ? '已固定' : '已取消固定', newPinned ? '对话已置顶' : '对话已取消置顶', 'success');
+    } catch (e) {
+      showToast('操作失败', String(e));
+    }
+  };
+
   const handleDeleteMessage = async (msgId: UUID) => {
     try {
       await dbDeleteMessage(msgId);
@@ -564,14 +588,15 @@ export default function App() {
     if (!isExisting) {
       try {
         await createConversation(activeConversation);
-        setConversations(prev => [{
+        setConversations(prev => sortConversations([{
           id: activeConversation.id,
           title: activeConversation.title,
           created_at: activeConversation.created_at,
           last_message_at: now,
           last_message_preview: content.slice(0, 120),
           message_count: 0,
-        }, ...prev]);
+          pinned: 0,
+        }, ...prev]));
       } catch (e) {
         showToast('保存会话失败', String(e));
         setIsSending(false);
@@ -636,8 +661,9 @@ export default function App() {
           last_message_at: now,
           last_message_preview: content.slice(0, 120),
           message_count: 1,
+          pinned: 0,
         }, ...prev];
-      return updated.sort((a, b) => b.last_message_at - a.last_message_at);
+      return sortConversations(updated);
     });
 
     // 构建对话历史
@@ -761,11 +787,11 @@ export default function App() {
       });
 
       // 更新会话列表
-      setConversations(prev => prev.map(c =>
+      setConversations(prev => sortConversations(prev.map(c =>
         c.id === convId
           ? { ...c, last_message_preview: accumulated.slice(0, 120), last_message_at: Date.now(), message_count: c.message_count + 1 }
           : c
-      ).sort((a, b) => b.last_message_at - a.last_message_at));
+      )));
 
       // 静默生成/更新对话标题（后台执行，失败不提示）
       (async () => {
@@ -913,6 +939,7 @@ export default function App() {
         onSelectConversation={handleSelectConversation}
         onCreateConversation={handleCreateConversation}
         onDeleteConversation={handleDeleteConversation}
+        onPinConversation={handlePinConversation}
         onRenameConversation={handleRenameConversation}
         onSearchConversations={setSearchQuery}
         searchQuery={searchQuery}

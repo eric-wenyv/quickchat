@@ -32,8 +32,8 @@ interface SidebarProps {
  * 组合了拖拽区域、新建按钮、搜索功能和对话历史列表。
  * 
  * 设计规范：
- * - 背景色：sand-200 (次级背景)
- * - 边框：右侧 border-r border-sand-400
+ * - 背景色：linear-sidebar (深灰次级背景)
+ * - 边框：右侧 border-r border-linear-border
  * - 交互：select-none 禁止文本选中，优化原生应用感
  */
 const Sidebar: React.FC<SidebarProps> = ({
@@ -88,14 +88,14 @@ const Sidebar: React.FC<SidebarProps> = ({
         {/* 搜索结果统计 */}
         {searchQuery.trim() && (
           <div className="flex items-center justify-between px-1 py-1.5 mb-1" style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
-            <span className="text-[11px] text-ink-200 font-medium">
+            <span className="text-[11px] text-linear-text-tertiary font-medium">
               {conversations.length > 0
                 ? `找到 ${conversations.length} 个结果`
                 : '无匹配结果'}
             </span>
             <button
               onClick={() => onSearchChange('')}
-              className="text-[11px] text-ink-100 hover:text-ink-400 font-semibold transition-colors cursor-pointer"
+              className="text-[11px] text-linear-text-muted hover:text-linear-text-primary font-semibold transition-colors cursor-pointer"
             >
               清除
             </button>

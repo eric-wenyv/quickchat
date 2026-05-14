@@ -57,7 +57,7 @@ const ConversationItem: React.FC<ConversationItemProps> = ({
         className={`
           group relative flex flex-col gap-1 p-2.5 cursor-pointer rounded-lg select-none overflow-hidden
           ${isActive
-            ? 'bg-[#1C1E21] shadow-linear-highlight border border-[rgba(255,255,255,0.04)]'
+            ? 'bg-linear-bg-elevated shadow-linear-highlight border border-linear-border'
             : 'border border-transparent hover:bg-linear-surface active:scale-[0.98]'
           }
         `}

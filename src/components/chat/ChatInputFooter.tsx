@@ -63,7 +63,7 @@ export const ChatInputFooter: React.FC<ChatInputFooterProps> = ({
       <div className="absolute top-0 left-0 right-0 h-[1px] bg-gradient-to-r from-transparent via-linear-border to-transparent opacity-50" />
       <div className="max-w-3xl mx-auto">
         <div
-          className="relative group bg-linear-bg-elevated border border-[rgba(255,255,255,0.08)] shadow-linear-highlight rounded-lg hover:border-linear-border-hover focus-within:border-linear-accent focus-within:shadow-linear-highlight-strong"
+          className="relative group bg-linear-bg-elevated border border-[rgba(255,255,255,0.08)] shadow-linear-highlight rounded-2xl hover:border-linear-border-hover focus-within:border-linear-accent focus-within:shadow-linear-highlight-strong"
           style={{ transition: 'border-color 0.1s var(--ease-snappy), box-shadow 0.1s var(--ease-snappy)' }}
         >
           {/* 图片预览区 */}
@@ -74,7 +74,7 @@ export const ChatInputFooter: React.FC<ChatInputFooterProps> = ({
                   <img
                     src={url}
                     alt="pasted"
-                    className="h-16 w-16 object-cover rounded-md border border-linear-border"
+                    className="h-16 w-16 object-cover rounded-xl border border-linear-border"
                   />
                   <button
                     onClick={() => removeImage(idx)}
@@ -98,10 +98,10 @@ export const ChatInputFooter: React.FC<ChatInputFooterProps> = ({
               placeholder="Ask anything..."
             />
           </div>
-          
+
           <div className="flex items-center justify-between px-4 py-3 border-t border-linear-border/50">
             <div className="flex items-center gap-1.5">
-              <ModelSelector 
+              <ModelSelector
                 models={models}
                 activeModelId={activeModelId}
                 onSelect={onModelSelect}
@@ -117,16 +117,16 @@ export const ChatInputFooter: React.FC<ChatInputFooterProps> = ({
                 Ready
               </div>
             </div>
-            
+
             <div className="flex items-center gap-4">
               <div className={`hidden sm:block transition-all duration-300 ${content.trim() || pendingImages.length > 0 ? 'opacity-40 translate-x-0' : 'opacity-0 translate-x-2'}`}>
                 <span className="text-[10px] font-medium text-linear-text-tertiary uppercase tracking-widest">
                   {content.length} chars
                 </span>
               </div>
-              <SendButton 
-                onClick={handleSend} 
-                disabled={!canSend} 
+              <SendButton
+                onClick={handleSend}
+                disabled={!canSend}
               />
             </div>
           </div>

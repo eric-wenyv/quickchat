@@ -53,7 +53,7 @@ const TauriDragRegion: React.FC<TauriDragRegionProps> = ({
             onMouseLeave={() => setIsHoveringMinimize(false)}
             className="w-12 h-10 flex items-center justify-center transition-colors duration-150 cursor-pointer"
             style={{
-              backgroundColor: isHoveringMinimize ? 'rgba(0,0,0,0.06)' : 'transparent',
+              backgroundColor: isHoveringMinimize ? 'rgba(255,255,255,0.08)' : 'transparent',
             }}
             aria-label="Minimize"
           >
@@ -70,7 +70,7 @@ const TauriDragRegion: React.FC<TauriDragRegionProps> = ({
             onMouseLeave={() => setIsHoveringMaximize(false)}
             className="w-12 h-10 flex items-center justify-center transition-colors duration-150 cursor-pointer"
             style={{
-              backgroundColor: isHoveringMaximize ? 'rgba(0,0,0,0.06)' : 'transparent',
+              backgroundColor: isHoveringMaximize ? 'rgba(255,255,255,0.08)' : 'transparent',
             }}
             aria-label={isWindowMaximized ? 'Restore' : 'Maximize'}
           >
@@ -78,7 +78,7 @@ const TauriDragRegion: React.FC<TauriDragRegionProps> = ({
               /* 还原图标：两个重叠的小矩形 */
               <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
                 <rect x="2" y="0" width="8" height="8" rx="0.5" stroke="currentColor" strokeWidth="1" opacity="0.7" fill="none" />
-                <rect x="0" y="2" width="8" height="8" rx="0.5" stroke="currentColor" strokeWidth="1" opacity="0.7" className="fill-white dark:fill-sand-100" />
+                <rect x="0" y="2" width="8" height="8" rx="0.5" stroke="currentColor" strokeWidth="1" opacity="0.7" className="fill-linear-bg" />
               </svg>
             ) : (
               /* 最大化图标：□ 空心矩形 */

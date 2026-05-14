@@ -4,39 +4,49 @@
 @variant dark (&:where(.dark, .dark *));
 
 @theme {
-  /* Linear-style dark palette: extremely restrained, monochrome-first */
-  --color-linear-bg: #0E0F11; /* True Linear main background */
-  --color-linear-sidebar: #17181A; /* Sidebar background */
-  --color-linear-bg-elevated: #1C1E21; /* For inputs and popovers */
-  --color-linear-border: rgba(255, 255, 255, 0.08);
-  --color-linear-border-hover: rgba(255, 255, 255, 0.15);
-  --color-linear-text-primary: #F2F3F5;
-  --color-linear-text-secondary: #8A8D93;
-  --color-linear-text-tertiary: #71717A;
-  --color-linear-text-muted: #52525B;
-  --color-linear-text-body: #D1D5DB;
-  --color-linear-surface: rgba(255, 255, 255, 0.04);
-  --color-linear-surface-hover: rgba(255, 255, 255, 0.08);
-  --color-linear-accent: #5E6AD2;
-  --color-linear-accent-hover: #6B7CED;
+  /* Modern graphite palette centered on #181818 */
+  --color-linear-bg: #181818;
+  --color-linear-sidebar: #1f1f1f;
+  --color-linear-bg-elevated: #242424;
+  --color-linear-panel: #202020;
+  --color-linear-panel-strong: #2a2a2a;
+  --color-linear-border: rgba(255, 255, 255, 0.09);
+  --color-linear-border-hover: rgba(255, 255, 255, 0.18);
+  --color-linear-text-primary: #f4f4f5;
+  --color-linear-text-secondary: #c7c7cc;
+  --color-linear-text-tertiary: #8f8f96;
+  --color-linear-text-muted: #696970;
+  --color-linear-text-body: #dedee3;
+  --color-linear-surface: rgba(255, 255, 255, 0.055);
+  --color-linear-surface-hover: rgba(255, 255, 255, 0.095);
+  --color-linear-accent: #7c83ff;
+  --color-linear-accent-hover: #8c92ff;
 
-  /* Legacy sand/ink mappings kept for compatibility, but remapped to Linear dark */
-  --color-sand-100: #111111;
-  --color-sand-200: #151618;
-  --color-sand-300: #1a1a1a;
-  --color-sand-400: #222222;
-  --color-sand-500: #333333;
-  --color-ink-100: #52525B;
-  --color-ink-200: #71717A;
-  --color-ink-300: #A1A1AA;
-  --color-ink-400: #F4F4F5;
-  --color-accent-500: #6B7CED;
-  --color-accent-600: #5E6AD2;
+  /* Legacy sand/ink mappings kept for compatibility, remapped to graphite */
+  --color-sand-100: #181818;
+  --color-sand-200: #1f1f1f;
+  --color-sand-300: #242424;
+  --color-sand-400: #2a2a2a;
+  --color-sand-500: #343434;
+  --color-ink-100: #696970;
+  --color-ink-200: #8f8f96;
+  --color-ink-300: #c7c7cc;
+  --color-ink-400: #f4f4f5;
+  --color-accent-500: #8c92ff;
+  --color-accent-600: #7c83ff;
 }
 
 :root {
   /* Linear-style snappy easing: fast start, smooth damping end */
   --ease-snappy: cubic-bezier(0.16, 1, 0.3, 1);
+  background: #181818;
+}
+
+html,
+body,
+#root {
+  min-height: 100%;
+  background: #181818;
 }
 
 .dark {

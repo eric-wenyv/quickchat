@@ -74,7 +74,7 @@ const ConversationList: React.FC<ConversationListProps> = ({
     >
       {pinnedConversations.length > 0 && (
         <div className="px-2 pt-2 pb-1.5">
-          <span className="text-[11px] font-semibold text-[#8A8D93] uppercase tracking-wider select-none">
+          <span className="text-[11px] font-semibold text-linear-text-tertiary uppercase tracking-wider select-none">
             Pinned
           </span>
         </div>
@@ -91,7 +91,7 @@ const ConversationList: React.FC<ConversationListProps> = ({
       ))}
       {recentConversations.length > 0 && (
         <div className="px-2 pt-2 pb-1.5">
-          <span className="text-[11px] font-semibold text-[#8A8D93] uppercase tracking-wider select-none">
+          <span className="text-[11px] font-semibold text-linear-text-tertiary uppercase tracking-wider select-none">
             Recents
           </span>
         </div>

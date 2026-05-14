@@ -51,8 +51,8 @@ const SearchBar: React.FC<SearchBarProps> = ({ onSearch, placeholder = 'Search..
         className={`
           w-full text-sm placeholder:text-linear-text-tertiary text-linear-text-body pl-9 pr-8 py-1.5 rounded-md outline-none transition-all duration-200
           ${showBg
-            ? 'bg-[#1C1E21] border-[rgba(255,255,255,0.08)] shadow-linear-highlight'
-            : 'bg-transparent border border-transparent hover:bg-[#1C1E21] hover:border-[rgba(255,255,255,0.06)]'
+            ? 'bg-linear-bg-elevated border-linear-border shadow-linear-highlight'
+            : 'bg-transparent border border-transparent hover:bg-linear-bg-elevated hover:border-linear-border'
           }
         `}
       />

@@ -183,7 +183,7 @@ export const AgentBrowser: React.FC<AgentBrowserProps> = ({
             onMouseEnter={() => setIsHoveringMinimize(true)}
             onMouseLeave={() => setIsHoveringMinimize(false)}
             className="w-10 h-7 flex items-center justify-center transition-colors duration-150 cursor-pointer rounded"
-            style={{ backgroundColor: isHoveringMinimize ? 'rgba(0,0,0,0.06)' : 'transparent' }}
+            style={{ backgroundColor: isHoveringMinimize ? 'rgba(255,255,255,0.08)' : 'transparent' }}
             aria-label="Minimize"
           >
             <svg width="10" height="1" viewBox="0 0 10 1" fill="none">
@@ -195,13 +195,13 @@ export const AgentBrowser: React.FC<AgentBrowserProps> = ({
             onMouseEnter={() => setIsHoveringMaximize(true)}
             onMouseLeave={() => setIsHoveringMaximize(false)}
             className="w-10 h-7 flex items-center justify-center transition-colors duration-150 cursor-pointer rounded"
-            style={{ backgroundColor: isHoveringMaximize ? 'rgba(0,0,0,0.06)' : 'transparent' }}
+            style={{ backgroundColor: isHoveringMaximize ? 'rgba(255,255,255,0.08)' : 'transparent' }}
             aria-label={isWindowMaximized ? 'Restore' : 'Maximize'}
           >
             {isWindowMaximized ? (
               <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
                 <rect x="2" y="0" width="8" height="8" rx="0.5" stroke="currentColor" strokeWidth="1" opacity="0.7" fill="none" />
-                <rect x="0" y="2" width="8" height="8" rx="0.5" stroke="currentColor" strokeWidth="1" opacity="0.7" className="fill-white dark:fill-sand-100" />
+                <rect x="0" y="2" width="8" height="8" rx="0.5" stroke="currentColor" strokeWidth="1" opacity="0.7" className="fill-linear-bg" />
               </svg>
             ) : (
               <svg width="10" height="10" viewBox="0 0 10 10" fill="none">

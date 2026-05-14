@@ -269,7 +269,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
         {isSidebarOpen && (
           <div
             onMouseDown={startResize}
-            className="absolute right-0 top-0 bottom-0 w-2 z-30 cursor-col-resize bg-sand-400/0 hover:bg-sand-400/50 active:bg-sand-400/80 transition-colors"
+            className="absolute right-0 top-0 bottom-0 w-2 z-30 cursor-col-resize bg-transparent hover:bg-linear-surface-hover active:bg-linear-border-hover transition-colors"
             title="拖动调整宽度"
           />
         )}

@@ -242,7 +242,7 @@ export const MessageHeader: React.FC<MessageHeaderProps> = ({
             onMouseEnter={() => setIsHoveringMinimize(true)}
             onMouseLeave={() => setIsHoveringMinimize(false)}
             className="w-12 h-full flex items-center justify-center transition-colors duration-150 cursor-pointer"
-            style={{ backgroundColor: isHoveringMinimize ? 'rgba(0,0,0,0.06)' : 'transparent' }}
+            style={{ backgroundColor: isHoveringMinimize ? 'rgba(255,255,255,0.08)' : 'transparent' }}
             aria-label="Minimize"
           >
             <svg width="10" height="1" viewBox="0 0 10 1" fill="none">
@@ -254,13 +254,13 @@ export const MessageHeader: React.FC<MessageHeaderProps> = ({
             onMouseEnter={() => setIsHoveringMaximize(true)}
             onMouseLeave={() => setIsHoveringMaximize(false)}
             className="w-12 h-full flex items-center justify-center transition-colors duration-150 cursor-pointer"
-            style={{ backgroundColor: isHoveringMaximize ? 'rgba(0,0,0,0.06)' : 'transparent' }}
+            style={{ backgroundColor: isHoveringMaximize ? 'rgba(255,255,255,0.08)' : 'transparent' }}
             aria-label={isWindowMaximized ? 'Restore' : 'Maximize'}
           >
             {isWindowMaximized ? (
               <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
                 <rect x="2" y="0" width="8" height="8" rx="0.5" stroke="currentColor" strokeWidth="1" opacity="0.7" fill="none" />
-                <rect x="0" y="2" width="8" height="8" rx="0.5" stroke="currentColor" strokeWidth="1" opacity="0.7" fill="white" />
+                <rect x="0" y="2" width="8" height="8" rx="0.5" stroke="currentColor" strokeWidth="1" opacity="0.7" fill="#181818" />
               </svg>
             ) : (
               <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
@@ -386,8 +386,8 @@ export const MessageHeader: React.FC<MessageHeaderProps> = ({
               </div>
 
               {/* 保存为新预设 */}
-              <div className="mt-4 pt-4 border-t border-sand-400/30">
-                <label className="block text-xs font-medium text-ink-300 mb-1.5">
+              <div className="mt-4 pt-4 border-t border-linear-border">
+                <label className="block text-xs font-medium text-linear-text-secondary mb-1.5">
                   保存为新预设
                 </label>
                 <div className="flex gap-2">
@@ -396,17 +396,17 @@ export const MessageHeader: React.FC<MessageHeaderProps> = ({
                     value={saveTitleDraft}
                     onChange={(e) => setSaveTitleDraft(e.target.value)}
                     placeholder={`留空则使用 "${generateDefaultTitle(savedPrompts.map(p => p.title))}"`}
-                    className="flex-1 bg-sand-200/50 text-ink-300 text-sm placeholder:text-ink-100 px-3 py-2 rounded-xl border border-sand-400/40 focus:border-sand-500 focus:shadow-input-hover outline-none transition-all duration-200"
+                    className="flex-1 bg-linear-surface text-linear-text-secondary text-sm placeholder:text-linear-text-muted px-3 py-2 rounded-lg border border-linear-border focus:border-linear-border-hover focus:shadow-input-hover outline-none transition-all duration-200"
                   />
                   <button
                     onClick={handleSavePreset}
                     disabled={!systemPromptDraft.trim()}
-                    className="px-4 py-2 text-sm font-medium text-ink-400 bg-sand-200 hover:bg-sand-300 disabled:opacity-40 disabled:cursor-not-allowed rounded-xl transition-colors cursor-pointer border border-sand-400/40"
+                    className="px-4 py-2 text-sm font-medium text-linear-text-primary bg-linear-surface hover:bg-linear-surface-hover disabled:opacity-40 disabled:cursor-not-allowed rounded-lg transition-colors cursor-pointer border border-linear-border"
                   >
                     保存
                   </button>
                 </div>
-                <p className="text-[10px] text-ink-100 mt-1">
+                <p className="text-[10px] text-linear-text-muted mt-1">
                   使用相同标题会覆盖已有预设
                 </p>
               </div>

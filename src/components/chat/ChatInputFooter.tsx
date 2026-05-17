@@ -4,7 +4,7 @@ import { ChatTextArea } from './ChatTextArea';
 import SendButton from './SendButton';
 import ModelSelector from './ModelSelector';
 import ThinkingLevelSelector from './ThinkingLevelSelector';
-import { readFileAsBase64, readFileAsText, isTextFile, serializeAttachments, formatFileSize, getFileIcon } from '@/utils/file';
+import { readFileAsBase64, readFileAsText, isTextFile, isDocumentFile, parseDocument, serializeAttachments, formatFileSize, getFileIcon } from '@/utils/file';
 
 interface ChatInputFooterProps {
   onSend: (content: string) => void;
@@ -68,6 +68,18 @@ export const ChatInputFooter: React.FC<ChatInputFooterProps> = ({
             attachment.textContent = await readFileAsText(file);
           } catch {
             // 文本读取失败则按二进制处理
+          }
+        } else if (isDocumentFile(file.name)) {
+          try {
+            const base64Pure = data.split(',')[1];
+            const ext = file.name.split('.').pop() || '';
+            console.log('[FileUpload] 开始解析文档:', file.name, 'ext=', ext);
+            const parsedText = await parseDocument(base64Pure, ext);
+            console.log('[FileUpload] 文档解析完成:', file.name, 'length=', parsedText.length);
+            attachment.textContent = parsedText;
+          } catch (e) {
+            console.error('[FileUpload] 文档解析失败:', file.name, e);
+            attachment.textContent = `[文档解析失败: ${e}]`;
           }
         }
         newAttachments.push(attachment);

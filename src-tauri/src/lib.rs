@@ -7,9 +7,145 @@
 //   - Window is configured as borderless + transparent via tauri.conf.json.
 //   - System tray integration (close → hide to tray, keep running in background)
 
+use base64::Engine;
 use serde_json::Value;
 use tauri::{Emitter, Manager};
 use tauri_plugin_global_shortcut::{Code, Modifiers, ShortcutState};
+
+// ---------------------------------------------------------------------------
+// Command: parse PDF / Word document via Python (pdfplumber / python-docx)
+// ---------------------------------------------------------------------------
+
+#[tauri::command]
+fn parse_document(data: String, ext: String) -> Result<String, String> {
+    let bytes = base64::engine::general_purpose::STANDARD
+        .decode(&data)
+        .map_err(|e| format!("base64 decode failed: {}", e))?;
+
+    let temp_name = format!(
+        "quick_chat_parse_{}_{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_millis()
+    );
+    let temp_path = std::env::temp_dir().join(&temp_name);
+
+    std::fs::write(&temp_path, &bytes)
+        .map_err(|e| format!("write temp file failed: {}", e))?;
+
+    // -----------------------------------------------------------------------
+    // Helper: locate Python executable robustly on Windows / Unix
+    // -----------------------------------------------------------------------
+    fn find_python() -> Result<String, String> {
+        // Windows: use "where" to resolve the real path
+        #[cfg(target_os = "windows")]
+        {
+            for name in ["python", "py", "python3"] {
+                if let Ok(output) = std::process::Command::new("where")
+                    .arg(name)
+                    .output()
+                {
+                    if output.status.success() {
+                        let stdout = String::from_utf8_lossy(&output.stdout);
+                        if let Some(line) = stdout.lines().next() {
+                            let path = line.trim();
+                            if std::path::Path::new(path).exists() {
+                                return Ok(path.to_string());
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Unix: try "which"
+        #[cfg(not(target_os = "windows"))]
+        {
+            for name in ["python3", "python"] {
+                if let Ok(output) = std::process::Command::new("which")
+                    .arg(name)
+                    .output()
+                {
+                    if output.status.success() {
+                        let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
+                        if !path.is_empty() {
+                            return Ok(path);
+                        }
+                    }
+                }
+            }
+        }
+
+        // Fallback: try bare commands (rely on PATH)
+        for cmd in ["python3", "python", "py"] {
+            if std::process::Command::new(cmd).arg("--version").output().is_ok() {
+                return Ok(cmd.to_string());
+            }
+        }
+
+        Err("无法找到 Python 解释器，请确保 Python 已安装并加入 PATH".to_string())
+    }
+
+    let python_path = find_python()?;
+
+    let script = r#"
+import sys, io, traceback
+# Force UTF-8 on Windows to avoid 'gbk' codec errors
+if sys.platform == 'win32':
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
+path = sys.argv[1]
+ext = sys.argv[2].lower()
+
+try:
+    if ext == 'pdf':
+        import pdfplumber
+        pdf = pdfplumber.open(path)
+        pages = []
+        for page in pdf.pages:
+            t = page.extract_text()
+            pages.append(t if t else '')
+        text = '\n'.join(pages)
+        pdf.close()
+    elif ext in ('docx', 'doc'):
+        from docx import Document
+        doc = Document(path)
+        text = '\n'.join(p.text for p in doc.paragraphs)
+    else:
+        text = ''
+    sys.stdout.write(text)
+    sys.stdout.flush()
+except Exception:
+    traceback.print_exc()
+    sys.exit(1)
+"#;
+
+    let output = std::process::Command::new(&python_path)
+        .arg("-c")
+        .arg(script)
+        .arg(&temp_path)
+        .arg(&ext)
+        .output()
+        .map_err(|e| format!("启动 Python 失败 ({}): {}", python_path, e))?;
+
+    let _ = std::fs::remove_file(&temp_path);
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+
+    if output.status.success() {
+        Ok(stdout.trim().to_string())
+    } else {
+        Err(format!(
+            "Python exit code {:?}. stderr: {}. stdout: {}. python: {}",
+            output.status.code(),
+            if stderr.is_empty() { "(empty)" } else { &stderr },
+            if stdout.is_empty() { "(empty)" } else { &stdout },
+            python_path
+        ))
+    }
+}
 
 // ---------------------------------------------------------------------------
 // Helper: toggle window visibility + focus (called from the shortcut handler)
@@ -198,7 +334,7 @@ pub fn run() {
         .plugin(tauri_plugin_sql::Builder::default().build())
         // ── Invoke handler ──────────────────────────────────────────────────
         // 搜索请求走 Rust 侧转发，避免 webview 直连 SerpApi 的 CORS 限制。
-        .invoke_handler(tauri::generate_handler![search_web])
+        .invoke_handler(tauri::generate_handler![search_web, parse_document])
         // ── Run ─────────────────────────────────────────────────────────────
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

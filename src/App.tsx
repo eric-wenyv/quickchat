@@ -533,7 +533,10 @@ export default function App() {
     for (const msg of currentMessages) {
       // 剥离文件附件，分离正文与附件元数据
       const { text: textWithoutAttachments, attachments } = parseAttachments(msg.content);
-      const textAttachments = attachments.filter((a) => a.textContent);
+      const textAttachments = attachments.filter((a) => typeof a.textContent === 'string');
+      if (attachments.length > 0) {
+        console.log('[buildChatHistory] attachments:', attachments.map(a => ({ name: a.name, hasText: typeof a.textContent === 'string', textLength: a.textContent?.length })));
+      }
 
       // 将文本附件内容拼接到消息正文
       let effectiveContent = textWithoutAttachments;
@@ -545,6 +548,7 @@ export default function App() {
         });
         const suffix = fileBlocks.join('\n\n');
         effectiveContent = effectiveContent ? `${effectiveContent}\n\n${suffix}` : suffix;
+        console.log('[buildChatHistory] effectiveContent length:', effectiveContent.length);
       }
 
       // 空消息检查：兼容仅含文本附件的消息

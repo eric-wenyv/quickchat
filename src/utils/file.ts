@@ -135,6 +135,17 @@ export function parseAttachments(content: string): {
   }
 }
 
+import { invoke } from '@tauri-apps/api/core';
+
+export async function parseDocument(base64Data: string, ext: string): Promise<string> {
+  return invoke('parse_document', { data: base64Data, ext });
+}
+
+export function isDocumentFile(name: string): boolean {
+  const ext = name.split('.').pop()?.toLowerCase() || '';
+  return ext === 'pdf' || ext === 'docx' || ext === 'doc';
+}
+
 export function getFileIcon(type: string): string {
   if (type.startsWith('image/')) return 'image';
   if (type.includes('pdf')) return 'pdf';

@@ -63,6 +63,7 @@ export interface ChatCompletionParams {
   model: ModelConfig;
   messages: ChatMessage[];
   tools?: ToolDefinition[];
+  signal?: AbortSignal;
 }
 
 export interface TokenUsage {
@@ -384,7 +385,7 @@ async function* parseTextStream(stream: ReadableStream<Uint8Array>): AsyncGenera
 // ---------------------------------------------------------------------------
 
 export async function chatCompletion(params: ChatCompletionParams): Promise<ChatCompletionResult> {
-  const { model, messages, tools } = params;
+  const { model, messages, tools, signal } = params;
 
   const endpoint = getApiEndpoint(model);
   const url = `${endpoint.replace(/\/$/, '')}/chat/completions`;
@@ -395,6 +396,7 @@ export async function chatCompletion(params: ChatCompletionParams): Promise<Chat
     method: 'POST',
     headers,
     body: JSON.stringify(body),
+    signal,
   });
 
   if (!response.ok) {
@@ -453,7 +455,7 @@ export async function chatCompletion(params: ChatCompletionParams): Promise<Chat
 export async function streamTextCompletion(
   params: Omit<ChatCompletionParams, 'tools'>
 ): Promise<AsyncGenerator<StreamChunk, void, unknown>> {
-  const { model, messages } = params;
+  const { model, messages, signal } = params;
 
   const endpoint = getApiEndpoint(model);
   const url = `${endpoint.replace(/\/$/, '')}/chat/completions`;
@@ -464,6 +466,7 @@ export async function streamTextCompletion(
     method: 'POST',
     headers,
     body: JSON.stringify(body),
+    signal,
   });
 
   if (!response.ok) {

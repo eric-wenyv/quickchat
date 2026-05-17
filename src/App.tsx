@@ -99,6 +99,7 @@ export default function App() {
 
   const pendingUpdatesRef = useRef<Record<UUID, string>>({});
   const rafRef = useRef<number | null>(null);
+  const abortControllerRef = useRef<AbortController | null>(null);
 
   // 统一的会话排序：置顶优先，再按最后消息时间降序
   const sortConversations = (convs: ConversationSummary[]) =>
@@ -691,6 +692,7 @@ export default function App() {
     // 构建对话历史
     let chatHistory = buildChatHistory([...messages, userMsg]);
     const tools = searchApiKey ? [WEB_SEARCH_TOOL] : undefined;
+    abortControllerRef.current = new AbortController();
     const clearPendingAssistantUpdate = () => {
       if (rafRef.current !== null) {
         window.cancelAnimationFrame(rafRef.current);
@@ -701,7 +703,7 @@ export default function App() {
 
     try {
       // 第一轮：可能触发 tool call
-      let result = await chatCompletion({ model: activeModel, messages: chatHistory, tools });
+      let result = await chatCompletion({ model: activeModel, messages: chatHistory, tools, signal: abortControllerRef.current?.signal });
 
       // 处理 Tool Calling 循环
       let toolLoopCount = 0;
@@ -748,7 +750,7 @@ export default function App() {
         }
 
         // 再次请求（不带 tools，避免无限循环）
-        result = await chatCompletion({ model: activeModel, messages: chatHistory });
+        result = await chatCompletion({ model: activeModel, messages: chatHistory, signal: abortControllerRef.current?.signal });
       }
 
       if (result.type === 'tool_calls') {
@@ -842,14 +844,28 @@ export default function App() {
       })();
 
     } catch (e: any) {
-      console.error(e);
-      showToast('AI 流式错误', e.toString(), 'error');
       clearPendingAssistantUpdate();
-      setMessages(prev => prev.map(msg => msg.id === aiMsgId ? { ...msg, status: 'error' as const } : msg));
-      await updateMessage(aiMsgId, { status: 'error' });
+      if (e.name === 'AbortError' || e.message?.toLowerCase()?.includes('abort')) {
+        // 用户主动中断，保留当前已生成内容并标记完成
+        setMessages(prev => prev.map(msg => msg.id === aiMsgId ? { ...msg, status: 'completed' as const } : msg));
+        await updateMessage(aiMsgId, { status: 'completed' });
+      } else {
+        console.error(e);
+        showToast('AI 流式错误', e.toString(), 'error');
+        setMessages(prev => prev.map(msg => msg.id === aiMsgId ? { ...msg, status: 'error' as const } : msg));
+        await updateMessage(aiMsgId, { status: 'error' });
+      }
     } finally {
       setIsSending(false);
       clearPendingAssistantUpdate();
+      abortControllerRef.current = null;
+    }
+  };
+
+  const handleStopGeneration = () => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+      abortControllerRef.current = null;
     }
   };
 
@@ -975,6 +991,7 @@ export default function App() {
         onSaveSystemPromptPreset={handleSaveSystemPromptPreset}
         onDeleteSystemPromptPreset={handleDeleteSystemPromptPreset}
         onDeleteMessage={handleDeleteMessage}
+        onStopGeneration={handleStopGeneration}
         // Agent 浏览器
         agentMode={agentMode}
         agentUrl={agentUrl}

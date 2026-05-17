@@ -74,6 +74,8 @@ interface AppLayoutProps {
   onDeleteSystemPromptPreset: (id: UUID) => void;
   /** 删除单条消息 */
   onDeleteMessage: (id: UUID) => void;
+  /** 中断 AI 生成 */
+  onStopGeneration?: () => void;
   // --- Agent 浏览器 ---
   agentMode: boolean;
   agentUrl: string;
@@ -127,6 +129,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
   onSaveSystemPromptPreset,
   onDeleteSystemPromptPreset,
   onDeleteMessage,
+  onStopGeneration,
   // Agent 浏览器
   agentMode,
   agentUrl,
@@ -330,6 +333,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
             onSaveSystemPromptPreset={onSaveSystemPromptPreset}
             onDeleteSystemPromptPreset={onDeleteSystemPromptPreset}
             onDeleteMessage={onDeleteMessage}
+            onStopGeneration={onStopGeneration}
             onFileDrop={onFileDrop}
           />
         )}

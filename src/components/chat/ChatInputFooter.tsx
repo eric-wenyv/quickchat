@@ -17,6 +17,10 @@ interface ChatInputFooterProps {
   droppedFiles?: File[];
   /** 文件放下版本号（用于触发 useEffect 重新处理） */
   dropVersion?: number;
+  /** 是否正在发送/生成中 */
+  isSending?: boolean;
+  /** 中断生成回调 */
+  onStop?: () => void;
 }
 
 /**
@@ -36,6 +40,8 @@ export const ChatInputFooter: React.FC<ChatInputFooterProps> = ({
   onUpdateModelThinkingLevel,
   droppedFiles,
   dropVersion,
+  isSending,
+  onStop,
 }) => {
   const [content, setContent] = useState('');
   const [pendingImages, setPendingImages] = useState<string[]>([]);
@@ -235,10 +241,30 @@ export const ChatInputFooter: React.FC<ChatInputFooterProps> = ({
                   {content.length} chars
                 </span>
               </div>
-              <SendButton
-                onClick={handleSend}
-                disabled={!canSend}
-              />
+              {isSending ? (
+                <button
+                  type="button"
+                  onClick={onStop}
+                  className="relative flex items-center justify-center overflow-hidden w-7 h-7 rounded-full bg-red-500 text-white border border-red-500 hover:bg-red-600 active:scale-90 shadow-[0_6px_18px_rgba(239,68,68,0.22)] scale-100"
+                  style={{ transitionTimingFunction: 'var(--ease-snappy)', transitionDuration: '0.25s' }}
+                  aria-label="停止生成"
+                  title="停止生成"
+                >
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    viewBox="0 0 24 24"
+                    fill="currentColor"
+                    className="w-3 h-3"
+                  >
+                    <rect x="6" y="6" width="12" height="12" rx="1.5" />
+                  </svg>
+                </button>
+              ) : (
+                <SendButton
+                  onClick={handleSend}
+                  disabled={!canSend}
+                />
+              )}
             </div>
           </div>
         </div>

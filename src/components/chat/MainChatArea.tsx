@@ -45,6 +45,8 @@ interface MainChatAreaProps {
   onDeleteMessage: (id: UUID) => void;
   /** 文件拖拽放下 */
   onFileDrop?: (files: File[]) => void;
+  /** 中断 AI 生成 */
+  onStopGeneration?: () => void;
 }
 
 /**
@@ -90,6 +92,7 @@ export const MainChatArea: React.FC<MainChatAreaProps> = ({
   onDeleteSystemPromptPreset,
   onDeleteMessage,
   onFileDrop,
+  onStopGeneration,
 }) => {
   const showNoConversation = !conversation;
   const showNoMessages = conversation && messages.length === 0 && !isLoadingMessages;
@@ -240,6 +243,8 @@ export const MainChatArea: React.FC<MainChatAreaProps> = ({
                     onUpdateModelThinkingLevel={onUpdateModelThinkingLevel}
                     droppedFiles={droppedFiles}
                     dropVersion={dropVersion}
+                    isSending={isSending}
+                    onStop={onStopGeneration}
                   />
                 </div>
               </div>
@@ -350,6 +355,8 @@ export const MainChatArea: React.FC<MainChatAreaProps> = ({
                   onUpdateModelThinkingLevel={onUpdateModelThinkingLevel}
                   droppedFiles={droppedFiles}
                   dropVersion={dropVersion}
+                  isSending={isSending}
+                  onStop={onStopGeneration}
                 />
 
                 {/* 拖拽上传遮罩 */}

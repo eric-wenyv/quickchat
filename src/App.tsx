@@ -23,6 +23,7 @@ import {
 } from "./services/db";
 import { chatCompletion, WEB_SEARCH_TOOL, generateConversationTitle } from "./services/ai";
 import type { ChatMessage, ChatContentPart } from "./services/ai";
+import { parseAttachments, getLanguageFromFilename } from "./utils/file";
 import { searchWeb, formatSearchResults, getSearchApiKey, setSearchApiKey } from "./services/search";
 import type {
   ConversationSummary,
@@ -530,17 +531,34 @@ export default function App() {
       history.push({ role: 'system', content: activeConversation.system_prompt.trim() });
     }
     for (const msg of currentMessages) {
-      if (!msg.content.trim() && msg.role !== 'assistant') continue;
+      // 剥离文件附件，分离正文与附件元数据
+      const { text: textWithoutAttachments, attachments } = parseAttachments(msg.content);
+      const textAttachments = attachments.filter((a) => a.textContent);
 
-      let content: string | ChatContentPart[] = msg.content;
+      // 将文本附件内容拼接到消息正文
+      let effectiveContent = textWithoutAttachments;
+      if (textAttachments.length > 0) {
+        const fileBlocks = textAttachments.map((att) => {
+          const lang = getLanguageFromFilename(att.name);
+          const fence = lang ? `\`\`\`${lang}` : '\`\`\`';
+          return `File: ${att.name}\n${fence}\n${att.textContent}\n\`\`\``;
+        });
+        const suffix = fileBlocks.join('\n\n');
+        effectiveContent = effectiveContent ? `${effectiveContent}\n\n${suffix}` : suffix;
+      }
+
+      // 空消息检查：兼容仅含文本附件的消息
+      if (!effectiveContent.trim() && msg.role !== 'assistant') continue;
+
+      let content: string | ChatContentPart[] = effectiveContent;
 
       // 仅 user 消息支持多模态（图片）
       if (msg.role === 'user') {
-        const matches = Array.from(msg.content.matchAll(IMAGE_MARKDOWN_REGEX));
+        const matches = Array.from(effectiveContent.matchAll(IMAGE_MARKDOWN_REGEX));
         if (matches.length > 0) {
           const imageUrls = matches.map((m) => m[1]);
           // 移除图片 Markdown 得到纯文本
-          let textOnly = msg.content.replace(IMAGE_MARKDOWN_REGEX, '').trim();
+          let textOnly = effectiveContent.replace(IMAGE_MARKDOWN_REGEX, '').trim();
           // 去除多余空行
           textOnly = textOnly.replace(/\n{3,}/g, '\n\n');
 

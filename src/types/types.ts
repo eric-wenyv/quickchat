@@ -72,6 +72,22 @@ export type MessageStatus =
   | "completed"  // AI 响应完毕
   | "error";     // 出错
 
+/** 文件附件 */
+export interface FileAttachment {
+  /** 附件唯一 ID (UUIDv4) */
+  id: UUID;
+  /** 原始文件名 */
+  name: string;
+  /** MIME type */
+  type: string;
+  /** 文件大小（字节） */
+  size: number;
+  /** base64 data URL（用于下载/展示） */
+  data: string;
+  /** 纯文本文件的内容（用于发送给 AI） */
+  textContent?: string;
+}
+
 /** 单条消息 */
 export interface Message {
   /** 消息唯一 ID (UUIDv4) */

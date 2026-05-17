@@ -7,12 +7,111 @@ import rehypeKatex from 'rehype-katex';
 import remarkBreaks from 'remark-breaks';
 import { codeToHtml } from 'shiki';
 import type { Components } from 'react-markdown';
-import type { MessageStatus } from '@/types/types';
+import type { MessageStatus, FileAttachment } from '@/types/types';
+import { parseAttachments, formatFileSize, getFileIcon } from '@/utils/file';
 
 interface MessageContentProps {
   content: string;
   status: MessageStatus;
 }
+
+const FileIcon: React.FC<{ type: string }> = ({ type }) => {
+  const icon = getFileIcon(type);
+  const iconClass = "w-4 h-4 text-linear-text-tertiary";
+  switch (icon) {
+    case 'image':
+      return (
+        <svg className={iconClass} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+          <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 15.75l5.159-5.159a2.25 2.25 0 013.182 0l5.159 5.159m-1.5-1.5l1.409-1.409a2.25 2.25 0 013.182 0l2.909 2.909m-18 3.75h16.5a2.25 2.25 0 002.25-2.25V6a2.25 2.25 0 00-2.25-2.25H3.75A2.25 2.25 0 001.5 6v12a2.25 2.25 0 002.25 2.25z" />
+        </svg>
+      );
+    case 'pdf':
+      return (
+        <svg className={iconClass} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+          <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" />
+        </svg>
+      );
+    case 'doc':
+      return (
+        <svg className={iconClass} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+          <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" />
+        </svg>
+      );
+    case 'sheet':
+      return (
+        <svg className={iconClass} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+          <path strokeLinecap="round" strokeLinejoin="round" d="M3.375 19.5h17.25m-17.25-4.5h17.25m-17.25-4.5h17.25M3.375 6h17.25M1.5 6.75v10.5a2.25 2.25 0 002.25 2.25h16.5a2.25 2.25 0 002.25-2.25V6.75a2.25 2.25 0 00-2.25-2.25H3.75a2.25 2.25 0 00-2.25 2.25z" />
+        </svg>
+      );
+    case 'slide':
+      return (
+        <svg className={iconClass} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+          <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 3v11.25A2.25 2.25 0 006 16.5h2.25M3.75 3h-1.5m1.5 0h16.5m0 0h1.5m-1.5 0v11.25A2.25 2.25 0 0118 16.5h-2.25m-7.5 0h7.5m-7.5 0l-1 3m8.5-3l1 3m0 0l.5 1.5m-.5-1.5h-9.5m0 0l-.5 1.5" />
+        </svg>
+      );
+    case 'archive':
+      return (
+        <svg className={iconClass} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+          <path strokeLinecap="round" strokeLinejoin="round" d="M20.25 7.5l-.625 10.632a2.25 2.25 0 01-2.247 2.118H6.622a2.25 2.25 0 01-2.247-2.118L3.75 7.5M10 11.25h4M3.375 7.5h17.25c.621 0 1.125-.504 1.125-1.125v-1.5c0-.621-.504-1.125-1.125-1.125H3.375c-.621 0-1.125.504-1.125 1.125v1.5c0 .621.504 1.125 1.125 1.125z" />
+        </svg>
+      );
+    case 'audio':
+      return (
+        <svg className={iconClass} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+          <path strokeLinecap="round" strokeLinejoin="round" d="M19.114 5.636a9 9 0 010 12.728M16.463 8.288a5.25 5.25 0 010 7.424M6.75 8.25l4.72-4.72a.75.75 0 011.28.53v15.88a.75.75 0 01-1.28.53l-4.72-4.72H4.51c-.88 0-1.704-.507-1.938-1.354A9.01 9.01 0 012.25 12c0-.83.112-1.633.322-2.396C2.806 8.756 3.63 8.25 4.51 8.25H6.75z" />
+        </svg>
+      );
+    case 'video':
+      return (
+        <svg className={iconClass} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+          <path strokeLinecap="round" strokeLinejoin="round" d="M5.25 5.653c0-.856.917-1.398 1.667-.986l11.54 6.348a1.125 1.125 0 010 1.971l-11.54 6.347a1.125 1.125 0 01-1.667-.985V5.653z" />
+        </svg>
+      );
+    default:
+      return (
+        <svg className={iconClass} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+          <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" />
+        </svg>
+      );
+  }
+};
+
+const AttachmentList: React.FC<{ attachments: FileAttachment[] }> = ({ attachments }) => {
+  const handleDownload = (att: FileAttachment) => {
+    const a = document.createElement('a');
+    a.href = att.data;
+    a.download = att.name;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+  };
+
+  return (
+    <div className="flex flex-wrap gap-2 mt-3">
+      {attachments.map((att) => (
+        <button
+          key={att.id}
+          onClick={() => handleDownload(att)}
+          className="flex items-center gap-2 px-3 py-2 rounded-xl border border-linear-border bg-linear-surface/50 hover:bg-linear-surface transition-colors cursor-pointer"
+          title={`下载 ${att.name}`}
+        >
+          <FileIcon type={att.type} />
+          <div className="flex flex-col min-w-0 text-left">
+            <span className="text-xs text-linear-text-primary font-medium truncate max-w-[140px]">
+              {att.name}
+            </span>
+            <span className="text-[10px] text-linear-text-tertiary">
+              {formatFileSize(att.size)}
+            </span>
+          </div>
+          <svg className="w-3.5 h-3.5 text-linear-text-tertiary ml-1" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M12 12.75l3-3m0 0l-3-3m-3 3l3 3m-3-3v7.5" />
+          </svg>
+        </button>
+      ))}
+    </div>
+  );
+};
 
 /**
  * 为流式 Markdown 做语法补全，防止未闭合标签导致整页结构闪烁/跳动。
@@ -301,7 +400,8 @@ const LinkPreviewModal: React.FC<{
 };
 
 const MessageContent: React.FC<MessageContentProps> = ({ content, status }) => {
-  const isThinking = content.trim() === '' && status === 'streaming';
+  const { text: textContent, attachments } = parseAttachments(content);
+  const isThinking = textContent.trim() === '' && status === 'streaming';
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
 
   const markdownComponents = useMemo<Components>(
@@ -425,8 +525,9 @@ const MessageContent: React.FC<MessageContentProps> = ({ content, status }) => {
                 return url;
               }}
             >
-              {normalizeStreamingMarkdown(content)}
+              {normalizeStreamingMarkdown(textContent)}
             </ReactMarkdown>
+            {attachments.length > 0 && <AttachmentList attachments={attachments} />}
           </div>
         )}
         {status === 'streaming' && !isThinking && (

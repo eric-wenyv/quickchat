@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useRef } from 'react';
+import React, { useState, useMemo, useRef, useCallback } from 'react';
 import type { Conversation, Message, ModelConfig, SystemPrompt, UUID } from '@/types/types';
 import { MessageHeader } from './MessageHeader';
 
@@ -11,6 +11,7 @@ import MessageList, { type MessageListHandle } from './MessageList';
 import { EmptyState } from './EmptyState';
 import { ChatInputFooter } from './ChatInputFooter';
 import TauriDragRegion from '../shared/TauriDragRegion';
+import { parseAttachments } from '@/utils/file';
 
 interface MainChatAreaProps {
   conversation: Conversation | null;
@@ -42,6 +43,8 @@ interface MainChatAreaProps {
   onDeleteSystemPromptPreset: (id: UUID) => void;
   /** 删除单条消息 */
   onDeleteMessage: (id: UUID) => void;
+  /** 文件拖拽放下 */
+  onFileDrop?: (files: File[]) => void;
 }
 
 /**
@@ -86,6 +89,7 @@ export const MainChatArea: React.FC<MainChatAreaProps> = ({
   onSaveSystemPromptPreset,
   onDeleteSystemPromptPreset,
   onDeleteMessage,
+  onFileDrop,
 }) => {
   const showNoConversation = !conversation;
   const showNoMessages = conversation && messages.length === 0 && !isLoadingMessages;
@@ -97,6 +101,59 @@ export const MainChatArea: React.FC<MainChatAreaProps> = ({
 
   // ── 滚动状态 ──
   const [scrollState, setScrollState] = useState({ isNearBottom: true, isAutoScrollEnabled: false });
+
+  // ── 拖拽上传状态 ──
+  const [isDraggingOver, setIsDraggingOver] = useState(false);
+  const [droppedFiles, setDroppedFiles] = useState<File[]>([]);
+  const [dropVersion, setDropVersion] = useState(0);
+  const dragCounterRef = useRef(0);
+
+  const hasFiles = useCallback((dt: DataTransfer): boolean => {
+    const types = dt.types;
+    if (typeof types.includes === 'function') {
+      return types.includes('Files');
+    }
+    // DOMStringList fallback
+    for (let i = 0; i < types.length; i++) {
+      if (types[i] === 'Files') return true;
+    }
+    return false;
+  }, []);
+
+  const handleDragEnter = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    if (!hasFiles(e.dataTransfer)) return;
+    dragCounterRef.current += 1;
+    setIsDraggingOver(true);
+  }, [hasFiles]);
+
+  const handleDragOver = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    if (hasFiles(e.dataTransfer)) {
+      e.dataTransfer.dropEffect = 'copy';
+    }
+  }, [hasFiles]);
+
+  const handleDragLeave = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    dragCounterRef.current -= 1;
+    if (dragCounterRef.current <= 0) {
+      dragCounterRef.current = 0;
+      setIsDraggingOver(false);
+    }
+  }, []);
+
+  const handleDrop = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    dragCounterRef.current = 0;
+    setIsDraggingOver(false);
+    const files = Array.from(e.dataTransfer.files);
+    if (files.length > 0) {
+      setDroppedFiles(files);
+      setDropVersion((v) => v + 1);
+      onFileDrop?.(files);
+    }
+  }, [onFileDrop]);
 
   const userMessages = useMemo(
     () => messages.filter((m) => m.role === 'user'),
@@ -140,7 +197,13 @@ export const MainChatArea: React.FC<MainChatAreaProps> = ({
   };
 
   return (
-    <div className="relative flex flex-col h-full w-full overflow-hidden bg-linear-bg">
+    <div
+      className="relative flex flex-col h-full w-full overflow-hidden bg-linear-bg"
+      onDragEnter={handleDragEnter}
+      onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
+      onDrop={handleDrop}
+    >
       {showNoConversation ? (
         <>
           {/* 无会话时：顶部拖拽区 + 窗口控制按钮 */}
@@ -175,6 +238,8 @@ export const MainChatArea: React.FC<MainChatAreaProps> = ({
                     activeModelId={activeModelId}
                     onModelSelect={onModelSelect}
                     onUpdateModelThinkingLevel={onUpdateModelThinkingLevel}
+                    droppedFiles={droppedFiles}
+                    dropVersion={dropVersion}
                   />
                 </div>
               </div>
@@ -202,10 +267,11 @@ export const MainChatArea: React.FC<MainChatAreaProps> = ({
                       <div className="flex flex-col items-center w-full">
                         {userMessages.map((msg, idx) => {
                           const isActive = idx === activeUserIndex;
-                          const preview = msg.content
+                          const { text: textWithoutAttachments, attachments } = parseAttachments(msg.content);
+                          const preview = textWithoutAttachments
                             .replace(/!\[.*?\]\(.*?\)/g, '[图片]')
                             .replace(/\n/g, ' ')
-                            .slice(0, 18);
+                            .slice(0, 18) || (attachments.length > 0 ? '[文件]' : '[空消息]');
                           return (
                             <button
                               key={msg.id}
@@ -282,7 +348,21 @@ export const MainChatArea: React.FC<MainChatAreaProps> = ({
                   activeModelId={activeModelId}
                   onModelSelect={onModelSelect}
                   onUpdateModelThinkingLevel={onUpdateModelThinkingLevel}
+                  droppedFiles={droppedFiles}
+                  dropVersion={dropVersion}
                 />
+
+                {/* 拖拽上传遮罩 */}
+                {isDraggingOver && (
+                  <div className="absolute inset-0 z-50 bg-linear-bg/80 backdrop-blur-sm flex items-center justify-center animate-in fade-in duration-150 pointer-events-none">
+                    <div className="flex flex-col items-center gap-4 px-8 py-6 rounded-2xl border-2 border-dashed border-linear-accent bg-linear-bg-elevated/90 shadow-2xl">
+                      <svg className="w-10 h-10 text-linear-accent" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M12 16.5V9.75m0 0l-3 3m3-3l3 3M2.25 12c0-5.385 4.365-9.75 9.75-9.75s9.75 4.365 9.75 9.75-4.365 9.75-9.75 9.75S2.25 17.385 2.25 12z" />
+                      </svg>
+                      <span className="text-sm font-medium text-linear-text-primary">释放以上传文件</span>
+                    </div>
+                  </div>
+                )}
               </>
             )}
           </main>

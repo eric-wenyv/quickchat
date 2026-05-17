@@ -7,6 +7,7 @@ interface ChatTextAreaProps {
   onChange: (value: string) => void;
   onSubmit: () => void;
   onImagePaste?: (imageDataUrl: string) => void;
+  onFilePaste?: (files: File[]) => void;
   disabled: boolean;
   placeholder?: string;
 }
@@ -16,6 +17,7 @@ export const ChatTextArea: React.FC<ChatTextAreaProps> = ({
   onChange,
   onSubmit,
   onImagePaste,
+  onFilePaste,
   disabled,
   placeholder = 'Type a message...',
 }) => {
@@ -28,10 +30,17 @@ export const ChatTextArea: React.FC<ChatTextAreaProps> = ({
   useAutoResize(textareaRef, value, onSubmit);
 
   const handlePaste = async (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
-    // Only process image paste if handler is provided
+    // 1. 优先处理文件粘贴（Windows 资源管理器 Ctrl+C 文件后 Ctrl+V）
+    const files = Array.from(e.clipboardData.files);
+    if (files.length > 0 && onFilePaste) {
+      e.preventDefault();
+      onFilePaste(files);
+      return;
+    }
+
+    // 2. 处理剪贴板图片粘贴
     if (!onImagePaste) return;
 
-    // Check if clipboard has image (no text/plain or only image)
     const items = e.clipboardData.items;
     let hasImage = false;
     let hasText = false;

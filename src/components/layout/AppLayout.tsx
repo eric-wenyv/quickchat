@@ -55,6 +55,8 @@ interface AppLayoutProps {
   searchQuery: string;
   /** 发送消息 */
   onSendMessage: (content: string) => void;
+  /** 文件拖拽放下 */
+  onFileDrop?: (files: File[]) => void;
   /** 加载更多历史 */
   onLoadMoreMessages: () => void;
   /** 切换 AI 模型 */
@@ -115,6 +117,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
   onSearchConversations,
   searchQuery,
   onSendMessage,
+  onFileDrop,
   onLoadMoreMessages,
   onModelSelect,
   onUpdateSystemPrompt,
@@ -327,6 +330,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
             onSaveSystemPromptPreset={onSaveSystemPromptPreset}
             onDeleteSystemPromptPreset={onDeleteSystemPromptPreset}
             onDeleteMessage={onDeleteMessage}
+            onFileDrop={onFileDrop}
           />
         )}
       </main>

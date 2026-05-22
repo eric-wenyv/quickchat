@@ -176,6 +176,30 @@ function createAccumulator(): SSEAccumulator {
   return { text: '', reasoningContent: '', toolCalls: new Map(), finishReason: null, usage: null };
 }
 
+interface SSEReaderState {
+  reader: ReadableStreamDefaultReader<Uint8Array>;
+  decoder: TextDecoder;
+  buffer: string;
+  done: boolean;
+}
+
+function createReaderState(stream: ReadableStream<Uint8Array>): SSEReaderState {
+  return {
+    reader: stream.getReader(),
+    decoder: new TextDecoder('utf-8'),
+    buffer: '',
+    done: false,
+  };
+}
+
+function parseUsage(usage: any): TokenUsage {
+  return {
+    prompt_tokens: usage.prompt_tokens ?? usage.input_tokens ?? 0,
+    completion_tokens: usage.completion_tokens ?? usage.output_tokens ?? 0,
+    total_tokens: usage.total_tokens ?? 0,
+  };
+}
+
 function mergeDelta(acc: SSEAccumulator, delta: any): void {
   if (typeof delta.content === 'string') {
     acc.text += delta.content;
@@ -208,81 +232,78 @@ function mergeDelta(acc: SSEAccumulator, delta: any): void {
   }
 }
 
-async function consumeStream(stream: ReadableStream<Uint8Array>): Promise<SSEAccumulator> {
-  const reader = stream.getReader();
-  const decoder = new TextDecoder('utf-8');
-  let buffer = '';
-  const acc = createAccumulator();
-
-  try {
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-
-      buffer += decoder.decode(value, { stream: true });
-      const lines = buffer.split('\n');
-      buffer = lines.pop() || '';
-
-      for (const line of lines) {
-        const trimmed = line.trim();
-        if (!trimmed.startsWith('data: ')) continue;
-        const data = trimmed.slice(6);
-        if (data === '[DONE]') continue;
-        try {
-          const parsed = JSON.parse(data);
-          const delta = parsed.choices?.[0]?.delta;
-          const finishReason = parsed.choices?.[0]?.finish_reason;
-          if (finishReason) acc.finishReason = finishReason;
-          if (delta) mergeDelta(acc, delta);
-          if (parsed.usage) {
-            acc.usage = {
-              prompt_tokens: parsed.usage.prompt_tokens ?? parsed.usage.input_tokens ?? 0,
-              completion_tokens: parsed.usage.completion_tokens ?? parsed.usage.output_tokens ?? 0,
-              total_tokens: parsed.usage.total_tokens ?? 0,
-            };
-          }
-          if (parsed.usage) {
-            acc.usage = {
-              prompt_tokens: parsed.usage.prompt_tokens ?? parsed.usage.input_tokens ?? 0,
-              completion_tokens: parsed.usage.completion_tokens ?? parsed.usage.output_tokens ?? 0,
-              total_tokens: parsed.usage.total_tokens ?? 0,
-            };
-          }
-        } catch {
-          // ignore
-        }
-      }
-    }
-
-    if (buffer.trim()) {
-      const trimmed = buffer.trim();
-      if (trimmed.startsWith('data: ')) {
-        const data = trimmed.slice(6);
-        if (data !== '[DONE]') {
-          try {
-            const parsed = JSON.parse(data);
-            const delta = parsed.choices?.[0]?.delta;
-            const finishReason = parsed.choices?.[0]?.finish_reason;
-            if (finishReason) acc.finishReason = finishReason;
-            if (delta) mergeDelta(acc, delta);
-            if (parsed.usage) {
-              acc.usage = {
-                prompt_tokens: parsed.usage.prompt_tokens ?? parsed.usage.input_tokens ?? 0,
-                completion_tokens: parsed.usage.completion_tokens ?? parsed.usage.output_tokens ?? 0,
-                total_tokens: parsed.usage.total_tokens ?? 0,
-              };
-            }
-          } catch {
-            // ignore
-          }
-        }
-      }
-    }
-  } finally {
-    reader.releaseLock();
+function applyParsedEvent(acc: SSEAccumulator, parsed: any): void {
+  const delta = parsed.choices?.[0]?.delta;
+  const finishReason = parsed.choices?.[0]?.finish_reason;
+  if (finishReason) acc.finishReason = finishReason;
+  if (delta) mergeDelta(acc, delta);
+  if (parsed.usage) {
+    acc.usage = parseUsage(parsed.usage);
   }
+}
 
-  return acc;
+async function readNextSSEData(state: SSEReaderState): Promise<string | null> {
+  while (true) {
+    const newlineIndex = state.buffer.indexOf('\n');
+    if (newlineIndex >= 0) {
+      const line = state.buffer.slice(0, newlineIndex);
+      state.buffer = state.buffer.slice(newlineIndex + 1);
+      const trimmed = line.trim();
+      if (!trimmed.startsWith('data: ')) continue;
+      const data = trimmed.slice(6);
+      return data === '[DONE]' ? null : data;
+    }
+
+    if (state.done) {
+      const trimmed = state.buffer.trim();
+      state.buffer = '';
+      if (!trimmed.startsWith('data: ')) return null;
+      const data = trimmed.slice(6);
+      return data === '[DONE]' ? null : data;
+    }
+
+    const { done, value } = await state.reader.read();
+    if (done) {
+      state.done = true;
+      state.buffer += state.decoder.decode();
+    } else {
+      state.buffer += state.decoder.decode(value, { stream: true });
+    }
+  }
+}
+
+async function readNextParsedEvent(state: SSEReaderState): Promise<any | null> {
+  while (true) {
+    const data = await readNextSSEData(state);
+    if (data === null) return null;
+    try {
+      return JSON.parse(data);
+    } catch {
+      // ignore malformed SSE payloads and continue reading
+    }
+  }
+}
+
+async function consumeRemainingParsedStream(state: SSEReaderState, acc: SSEAccumulator): Promise<void> {
+  while (true) {
+    const parsed = await readNextParsedEvent(state);
+    if (parsed === null) return;
+    applyParsedEvent(acc, parsed);
+  }
+}
+
+function hasToolCallDelta(parsed: any): boolean {
+  const toolCalls = parsed.choices?.[0]?.delta?.tool_calls;
+  return Array.isArray(toolCalls) && toolCalls.length > 0;
+}
+
+function textDeltaFromParsed(parsed: any): string | null {
+  const delta = parsed.choices?.[0]?.delta?.content;
+  return typeof delta === 'string' ? delta : null;
+}
+
+function hasReasoningDelta(parsed: any): boolean {
+  return typeof parsed.choices?.[0]?.delta?.reasoning_content === 'string';
 }
 
 function accumulatorToToolCalls(acc: SSEAccumulator): ToolCall[] {
@@ -386,6 +407,44 @@ async function* parseTextStream(stream: ReadableStream<Uint8Array>): AsyncGenera
   }
 }
 
+async function* continueTextStream(
+  state: SSEReaderState,
+  acc: SSEAccumulator,
+  result: Extract<ChatCompletionResult, { type: 'text' }>,
+  firstDelta: string | null
+): AsyncGenerator<StreamChunk, void, unknown> {
+  try {
+    if (firstDelta !== null) {
+      yield { delta: firstDelta, accumulated: acc.text };
+    }
+
+    while (true) {
+      const parsed = await readNextParsedEvent(state);
+      if (parsed === null) return;
+
+      if (hasToolCallDelta(parsed)) {
+        throw new Error('模型在文本输出开始后又触发工具调用，无法处理混合响应。');
+      }
+
+      applyParsedEvent(acc, parsed);
+      result.reasoningContent = acc.reasoningContent;
+      result.usage = acc.usage;
+
+      const delta = textDeltaFromParsed(parsed);
+      if (delta !== null) {
+        yield { delta, accumulated: acc.text };
+      }
+      if (parsed.usage) {
+        yield { delta: '', accumulated: acc.text, usage: acc.usage ?? undefined };
+      }
+    }
+  } finally {
+    result.reasoningContent = acc.reasoningContent;
+    result.usage = acc.usage;
+    state.reader.releaseLock();
+  }
+}
+
 // ---------------------------------------------------------------------------
 // 主入口：带 tool calling 的对话
 // ---------------------------------------------------------------------------
@@ -420,38 +479,60 @@ export async function chatCompletion(params: ChatCompletionParams): Promise<Chat
     throw new Error('API 返回了空的响应体');
   }
 
-  // 先消费完整流以判断是文本还是 tool call
-  const acc = await consumeStream(response.body);
+  const state = createReaderState(response.body);
+  const acc = createAccumulator();
 
-  // 如果是 tool call
-  if (acc.finishReason === 'tool_calls' || acc.toolCalls.size > 0) {
-    const toolCalls = accumulatorToToolCalls(acc);
-    if (toolCalls.length > 0) {
-      return {
-        type: 'tool_calls',
-        toolCalls,
-        assistantMessage: acc.text,
-        reasoningContent: acc.reasoningContent,
-        usage: acc.usage,
-      };
+  try {
+    while (true) {
+      const parsed = await readNextParsedEvent(state);
+      if (parsed === null) {
+        state.reader.releaseLock();
+        return {
+          type: 'text',
+          stream: (async function* () {
+            if (acc.usage) {
+              yield { delta: '', accumulated: acc.text, usage: acc.usage };
+            }
+          })(),
+          reasoningContent: acc.reasoningContent,
+          usage: acc.usage,
+        };
+      }
+
+      applyParsedEvent(acc, parsed);
+
+      if (hasToolCallDelta(parsed) || acc.finishReason === 'tool_calls' || acc.toolCalls.size > 0) {
+        await consumeRemainingParsedStream(state, acc);
+        state.reader.releaseLock();
+
+        const toolCalls = accumulatorToToolCalls(acc);
+        if (toolCalls.length > 0) {
+          return {
+            type: 'tool_calls',
+            toolCalls,
+            assistantMessage: acc.text,
+            reasoningContent: acc.reasoningContent,
+            usage: acc.usage,
+          };
+        }
+      }
+
+      const firstDelta = textDeltaFromParsed(parsed);
+      if (firstDelta !== null || hasReasoningDelta(parsed)) {
+        const result: Extract<ChatCompletionResult, { type: 'text' }> = {
+          type: 'text',
+          stream: undefined as unknown as AsyncGenerator<StreamChunk, void, unknown>,
+          reasoningContent: acc.reasoningContent,
+          usage: acc.usage,
+        };
+        result.stream = continueTextStream(state, acc, result, firstDelta);
+        return result;
+      }
     }
+  } catch (error) {
+    state.reader.releaseLock();
+    throw error;
   }
-
-  // 否则是纯文本，但我们已经消费完了流，需要模拟一个 stream
-  // 为了兼容现有 UI，将完整文本包装成单 chunk stream
-  return {
-    type: 'text',
-    stream: (async function* () {
-      if (acc.text) {
-        yield { delta: acc.text, accumulated: acc.text };
-      }
-      if (acc.usage) {
-        yield { delta: '', accumulated: acc.text, usage: acc.usage };
-      }
-    })(),
-    reasoningContent: acc.reasoningContent,
-    usage: acc.usage,
-  };
 }
 
 // ---------------------------------------------------------------------------

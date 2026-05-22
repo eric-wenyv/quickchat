@@ -44,6 +44,7 @@ export interface ToolCall {
     name: string;
     arguments: string; // JSON string
   };
+  extra_content?: Record<string, unknown>;
 }
 
 export type ChatContentPart =
@@ -160,6 +161,7 @@ interface AccumulatedToolCall {
     name?: string;
     arguments?: string;
   };
+  extra_content?: Record<string, unknown>;
 }
 
 interface SSEAccumulator {
@@ -192,6 +194,9 @@ function mergeDelta(acc: SSEAccumulator, delta: any): void {
       const existing = acc.toolCalls.get(idx)!;
       if (tc.id) existing.id = tc.id;
       if (tc.type) existing.type = tc.type;
+      if (tc.extra_content && typeof tc.extra_content === 'object') {
+        existing.extra_content = tc.extra_content;
+      }
       if (tc.function) {
         if (!existing.function) existing.function = {};
         if (tc.function.name) existing.function.name = tc.function.name;
@@ -293,6 +298,7 @@ function accumulatorToToolCalls(acc: SSEAccumulator): ToolCall[] {
         name: fn.name || '',
         arguments: fn.arguments || '',
       },
+      ...(tc.extra_content ? { extra_content: tc.extra_content } : {}),
     });
   }
   return calls;

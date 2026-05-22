@@ -9,7 +9,7 @@ interface SendButtonProps {
  * SendButton (Linear-style)
  * 小圆圈里的向上箭头：
  * - 平时：暗灰线框 + 暗灰箭头
- * - 激活（有内容时）：背景变成主高亮色 #6B7CED，箭头变白
+ * - 激活（有内容时）：浅色圆形按钮，避免蓝色选中态
  */
 const SendButton: React.FC<SendButtonProps> = ({ onClick, disabled }) => {
   return (
@@ -22,8 +22,8 @@ const SendButton: React.FC<SendButtonProps> = ({ onClick, disabled }) => {
         relative flex items-center justify-center overflow-hidden
         w-7 h-7 rounded-full transition-all
         ${disabled
-          ? 'bg-linear-surface/70 text-linear-text-tertiary cursor-not-allowed border border-linear-border scale-95'
-          : 'bg-linear-accent text-white border border-linear-accent hover:bg-linear-accent-hover active:scale-90 shadow-[0_6px_18px_rgba(107,124,237,0.22)] scale-100'
+          ? 'bg-transparent text-linear-text-muted cursor-not-allowed border border-linear-border/70 opacity-45 scale-95 shadow-none'
+          : 'bg-linear-text-primary text-linear-bg border border-linear-text-primary hover:bg-white active:scale-90 shadow-[0_6px_18px_rgba(255,255,255,0.12)] scale-100'
         }
       `}
       style={{ transitionTimingFunction: 'var(--ease-snappy)', transitionDuration: '0.25s' }}

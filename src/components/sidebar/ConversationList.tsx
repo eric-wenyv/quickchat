@@ -28,9 +28,9 @@ const ConversationList: React.FC<ConversationListProps> = ({
     return (
       <div className="h-full min-h-0 flex flex-col gap-1 px-3 py-2 overflow-hidden">
         {[...Array(6)].map((_, i) => (
-          <div 
+          <div
             key={i} 
-            className="flex flex-col shrink-0 gap-2.5 p-3 rounded-lg bg-linear-surface border border-transparent animate-pulse"
+            className="flex flex-col shrink-0 gap-2.5 p-3 rounded-md bg-linear-surface border border-transparent animate-pulse"
           >
             <div className="flex justify-between items-center">
               <div className="h-4 w-24 bg-linear-surface-hover rounded-md" />
@@ -46,21 +46,10 @@ const ConversationList: React.FC<ConversationListProps> = ({
     );
   }
 
-  // 空状态：优雅的占位提示
+  // 空状态：不显示额外插画或引导文案，避免侧栏出现无效 UI。
   if (conversations.length === 0) {
     return (
-      <div className="h-full min-h-0 flex flex-col items-center justify-center p-6 text-center select-none">
-        <div className="relative mb-6">
-          <div className="w-16 h-16 bg-linear-surface rounded-2xl rotate-12 animate-pulse flex items-center justify-center">
-            <div className="w-8 h-8 border-2 border-linear-border rounded-lg -rotate-12" />
-          </div>
-          <div className="absolute -bottom-1 -right-1 w-6 h-6 bg-linear-bg-elevated rounded-full border-4 border-linear-bg" />
-        </div>
-        <h3 className="text-sm font-medium text-linear-text-secondary mb-1">开启新的灵感</h3>
-        <p className="text-xs text-linear-text-muted leading-relaxed max-w-[160px] mx-auto">
-          点击上方按钮开始您的第一个 AI 对话
-        </p>
-      </div>
+      <div className="h-full min-h-0 px-2 py-1" aria-label="暂无对话历史" />
     );
   }
 
@@ -69,13 +58,18 @@ const ConversationList: React.FC<ConversationListProps> = ({
   const recentConversations = conversations.filter(c => !c.pinned);
 
   return (
-    <div 
+    <div
       className="h-full min-h-0 overflow-y-auto px-2 py-1 flex flex-col gap-0.5 transition-opacity duration-300 ease-in-out custom-scrollbar"
     >
+      <div className="shrink-0 px-2 pb-2 pt-1">
+        <span className="text-[11px] font-semibold text-linear-text-tertiary select-none">
+          对话历史
+        </span>
+      </div>
       {pinnedConversations.length > 0 && (
         <div className="shrink-0 px-2 pt-2 pb-1.5">
-          <span className="text-[11px] font-semibold text-linear-text-tertiary uppercase tracking-wider select-none">
-            Pinned
+          <span className="text-[11px] font-semibold text-linear-text-tertiary select-none">
+            固定
           </span>
         </div>
       )}
@@ -91,8 +85,8 @@ const ConversationList: React.FC<ConversationListProps> = ({
       ))}
       {recentConversations.length > 0 && (
         <div className="shrink-0 px-2 pt-2 pb-1.5">
-          <span className="text-[11px] font-semibold text-linear-text-tertiary uppercase tracking-wider select-none">
-            Recents
+          <span className="text-[11px] font-semibold text-linear-text-tertiary select-none">
+            最近
           </span>
         </div>
       )}

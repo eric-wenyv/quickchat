@@ -13,12 +13,6 @@ const LEVEL_LABELS: Record<string, string> = {
   HIGH: '高',
 };
 
-const LEVEL_COLORS: Record<string, string> = {
-  LOW: 'bg-blue-400',
-  MEDIUM: 'bg-amber-400',
-  HIGH: 'bg-rose-400',
-};
-
 /**
  * ThinkingLevelSelector
  * 模型思考深度选择器，仅对支持 thinking 的模型显示（Gemini 3.x）
@@ -57,10 +51,9 @@ const ThinkingLevelSelector: React.FC<ThinkingLevelSelectorProps> = ({
     <div className="relative" ref={dropdownRef}>
       <button
         onClick={() => setIsOpen(!isOpen)}
-        className="flex items-center gap-1.5 px-2 py-1 rounded-lg bg-linear-surface hover:bg-linear-surface-hover border border-linear-border hover:border-linear-border-hover transition-all duration-200 text-[10px] font-medium text-linear-text-tertiary hover:text-linear-text-secondary"
+        className="flex h-8 items-center gap-1.5 px-2.5 rounded-md bg-linear-surface-hover/80 hover:bg-linear-surface-hover border border-[rgba(255,255,255,0.16)] hover:border-[rgba(255,255,255,0.28)] transition-all duration-200 text-xs font-semibold text-linear-text-primary cursor-pointer shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]"
         title="思考深度"
       >
-        <span className={`w-1.5 h-1.5 rounded-full ${LEVEL_COLORS[currentLevel]}`} />
         <span>思考: {LEVEL_LABELS[currentLevel]}</span>
         <svg
           className={`w-3 h-3 transition-transform duration-200 ${isOpen ? 'rotate-180' : ''}`}
@@ -80,13 +73,12 @@ const ThinkingLevelSelector: React.FC<ThinkingLevelSelectorProps> = ({
                 onUpdateThinkingLevel(activeModel.id, level);
                 setIsOpen(false);
               }}
-              className={`w-full flex items-center gap-2 px-3 py-2 text-left transition-all duration-200 first:rounded-t-lg last:rounded-b-lg ${
+              className={`w-full flex items-center gap-2 px-3 py-2 text-left transition-all duration-200 cursor-pointer first:rounded-t-lg last:rounded-b-lg ${
                 currentLevel === level
-                  ? 'bg-linear-surface-hover text-linear-text-primary'
-                  : 'text-linear-text-tertiary hover:bg-linear-surface hover:text-linear-text-secondary'
+                  ? 'bg-linear-selection text-linear-text-primary'
+                  : 'text-linear-text-secondary hover:bg-linear-surface hover:text-linear-text-primary'
               }`}
             >
-              <span className={`w-2 h-2 rounded-full ${LEVEL_COLORS[level]}`} />
               <span className="text-xs font-semibold">{LEVEL_LABELS[level]}</span>
             </button>
           ))}

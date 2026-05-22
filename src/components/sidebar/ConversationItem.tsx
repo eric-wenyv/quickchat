@@ -55,26 +55,19 @@ const ConversationItem: React.FC<ConversationItemProps> = ({
         onClick={onSelect}
         onContextMenu={handleContextMenu}
         className={`
-          group relative flex shrink-0 flex-col gap-1 p-2.5 cursor-pointer rounded-lg select-none overflow-hidden
+          group relative flex shrink-0 flex-col gap-1 p-2.5 cursor-pointer rounded-md select-none overflow-hidden
           ${isActive
-            ? 'bg-linear-bg-elevated shadow-linear-highlight border border-linear-border'
+            ? 'bg-linear-selection border border-linear-border text-linear-text-primary'
             : 'border border-transparent hover:bg-linear-surface active:scale-[0.98]'
           }
         `}
         style={{ transition: 'background-color 0.15s var(--ease-snappy), transform 0.15s var(--ease-snappy)' }}
       >
-        {isActive && (
-          <span
-            className="absolute left-0 top-2 bottom-2 w-0.5 rounded-full bg-linear-accent"
-            aria-hidden="true"
-          />
-        )}
         {/* 第一行：标题与时间 */}
         <div className="flex items-center justify-between gap-2 overflow-hidden">
           <div className="flex items-center gap-1.5 min-w-0 flex-1">
-            {/* 彩色小图标 - Linear 风格高饱和点缀 */}
             {conversation.agent_url ? (
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0 text-linear-accent">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0 text-linear-text-tertiary">
                 <rect x="2" y="3" width="20" height="14" rx="2" ry="2" />
                 <line x1="8" y1="21" x2="16" y2="21" />
                 <line x1="12" y1="17" x2="12" y2="21" />
@@ -92,8 +85,8 @@ const ConversationItem: React.FC<ConversationItemProps> = ({
               onClick={(e) => { e.stopPropagation(); onPin?.(); }}
               className={`opacity-0 translate-x-2 group-hover:opacity-100 group-hover:translate-x-0 p-0.5 rounded transition-all ${
                 conversation.pinned
-                  ? 'text-linear-accent opacity-100 translate-x-0'
-                  : 'text-linear-text-muted hover:text-linear-accent hover:bg-linear-accent/10'
+                  ? 'text-linear-text-primary opacity-100 translate-x-0'
+                  : 'text-linear-text-muted hover:text-linear-text-primary hover:bg-linear-surface-hover'
               }`}
               style={{ transition: 'all 0.2s var(--ease-snappy)' }}
               title={conversation.pinned ? '取消固定' : '固定对话'}
@@ -132,7 +125,7 @@ const ConversationItem: React.FC<ConversationItemProps> = ({
             <span className={`
               text-[10px] min-w-[18px] h-[18px] flex items-center justify-center px-1 rounded-md font-medium shrink-0
               ${isActive
-                ? 'bg-linear-bg text-linear-text-secondary'
+                ? 'bg-linear-surface-hover text-linear-text-secondary'
                 : 'bg-linear-surface text-linear-text-tertiary group-hover:bg-linear-surface-hover group-hover:text-linear-text-secondary transition-colors'
               }
             `}>

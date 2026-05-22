@@ -1,5 +1,4 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { getCurrentWindow } from '@tauri-apps/api/window';
 import type { Conversation, SystemPrompt, UUID } from '@/types/types';
 
 interface TokenStats {
@@ -48,21 +47,6 @@ export const MessageHeader: React.FC<MessageHeaderProps> = ({
   onSavePrompt,
   onDeletePrompt,
 }) => {
-  // ── 窗口控制状态 ──
-  const [isWindowMaximized, setIsWindowMaximized] = useState(false);
-  const [isHoveringClose, setIsHoveringClose] = useState(false);
-  const [isHoveringMinimize, setIsHoveringMinimize] = useState(false);
-  const [isHoveringMaximize, setIsHoveringMaximize] = useState(false);
-  const appWindow = getCurrentWindow();
-
-  useEffect(() => {
-    const unlisten = appWindow.onResized(async () => {
-      setIsWindowMaximized(await appWindow.isMaximized());
-    });
-    appWindow.isMaximized().then(setIsWindowMaximized);
-    return () => { unlisten.then(f => f()); };
-  }, [appWindow]);
-
   // ── 标题编辑状态 ──
   const [isEditingTitle, setIsEditingTitle] = useState(false);
   const [editTitle, setEditTitle] = useState(conversation.title);
@@ -154,12 +138,12 @@ export const MessageHeader: React.FC<MessageHeaderProps> = ({
     <>
       <header
         data-tauri-drag-region
-        className="sticky top-0 z-30 flex items-center justify-between w-full bg-linear-bg/80 backdrop-blur-md border-b border-linear-border transition-all duration-300 select-none"
+        className="sticky top-0 z-30 flex min-h-[56px] items-center justify-between w-full bg-linear-bg/72 backdrop-blur-xl border-b border-linear-border/70 transition-all duration-300 select-none"
         style={{ WebkitAppRegion: 'drag' } as React.CSSProperties}
       >
         {/* 左侧: 标题 (可点击编辑) + 模型标识 */}
         <div
-          className="flex flex-col gap-0.5 min-w-0 py-3 pl-5"
+          className="flex flex-col gap-0.5 min-w-0 py-2.5 pl-5"
           style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
         >
           {isEditingTitle ? (
@@ -169,13 +153,13 @@ export const MessageHeader: React.FC<MessageHeaderProps> = ({
               onChange={(e) => setEditTitle(e.target.value)}
               onBlur={commitTitle}
               onKeyDown={handleTitleKeyDown}
-              className="text-base md:text-lg font-semibold text-linear-text-primary tracking-tight leading-tight bg-transparent border-b-2 border-linear-border outline-none px-0 py-0 w-full max-w-xs"
+              className="text-[15px] font-semibold text-linear-text-primary tracking-tight leading-tight bg-transparent border-b-2 border-linear-border outline-none px-0 py-0 w-full max-w-xs"
               maxLength={100}
             />
           ) : (
             <h1
               onClick={handleTitleClick}
-              className="text-base md:text-lg font-semibold text-linear-text-primary truncate tracking-tight leading-tight cursor-pointer hover:text-linear-text-secondary transition-colors"
+              className="text-[15px] font-semibold text-linear-text-primary truncate tracking-tight leading-tight cursor-pointer hover:text-linear-text-secondary transition-colors"
               title="点击修改标题"
             >
               {conversation.title || '新对话'}
@@ -230,59 +214,11 @@ export const MessageHeader: React.FC<MessageHeaderProps> = ({
           </div>
         </div>
 
-        {/* 右侧: 功能按钮 + 窗口控制 */}
+        {/* 右侧留白：窗口按钮由全局 CodexMenuBar 承载 */}
         <div
-          className="flex items-center h-full"
+          className="flex items-center h-full pr-4"
           style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
         >
-
-          {/* Windows 窗口控制按钮 */}
-          <button
-            onClick={() => appWindow.minimize()}
-            onMouseEnter={() => setIsHoveringMinimize(true)}
-            onMouseLeave={() => setIsHoveringMinimize(false)}
-            className="w-12 h-full flex items-center justify-center transition-colors duration-150 cursor-pointer"
-            style={{ backgroundColor: isHoveringMinimize ? 'rgba(255,255,255,0.08)' : 'transparent' }}
-            aria-label="Minimize"
-          >
-            <svg width="10" height="1" viewBox="0 0 10 1" fill="none">
-              <rect width="10" height="1" rx="0.5" fill="currentColor" opacity="0.7" />
-            </svg>
-          </button>
-          <button
-            onClick={() => appWindow.toggleMaximize()}
-            onMouseEnter={() => setIsHoveringMaximize(true)}
-            onMouseLeave={() => setIsHoveringMaximize(false)}
-            className="w-12 h-full flex items-center justify-center transition-colors duration-150 cursor-pointer"
-            style={{ backgroundColor: isHoveringMaximize ? 'rgba(255,255,255,0.08)' : 'transparent' }}
-            aria-label={isWindowMaximized ? 'Restore' : 'Maximize'}
-          >
-            {isWindowMaximized ? (
-              <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
-                <rect x="2" y="0" width="8" height="8" rx="0.5" stroke="currentColor" strokeWidth="1" opacity="0.7" fill="none" />
-                <rect x="0" y="2" width="8" height="8" rx="0.5" stroke="currentColor" strokeWidth="1" opacity="0.7" fill="#181818" />
-              </svg>
-            ) : (
-              <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
-                <rect x="0.5" y="0.5" width="9" height="9" rx="0.5" stroke="currentColor" strokeWidth="1" opacity="0.7" />
-              </svg>
-            )}
-          </button>
-          <button
-            onClick={() => appWindow.close()}
-            onMouseEnter={() => setIsHoveringClose(true)}
-            onMouseLeave={() => setIsHoveringClose(false)}
-            className="w-12 h-full flex items-center justify-center transition-colors duration-150 cursor-pointer"
-            style={{
-              backgroundColor: isHoveringClose ? '#e81123' : 'transparent',
-              color: isHoveringClose ? '#ffffff' : 'inherit',
-            }}
-            aria-label="Close"
-          >
-            <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
-              <path d="M1 1L9 9M9 1L1 9" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" opacity={isHoveringClose ? 1 : 0.7} />
-            </svg>
-          </button>
         </div>
       </header>
 

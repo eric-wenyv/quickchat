@@ -2,11 +2,27 @@ import React, { useState, useRef, useEffect, useMemo } from 'react';
 import type { ModelConfig, UUID } from '@/types/types';
 import { useAutoResize } from '@/hooks/useAutoResize';
 
-const PROVIDER_BADGES: Record<string, { label: string; color: string }> = {
-  google_gemini: { label: 'GG', color: 'bg-blue-500' },
-  openrouter: { label: 'OR', color: 'bg-purple-500' },
-  openai_compatible: { label: 'OA', color: 'bg-emerald-500' },
+const PROVIDER_BADGES: Record<string, { label: string; badge: string }> = {
+  google_gemini: {
+    label: 'GG',
+    badge: 'bg-[#6f8f72] text-white',
+  },
+  openrouter: {
+    label: 'OR',
+    badge: 'bg-[#9a7a58] text-white',
+  },
+  openai_compatible: {
+    label: 'OA',
+    badge: 'bg-[#6f7f91] text-white',
+  },
 };
+
+function providerBadge(provider: string) {
+  return PROVIDER_BADGES[provider] ?? {
+    label: '?',
+    badge: 'bg-[#777] text-white',
+  };
+}
 
 interface ModelSelectorProps {
   models: ModelConfig[];
@@ -79,13 +95,9 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({
         id="model-selector-trigger"
         type="button"
         onClick={() => setIsOpen(!isOpen)}
-        className="group flex items-center gap-2 px-3 py-1.5 rounded-lg bg-linear-surface hover:bg-linear-surface-hover border border-linear-border hover:border-[rgba(255,255,255,0.2)] text-linear-text-tertiary hover:text-linear-text-secondary text-xs font-medium backdrop-blur-sm"
+        className="group flex h-8 items-center gap-2 px-3 rounded-md bg-linear-surface-hover/80 hover:bg-linear-surface-hover border border-[rgba(255,255,255,0.16)] hover:border-[rgba(255,255,255,0.28)] text-linear-text-primary text-xs font-semibold backdrop-blur-sm cursor-pointer shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]"
         style={{ transition: 'all 0.2s var(--ease-snappy)' }}
       >
-        <div className="relative">
-          <div className="w-2 h-2 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]" />
-          <div className="absolute inset-0 w-2 h-2 rounded-full bg-emerald-500 animate-ping opacity-20" />
-        </div>
         <span className="max-w-[120px] truncate">{activeModel?.display_name || 'Select Model'}</span>
         <svg
           xmlns="http://www.w3.org/2000/svg"
@@ -105,7 +117,7 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({
       {isOpen && (
         <div
           data-focus-preserve="true"
-          className="absolute bottom-full left-0 mb-3 w-64 bg-linear-bg-elevated backdrop-blur-md border border-[rgba(255,255,255,0.08)] shadow-linear-highlight rounded-xl z-50 origin-bottom"
+          className="absolute bottom-full left-0 mb-3 w-72 bg-linear-bg-elevated/98 backdrop-blur-xl border border-[rgba(255,255,255,0.11)] shadow-linear-highlight rounded-xl z-50 origin-bottom"
           style={{ animation: 'menu-enter 0.2s var(--ease-snappy) forwards' }}
         >
           <div className="p-2 space-y-1">
@@ -122,48 +134,51 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({
 
             <div className="max-h-60 overflow-y-auto custom-scrollbar px-1">
               {filteredModels.length > 0 ? (
-                filteredModels.map((model) => (
-                  <button
-                    key={model.id}
-                    onClick={() => {
-                      onSelect(model.id);
-                      setIsOpen(false);
-                      setSearchQuery('');
-                    }}
-                    className={`group w-full flex items-center justify-between px-3 py-2.5 rounded-lg text-left ${
-                      model.id === activeModelId
-                        ? 'bg-linear-surface-hover text-linear-text-primary'
-                        : 'text-linear-text-tertiary hover:bg-linear-surface hover:text-linear-text-secondary'
-                    }`}
-                    style={{ transition: 'background-color 0.15s var(--ease-snappy), color 0.15s var(--ease-snappy)' }}
-                  >
-                    <div className="flex items-center gap-2 min-w-0">
-                      <span className={`flex-shrink-0 w-5 h-5 rounded-[4px] ${PROVIDER_BADGES[model.provider]?.color || 'bg-gray-500'} text-white flex items-center justify-center text-[8px] font-bold`}>
-                        {PROVIDER_BADGES[model.provider]?.label || '?'}
-                      </span>
-                      <div className="flex flex-col gap-0.5 min-w-0">
-                        <span className="text-sm font-bold tracking-tight truncate">{model.display_name}</span>
-                        <span className="text-[10px] font-medium opacity-50 uppercase tracking-widest truncate">{model.model_id}</span>
+                filteredModels.map((model) => {
+                  const provider = providerBadge(model.provider);
+                  const isActive = model.id === activeModelId;
+                  return (
+                    <button
+                      key={model.id}
+                      onClick={() => {
+                        onSelect(model.id);
+                        setIsOpen(false);
+                        setSearchQuery('');
+                      }}
+                      className={`group w-full flex items-center justify-between px-3 py-3 rounded-lg text-left border transition-colors cursor-pointer ${
+                        isActive
+                          ? 'bg-linear-surface border-white/10 text-linear-text-primary'
+                          : 'bg-transparent border-transparent text-linear-text-secondary hover:bg-linear-surface-hover hover:text-linear-text-primary'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <span className={`flex-shrink-0 w-6 h-6 rounded-[5px] ${provider.badge} flex items-center justify-center text-[8px] font-bold shadow-[inset_0_1px_0_rgba(255,255,255,0.16)]`}>
+                          {provider.label}
+                        </span>
+                        <div className="flex flex-col gap-0.5 min-w-0">
+                          <span className="text-sm font-semibold tracking-tight truncate">{model.display_name}</span>
+                          <span className="text-[10px] font-medium text-linear-text-tertiary uppercase tracking-[0.08em] truncate">{model.model_id}</span>
+                        </div>
                       </div>
-                    </div>
-                    {model.id === activeModelId && (
-                      <div className="bg-linear-accent text-white rounded-full p-0.5 shadow-sm flex-shrink-0">
-                        <svg
-                          xmlns="http://www.w3.org/2000/svg"
-                          className="w-3 h-3"
-                          viewBox="0 0 24 24"
-                          fill="none"
-                          stroke="currentColor"
-                          strokeWidth="4"
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                        >
-                          <path d="M20 6 9 17l-5-5" />
-                        </svg>
-                      </div>
-                    )}
-                  </button>
-                ))
+                      {isActive && (
+                        <div className="bg-linear-text-primary text-linear-bg rounded-full p-0.5 shadow-sm flex-shrink-0">
+                          <svg
+                            xmlns="http://www.w3.org/2000/svg"
+                            className="w-3 h-3"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth="4"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                          >
+                            <path d="M20 6 9 17l-5-5" />
+                          </svg>
+                        </div>
+                      )}
+                    </button>
+                  );
+                })
               ) : (
                 <div className="px-4 py-8 text-center text-linear-text-muted text-xs italic">
                   No models found

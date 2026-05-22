@@ -12,22 +12,25 @@ const NewChatButton: React.FC<NewChatButtonProps> = ({ onClick }) => {
   return (
     <button
       onClick={onClick}
-      className="group flex items-center justify-between w-full px-2 py-1.5 transition-all duration-200 rounded-md bg-transparent hover:bg-linear-surface active:scale-[0.98] cursor-pointer outline-none"
-      aria-label="Create new conversation"
+      className="group flex h-9 w-full items-center gap-3 rounded-md bg-transparent px-2 text-left transition-colors duration-150 hover:bg-linear-surface cursor-pointer outline-none overflow-hidden"
+      aria-label="新对话"
     >
-      <div className="flex items-center gap-2">
-        <div className="flex items-center justify-center w-5 h-5 rounded bg-linear-surface text-linear-text-tertiary group-hover:text-linear-text-secondary group-hover:bg-linear-surface-hover transition-colors">
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-            <line x1="12" y1="5" x2="12" y2="19" />
-            <line x1="5" y1="12" x2="19" y2="12" />
-          </svg>
-        </div>
-        <span className="text-[13px] font-medium text-linear-text-secondary group-hover:text-linear-text-primary transition-colors">
-          New Chat
-        </span>
-      </div>
-      <span className="text-[10px] text-linear-text-tertiary font-mono tracking-tighter opacity-0 group-hover:opacity-100 transition-opacity">
-        ⌘N
+      <svg
+        width="17"
+        height="17"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.9"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        className="shrink-0 text-linear-text-secondary group-hover:text-linear-text-primary transition-colors"
+      >
+        <path d="M12 20h9" />
+        <path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z" />
+      </svg>
+      <span className="text-[15px] font-semibold text-linear-text-secondary group-hover:text-linear-text-primary transition-colors whitespace-nowrap">
+        新对话
       </span>
     </button>
   );

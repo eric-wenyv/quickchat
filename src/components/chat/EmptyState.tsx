@@ -33,7 +33,7 @@ export const EmptyState: React.FC<EmptyStateProps> = ({ type, conversationId }) 
   if (!isNoConversation) {
     return (
       <div className="flex flex-col items-center justify-center text-center select-none animate-in fade-in duration-700 ease-out">
-        <h2 className="text-2xl font-semibold text-linear-text-secondary tracking-tight">
+        <h2 className="text-[18px] font-semibold text-linear-text-secondary tracking-tight">
           {greeting}
         </h2>
       </div>
@@ -43,10 +43,10 @@ export const EmptyState: React.FC<EmptyStateProps> = ({ type, conversationId }) 
   return (
     <div className="flex flex-col items-center justify-center text-center select-none animate-in fade-in duration-700 ease-out px-6">
       {/* Logo / Icon */}
-      <div className="relative mb-6">
-        <div className="w-16 h-16 rounded-xl bg-linear-surface border border-linear-border flex items-center justify-center">
+      <div className="relative mb-5">
+        <div className="w-12 h-12 rounded-lg bg-linear-surface border border-linear-border flex items-center justify-center">
           <svg
-            className="w-8 h-8 text-linear-text-secondary"
+            className="w-6 h-6 text-linear-text-secondary"
             fill="none"
             viewBox="0 0 24 24"
             stroke="currentColor"
@@ -61,10 +61,10 @@ export const EmptyState: React.FC<EmptyStateProps> = ({ type, conversationId }) 
         </div>
       </div>
 
-      <h2 className="text-2xl font-bold text-linear-text-secondary tracking-tight mb-2">
+      <h2 className="text-[18px] font-semibold text-linear-text-secondary tracking-tight mb-2">
         Quick Chat
       </h2>
-      <p className="text-sm text-linear-text-tertiary max-w-xs leading-relaxed mb-8">
+      <p className="text-[13px] text-linear-text-tertiary max-w-xs leading-relaxed mb-7">
         选择一个历史对话继续，或在下方输入框开始新的聊天
       </p>
 

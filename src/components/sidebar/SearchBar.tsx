@@ -10,7 +10,7 @@ interface SearchBarProps {
  * B-3: SearchBar (Linear-style)
  * 隐形搜索栏：仅保留图标和文字，Hover 时才显示极淡背景框。
  */
-const SearchBar: React.FC<SearchBarProps> = ({ onSearch, placeholder = 'Search...' }) => {
+const SearchBar: React.FC<SearchBarProps> = ({ onSearch, placeholder = '搜索' }) => {
   const [query, setQuery] = useState('');
   const [isFocused, setIsFocused] = useState(false);
   const debouncedQuery = useDebounce(query, 300);
@@ -49,7 +49,7 @@ const SearchBar: React.FC<SearchBarProps> = ({ onSearch, placeholder = 'Search..
         onBlur={() => setIsFocused(false)}
         placeholder={placeholder}
         className={`
-          w-full text-sm placeholder:text-linear-text-tertiary text-linear-text-body pl-9 pr-8 py-1.5 rounded-md outline-none transition-all duration-200
+          w-full text-[15px] font-semibold placeholder:text-linear-text-secondary text-linear-text-body pl-9 pr-8 py-1.5 rounded-md outline-none transition-all duration-200 whitespace-nowrap
           ${showBg
             ? 'bg-linear-bg-elevated border-linear-border shadow-linear-highlight'
             : 'bg-transparent border border-transparent hover:bg-linear-bg-elevated hover:border-linear-border'

@@ -3,6 +3,7 @@ import Sidebar from '../sidebar/Sidebar';
 import { MainChatArea } from '../chat/MainChatArea';
 import AgentBrowser from '../agent/AgentBrowser';
 import { listen } from '@tauri-apps/api/event';
+import { getCurrentWindow } from '@tauri-apps/api/window';
 import type {
   ConversationSummary,
   Conversation,
@@ -27,7 +28,7 @@ interface AppLayoutProps {
   models: ModelConfig[];
   /** 当前选中的模型 ID */
   activeModelId: UUID;
-  
+
   // --- 状态标志 ---
   /** 列表是否正在加载 */
   isLoadingConversations: boolean;
@@ -37,7 +38,7 @@ interface AppLayoutProps {
   isSending: boolean;
   /** 是否有更多历史消息 */
   hasMoreMessages: boolean;
-  
+
   // --- 动作回调 ---
   /** 切换会话 */
   onSelectConversation: (id: UUID) => void;
@@ -89,6 +90,107 @@ const MIN_SIDEBAR_WIDTH = 180;
 const MAX_SIDEBAR_WIDTH = 480;
 const DEFAULT_SIDEBAR_WIDTH = 256; // ~2/3 of original w-80 (320px)
 const SIDEBAR_WIDTH_KEY = 'quick_chat_sidebar_width';
+
+interface CodexMenuBarProps {
+  isSidebarOpen: boolean;
+  onToggleSidebar: () => void;
+}
+
+const CodexMenuBar: React.FC<CodexMenuBarProps> = ({
+  isSidebarOpen,
+  onToggleSidebar,
+}) => {
+  const [isWindowMaximized, setIsWindowMaximized] = useState(false);
+  const [hoveredWindowButton, setHoveredWindowButton] = useState<'minimize' | 'maximize' | 'close' | null>(null);
+  const appWindow = getCurrentWindow();
+
+  useEffect(() => {
+    const unlisten = appWindow.onResized(async () => {
+      setIsWindowMaximized(await appWindow.isMaximized());
+    });
+    appWindow.isMaximized().then(setIsWindowMaximized);
+    return () => { unlisten.then(f => f()); };
+  }, [appWindow]);
+
+  const windowButtonClass = "h-9 w-11 flex items-center justify-center text-linear-text-tertiary transition-colors duration-150 cursor-pointer";
+
+  return (
+    <header
+      data-tauri-drag-region
+      className="codex-glass-chrome relative z-40 flex h-9 w-full shrink-0 items-center justify-between border-b border-linear-border text-linear-text-tertiary select-none"
+      style={{ WebkitAppRegion: 'drag' } as React.CSSProperties}
+    >
+      <div
+        className="flex h-full items-center px-2"
+        style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
+      >
+        <button
+          onClick={onToggleSidebar}
+          className="flex h-6 w-6 items-center justify-center rounded-md text-linear-text-tertiary hover:bg-linear-surface hover:text-linear-text-primary transition-colors"
+          title={isSidebarOpen ? '收起侧栏' : '展开侧栏'}
+          aria-label={isSidebarOpen ? 'Collapse sidebar' : 'Expand sidebar'}
+        >
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+            <rect x="4" y="4" width="19" height="19" rx="3" />
+            <path d="M9 5v14" />
+          </svg>
+        </button>
+      </div>
+
+      <div
+        className="flex h-full items-center"
+        style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
+      >
+        <button
+          onClick={() => appWindow.minimize()}
+          onMouseEnter={() => setHoveredWindowButton('minimize')}
+          onMouseLeave={() => setHoveredWindowButton(null)}
+          className={windowButtonClass}
+          style={{ backgroundColor: hoveredWindowButton === 'minimize' ? 'rgba(255,255,255,0.08)' : 'transparent' }}
+          aria-label="Minimize"
+        >
+          <svg width="10" height="1" viewBox="0 0 10 1" fill="none">
+            <rect width="10" height="1" rx="0.5" fill="currentColor" opacity="0.75" />
+          </svg>
+        </button>
+        <button
+          onClick={() => appWindow.toggleMaximize()}
+          onMouseEnter={() => setHoveredWindowButton('maximize')}
+          onMouseLeave={() => setHoveredWindowButton(null)}
+          className={windowButtonClass}
+          style={{ backgroundColor: hoveredWindowButton === 'maximize' ? 'rgba(255,255,255,0.08)' : 'transparent' }}
+          aria-label={isWindowMaximized ? 'Restore' : 'Maximize'}
+        >
+          {isWindowMaximized ? (
+            <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
+              <rect x="2" y="0" width="8" height="8" rx="0.5" stroke="currentColor" strokeWidth="1" opacity="0.75" fill="none" />
+              <rect x="0" y="2" width="8" height="8" rx="0.5" stroke="currentColor" strokeWidth="1" opacity="0.75" fill="#151515" />
+            </svg>
+          ) : (
+            <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
+              <rect x="0.5" y="0.5" width="9" height="9" rx="0.5" stroke="currentColor" strokeWidth="1" opacity="0.75" />
+            </svg>
+          )}
+        </button>
+        <button
+          onClick={() => appWindow.close()}
+          onMouseEnter={() => setHoveredWindowButton('close')}
+          onMouseLeave={() => setHoveredWindowButton(null)}
+          className={windowButtonClass}
+          style={{
+            backgroundColor: hoveredWindowButton === 'close' ? '#e81123' : 'transparent',
+            color: hoveredWindowButton === 'close' ? '#ffffff' : 'inherit',
+          }}
+          aria-label="Close"
+        >
+          <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
+            <path d="M1 1L9 9M9 1L1 9" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" opacity={hoveredWindowButton === 'close' ? 1 : 0.75} />
+          </svg>
+        </button>
+      </div>
+    </header>
+  );
+};
 
 /**
  * AppLayout (P4): 最终集成页面布局
@@ -178,14 +280,19 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
     const handleMouseUp = (upEvent: MouseEvent) => {
       const delta = upEvent.clientX - startX;
       const finalWidth = Math.min(Math.max(startWidth + delta, MIN_SIDEBAR_WIDTH), MAX_SIDEBAR_WIDTH);
+
       if (aside) {
+        aside.style.width = `${finalWidth}px`;
+        // Force a layout flush to ensure the final width is applied instantly without transition
+        void aside.offsetHeight;
         aside.style.transition = '';
-        aside.style.width = '';
       }
+
       document.body.style.userSelect = '';
       document.body.style.cursor = '';
       window.removeEventListener('mousemove', handleMouseMove);
       window.removeEventListener('mouseup', handleMouseUp);
+
       setSidebarWidth(finalWidth);
       localStorage.setItem(SIDEBAR_WIDTH_KEY, String(finalWidth));
     };
@@ -240,105 +347,99 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
   }, []); // 空依赖：只注册一次，回调通过 ref 保持最新
 
   return (
-    <div className="flex h-screen w-screen bg-linear-bg text-linear-text-secondary font-sans overflow-hidden selection:bg-linear-surface-hover selection:text-linear-text-primary antialiased">
-      
-      {/* 
+    <div className="flex h-screen w-screen flex-col bg-linear-bg text-linear-text-secondary font-sans overflow-hidden selection:bg-linear-surface-hover selection:text-linear-text-primary antialiased">
+      <CodexMenuBar
+        isSidebarOpen={isSidebarOpen}
+        onToggleSidebar={() => setIsSidebarOpen(prev => !prev)}
+      />
+      <div className="flex min-h-0 flex-1">
+
+        {/* 
         左侧边栏区域 (B-1): 负责导航与历史管理
         宽度支持拖拽调整，通过 style 动态绑定
       */}
-      <aside
-        ref={asideRef}
-        className={`
-          relative flex-shrink-0 h-full transition-[width] duration-500 ease-out z-20 overflow-hidden
+        <aside
+          ref={asideRef}
+          className={`
+          codex-glass-chrome relative flex-shrink-0 h-full transition-[width] duration-500 ease-out z-20 overflow-hidden
           ${isSidebarOpen ? 'border-r border-linear-border' : 'w-0 min-w-0 pointer-events-none border-r-0'}
         `}
-        style={{ width: isSidebarOpen ? sidebarWidth : 0 }}
-      >
-        <Sidebar
-          conversations={conversations}
-          activeConversationId={activeConversation?.id ?? null}
-          onSelectConversation={onSelectConversation}
-          onCreateConversation={onCreateConversation}
-          onDeleteConversation={onDeleteConversation}
-          onPinConversation={onPinConversation}
-          onSearchChange={onSearchConversations}
-          isLoading={isLoadingConversations}
-          searchQuery={searchQuery}
-          onToggleCollapse={() => setIsSidebarOpen(false)}
-          onOpenSettings={onOpenSettings}
-          onOpenAgentBrowser={onOpenAgentBrowser}
-          theme={theme}
-          onToggleTheme={onToggleTheme}
-        />
+          style={{ width: isSidebarOpen ? sidebarWidth : 0 }}
+        >
+          <div className="h-full w-full shrink-0" style={{ minWidth: MIN_SIDEBAR_WIDTH }}>
+            <Sidebar
+              conversations={conversations}
+              activeConversationId={activeConversation?.id ?? null}
+              onSelectConversation={onSelectConversation}
+              onCreateConversation={onCreateConversation}
+              onDeleteConversation={onDeleteConversation}
+              onPinConversation={onPinConversation}
+              onSearchChange={onSearchConversations}
+              isLoading={isLoadingConversations}
+              searchQuery={searchQuery}
+              onOpenSettings={onOpenSettings}
+              onOpenAgentBrowser={onOpenAgentBrowser}
+              theme={theme}
+              onToggleTheme={onToggleTheme}
+            />
+          </div>
 
-        {/* 侧边栏宽度拖拽条 */}
-        {isSidebarOpen && (
-          <div
-            onMouseDown={startResize}
-            className="absolute right-0 top-0 bottom-0 w-2 z-30 cursor-col-resize bg-transparent hover:bg-linear-surface-hover active:bg-linear-border-hover transition-colors"
-            title="拖动调整宽度"
-          />
-        )}
-      </aside>
+          {/* 侧边栏宽度拖拽条 */}
+          {isSidebarOpen && (
+            <div
+              onMouseDown={startResize}
+              className="absolute right-0 top-0 bottom-0 w-2 z-30 cursor-col-resize bg-transparent hover:bg-linear-surface-hover active:bg-linear-border-hover transition-colors"
+              title="拖动调整宽度"
+            />
+          )}
+        </aside>
 
-      {/* 
+        {/* 
         右侧主对话区区域 (C-1): 应用核心交互平面
         利用 flex-1 中自适应剩余空间。
       */}
-      <main className="flex-1 min-w-0 h-full relative z-10 flex flex-col">
-        
-        {/* 侧边栏唤醒触发器: 普通模式下在左侧浮动，Agent 模式下由 AgentBrowser 内部接管 */}
-        {!isSidebarOpen && !agentMode && (
-          <button
-            onClick={() => setIsSidebarOpen(true)}
-            className="absolute top-16 left-3 z-50 p-2 rounded-lg bg-linear-bg-elevated/90 border border-linear-border backdrop-blur-xl text-linear-text-secondary hover:text-linear-text-primary hover:bg-linear-surface transition-all active:scale-90 group"
-            title="展开侧边栏"
-          >
-            <svg className="w-4 h-4 transition-transform group-hover:translate-x-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M13 5l7 7-7 7M5 5l7 7-7 7" />
-            </svg>
-          </button>
-        )}
+        <main className="flex-1 min-w-0 h-full relative z-10 flex flex-col overflow-hidden border-t border-linear-border/70 bg-linear-bg">
 
-        {/* 
+          {/* 
           集成主对话区容器 
           内部已包含 Header, MessageList, EmptyState 与 ChatInputFooter (含 Enter 发送拦截与高度增长逻辑)
         */}
-        {agentMode ? (
-          <AgentBrowser
-            url={agentUrl}
-            isSidebarOpen={isSidebarOpen}
-            onToggleSidebar={() => setIsSidebarOpen(true)}
-            onUrlChange={onAgentUrlChange}
-            onTitleChange={onAgentTitleChange}
-            onExitAgentMode={onExitAgentMode}
-            onNewChat={onCreateConversation}
-          />
-        ) : (
-          <MainChatArea
-            conversation={activeConversation}
-            messages={messages}
-            isLoadingMessages={isLoadingMessages}
-            onSendMessage={onSendMessage}
-            onLoadMore={onLoadMoreMessages}
-            hasMore={hasMoreMessages}
-            models={models}
-            activeModelId={activeModelId}
-            onModelSelect={onModelSelect}
-            isSending={isSending}
-            onRenameConversation={onRenameConversation}
-            onUpdateSystemPrompt={onUpdateSystemPrompt}
-            onUpdateModelThinkingLevel={onUpdateModelThinkingLevel}
-            systemPrompts={systemPrompts}
-            onSaveSystemPromptPreset={onSaveSystemPromptPreset}
-            onDeleteSystemPromptPreset={onDeleteSystemPromptPreset}
-            onDeleteMessage={onDeleteMessage}
-            onStopGeneration={onStopGeneration}
-            onFileDrop={onFileDrop}
-          />
-        )}
-      </main>
+          {agentMode ? (
+            <AgentBrowser
+              url={agentUrl}
+              isSidebarOpen={isSidebarOpen}
+              onToggleSidebar={() => setIsSidebarOpen(true)}
+              onUrlChange={onAgentUrlChange}
+              onTitleChange={onAgentTitleChange}
+              onExitAgentMode={onExitAgentMode}
+              onNewChat={onCreateConversation}
+            />
+          ) : (
+            <MainChatArea
+              conversation={activeConversation}
+              messages={messages}
+              isLoadingMessages={isLoadingMessages}
+              onSendMessage={onSendMessage}
+              onLoadMore={onLoadMoreMessages}
+              hasMore={hasMoreMessages}
+              models={models}
+              activeModelId={activeModelId}
+              onModelSelect={onModelSelect}
+              isSending={isSending}
+              onRenameConversation={onRenameConversation}
+              onUpdateSystemPrompt={onUpdateSystemPrompt}
+              onUpdateModelThinkingLevel={onUpdateModelThinkingLevel}
+              systemPrompts={systemPrompts}
+              onSaveSystemPromptPreset={onSaveSystemPromptPreset}
+              onDeleteSystemPromptPreset={onDeleteSystemPromptPreset}
+              onDeleteMessage={onDeleteMessage}
+              onStopGeneration={onStopGeneration}
+              onFileDrop={onFileDrop}
+            />
+          )}
+        </main>
 
+      </div>
     </div>
   );
 };

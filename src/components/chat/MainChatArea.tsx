@@ -10,7 +10,6 @@ interface TokenStats {
 import MessageList, { type MessageListHandle } from './MessageList';
 import { EmptyState } from './EmptyState';
 import { ChatInputFooter } from './ChatInputFooter';
-import TauriDragRegion from '../shared/TauriDragRegion';
 import { parseAttachments } from '@/utils/file';
 
 interface MainChatAreaProps {
@@ -211,13 +210,9 @@ export const MainChatArea: React.FC<MainChatAreaProps> = ({
       onDrop={handleDrop}
     >
       {showNoConversation ? (
-        <>
-          {/* 无会话时：顶部拖拽区 + 窗口控制按钮 */}
-          <TauriDragRegion floating showControls className="h-10" />
-          <div className="flex-1 overflow-hidden">
-            <EmptyState type="no_conversation" />
-          </div>
-        </>
+        <div className="flex-1 overflow-hidden">
+          <EmptyState type="no_conversation" />
+        </div>
       ) : (
         <>
           {/* 顶部导航与状态栏 */}

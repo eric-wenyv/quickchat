@@ -4,12 +4,12 @@
 @variant dark (&:where(.dark, .dark *));
 
 @theme {
-  /* Modern graphite palette centered on #181818 */
+  /* Codex-style graphite palette */
   --color-linear-bg: #181818;
-  --color-linear-sidebar: #1f1f1f;
-  --color-linear-bg-elevated: #242424;
-  --color-linear-panel: #202020;
-  --color-linear-panel-strong: #2a2a2a;
+  --color-linear-sidebar: #1F1F1F;
+  --color-linear-bg-elevated: #28282a;
+  --color-linear-panel: #1d1d1f;
+  --color-linear-panel-strong: #2c2c2f;
   --color-linear-border: rgba(255, 255, 255, 0.09);
   --color-linear-border-hover: rgba(255, 255, 255, 0.18);
   --color-linear-text-primary: #f4f4f5;
@@ -19,8 +19,9 @@
   --color-linear-text-body: #dedee3;
   --color-linear-surface: rgba(255, 255, 255, 0.055);
   --color-linear-surface-hover: rgba(255, 255, 255, 0.095);
-  --color-linear-accent: #7c83ff;
-  --color-linear-accent-hover: #8c92ff;
+  --color-linear-selection: rgba(255, 255, 255, 0.075);
+  --color-linear-accent: #b8c7d9;
+  --color-linear-accent-hover: #d6dde7;
 
   /* Legacy sand/ink mappings kept for compatibility, remapped to graphite */
   --color-sand-100: #181818;
@@ -51,6 +52,14 @@ body,
 
 .dark {
   color-scheme: dark;
+}
+
+.codex-glass-chrome {
+  background:
+    linear-gradient(180deg, rgba(31, 31, 33, 0.88), rgba(25, 25, 27, 0.82)),
+    rgba(27, 27, 29, 0.82);
+  backdrop-filter: blur(24px) saturate(1.05);
+  -webkit-backdrop-filter: blur(24px) saturate(1.05);
 }
 
 /* ── Keyframes ── */

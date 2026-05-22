@@ -179,8 +179,8 @@ export const ChatInputFooter: React.FC<ChatInputFooterProps> = ({
       <div className="absolute top-0 left-0 right-0 h-[1px] bg-gradient-to-r from-transparent via-linear-border to-transparent opacity-50" />
       <div className="max-w-3xl mx-auto">
         <div
-          className="relative group bg-linear-bg-elevated border border-[rgba(255,255,255,0.08)] shadow-linear-highlight rounded-2xl hover:border-linear-border-hover focus-within:border-linear-accent focus-within:shadow-linear-highlight-strong"
-          style={{ transition: 'border-color 0.1s var(--ease-snappy), box-shadow 0.1s var(--ease-snappy)' }}
+          className="relative group bg-linear-bg-elevated/95 border border-[rgba(255,255,255,0.11)] shadow-linear-highlight rounded-2xl hover:border-[rgba(255,255,255,0.2)]"
+          style={{ transition: 'border-color 0.14s var(--ease-snappy), box-shadow 0.14s var(--ease-snappy)' }}
         >
           {/* 图片预览区 */}
           {pendingImages.length > 0 && (
@@ -247,7 +247,7 @@ export const ChatInputFooter: React.FC<ChatInputFooterProps> = ({
           </div>
 
           <div className="flex items-center justify-between px-4 py-3 border-t border-linear-border/50">
-            <div className="flex items-center gap-1.5">
+            <div className="flex items-center gap-1.5 min-w-0">
               <ModelSelector
                 models={models}
                 activeModelId={activeModelId}
@@ -258,11 +258,6 @@ export const ChatInputFooter: React.FC<ChatInputFooterProps> = ({
                 activeModelId={activeModelId}
                 onUpdateThinkingLevel={onUpdateModelThinkingLevel}
               />
-              <div className="h-4 w-[1px] bg-linear-border mx-1" />
-              <div className="flex items-center gap-1 px-2 py-1 rounded-md bg-linear-surface text-[10px] font-medium text-linear-text-tertiary uppercase tracking-tighter">
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" style={{ animation: 'status-breathe 3.5s ease-in-out infinite' }} />
-                Ready
-              </div>
             </div>
 
             <div className="flex items-center gap-4">

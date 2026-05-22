@@ -1,4 +1,4 @@
-import React, { useRef } from 'react';
+import React, { forwardRef, useImperativeHandle, useRef } from 'react';
 import { useAutoResize } from '@/hooks/useAutoResize';
 import { readImage } from '@tauri-apps/plugin-clipboard-manager';
 
@@ -12,7 +12,12 @@ interface ChatTextAreaProps {
   placeholder?: string;
 }
 
-export const ChatTextArea: React.FC<ChatTextAreaProps> = ({
+export interface ChatTextAreaHandle {
+  focus: (options?: FocusOptions) => void;
+  element: HTMLTextAreaElement | null;
+}
+
+export const ChatTextArea = forwardRef<ChatTextAreaHandle, ChatTextAreaProps>(({
   value,
   onChange,
   onSubmit,
@@ -20,8 +25,15 @@ export const ChatTextArea: React.FC<ChatTextAreaProps> = ({
   onFilePaste,
   disabled,
   placeholder = 'Type a message...',
-}) => {
+}, ref) => {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  useImperativeHandle(ref, () => ({
+    focus: (options?: FocusOptions) => textareaRef.current?.focus(options),
+    get element() {
+      return textareaRef.current;
+    },
+  }), []);
 
   /**
    * useAutoResize Hook (D-4)
@@ -77,6 +89,7 @@ export const ChatTextArea: React.FC<ChatTextAreaProps> = ({
   return (
     <textarea
       ref={textareaRef}
+      data-chat-input="true"
       value={value}
       onChange={(e) => onChange(e.target.value)}
       onPaste={handlePaste}
@@ -86,4 +99,6 @@ export const ChatTextArea: React.FC<ChatTextAreaProps> = ({
       rows={1}
     />
   );
-};
+});
+
+ChatTextArea.displayName = 'ChatTextArea';

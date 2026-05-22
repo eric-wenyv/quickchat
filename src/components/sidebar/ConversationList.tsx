@@ -26,11 +26,11 @@ const ConversationList: React.FC<ConversationListProps> = ({
   // 加载态：渲染 6 个骨架屏卡片
   if (isLoading) {
     return (
-      <div className="flex-1 flex flex-col gap-1 px-3 py-2 overflow-hidden">
+      <div className="h-full min-h-0 flex flex-col gap-1 px-3 py-2 overflow-hidden">
         {[...Array(6)].map((_, i) => (
           <div 
             key={i} 
-            className="flex flex-col gap-2.5 p-3 rounded-lg bg-linear-surface border border-transparent animate-pulse"
+            className="flex flex-col shrink-0 gap-2.5 p-3 rounded-lg bg-linear-surface border border-transparent animate-pulse"
           >
             <div className="flex justify-between items-center">
               <div className="h-4 w-24 bg-linear-surface-hover rounded-md" />
@@ -49,7 +49,7 @@ const ConversationList: React.FC<ConversationListProps> = ({
   // 空状态：优雅的占位提示
   if (conversations.length === 0) {
     return (
-      <div className="flex-1 flex flex-col items-center justify-center p-6 text-center select-none">
+      <div className="h-full min-h-0 flex flex-col items-center justify-center p-6 text-center select-none">
         <div className="relative mb-6">
           <div className="w-16 h-16 bg-linear-surface rounded-2xl rotate-12 animate-pulse flex items-center justify-center">
             <div className="w-8 h-8 border-2 border-linear-border rounded-lg -rotate-12" />
@@ -70,10 +70,10 @@ const ConversationList: React.FC<ConversationListProps> = ({
 
   return (
     <div 
-      className="flex-1 overflow-y-auto px-2 py-1 flex flex-col gap-0.5 transition-opacity duration-300 ease-in-out custom-scrollbar"
+      className="h-full min-h-0 overflow-y-auto px-2 py-1 flex flex-col gap-0.5 transition-opacity duration-300 ease-in-out custom-scrollbar"
     >
       {pinnedConversations.length > 0 && (
-        <div className="px-2 pt-2 pb-1.5">
+        <div className="shrink-0 px-2 pt-2 pb-1.5">
           <span className="text-[11px] font-semibold text-linear-text-tertiary uppercase tracking-wider select-none">
             Pinned
           </span>
@@ -90,7 +90,7 @@ const ConversationList: React.FC<ConversationListProps> = ({
         />
       ))}
       {recentConversations.length > 0 && (
-        <div className="px-2 pt-2 pb-1.5">
+        <div className="shrink-0 px-2 pt-2 pb-1.5">
           <span className="text-[11px] font-semibold text-linear-text-tertiary uppercase tracking-wider select-none">
             Recents
           </span>

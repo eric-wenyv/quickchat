@@ -1,10 +1,11 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import type { ModelConfig, UUID, FileAttachment } from '@/types/types';
-import { ChatTextArea } from './ChatTextArea';
+import { ChatTextArea, type ChatTextAreaHandle } from './ChatTextArea';
 import SendButton from './SendButton';
 import ModelSelector from './ModelSelector';
 import ThinkingLevelSelector from './ThinkingLevelSelector';
 import { readFileAsBase64, readFileAsText, isTextFile, isDocumentFile, parseDocument, serializeAttachments, formatFileSize, getFileIcon } from '@/utils/file';
+import { shouldPreserveCurrentFocus } from '@/utils/focus';
 
 interface ChatInputFooterProps {
   onSend: (content: string) => void;
@@ -21,6 +22,8 @@ interface ChatInputFooterProps {
   isSending?: boolean;
   /** 中断生成回调 */
   onStop?: () => void;
+  /** 改变时尝试把焦点带回主输入框 */
+  focusKey?: string;
 }
 
 /**
@@ -42,10 +45,35 @@ export const ChatInputFooter: React.FC<ChatInputFooterProps> = ({
   dropVersion,
   isSending,
   onStop,
+  focusKey,
 }) => {
   const [content, setContent] = useState('');
   const [pendingImages, setPendingImages] = useState<string[]>([]);
   const [pendingFiles, setPendingFiles] = useState<FileAttachment[]>([]);
+  const textareaRef = useRef<ChatTextAreaHandle>(null);
+  const wasDisabledRef = useRef(disabled);
+
+  const focusInput = (force = false) => {
+    if (disabled) return;
+
+    window.requestAnimationFrame(() => {
+      const target = textareaRef.current?.element;
+      if (!target || target.disabled) return;
+      if (!force && shouldPreserveCurrentFocus(document.activeElement, target)) return;
+      textareaRef.current?.focus({ preventScroll: true });
+    });
+  };
+
+  useEffect(() => {
+    focusInput();
+  }, [focusKey]);
+
+  useEffect(() => {
+    if (wasDisabledRef.current && !disabled) {
+      focusInput();
+    }
+    wasDisabledRef.current = disabled;
+  }, [disabled]);
 
   // 统一的文件处理逻辑（拖拽和粘贴共用）
   const processFileList = async (files: File[]) => {
@@ -129,6 +157,7 @@ export const ChatInputFooter: React.FC<ChatInputFooterProps> = ({
     setContent('');
     setPendingImages([]);
     setPendingFiles([]);
+    focusInput(true);
   };
 
   const handleImagePaste = (imageDataUrl: string) => {
@@ -206,6 +235,7 @@ export const ChatInputFooter: React.FC<ChatInputFooterProps> = ({
 
           <div className="px-2 pt-2 pb-1">
             <ChatTextArea
+              ref={textareaRef}
               value={content}
               onChange={setContent}
               onSubmit={handleSend}

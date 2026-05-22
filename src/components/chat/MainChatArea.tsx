@@ -96,6 +96,9 @@ export const MainChatArea: React.FC<MainChatAreaProps> = ({
 }) => {
   const showNoConversation = !conversation;
   const showNoMessages = conversation && messages.length === 0 && !isLoadingMessages;
+  const inputFocusKey = conversation
+    ? `${conversation.id}:${isLoadingMessages ? 'loading' : 'ready'}:${messages.length === 0 ? 'empty' : 'messages'}`
+    : 'no-conversation';
 
   // ── 右侧导航条状态 ──
   const messageListRef = useRef<MessageListHandle>(null);
@@ -245,6 +248,7 @@ export const MainChatArea: React.FC<MainChatAreaProps> = ({
                     dropVersion={dropVersion}
                     isSending={isSending}
                     onStop={onStopGeneration}
+                    focusKey={inputFocusKey}
                   />
                 </div>
               </div>
@@ -357,6 +361,7 @@ export const MainChatArea: React.FC<MainChatAreaProps> = ({
                   dropVersion={dropVersion}
                   isSending={isSending}
                   onStop={onStopGeneration}
+                  focusKey={inputFocusKey}
                 />
 
                 {/* 拖拽上传遮罩 */}

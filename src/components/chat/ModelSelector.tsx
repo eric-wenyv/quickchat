@@ -104,6 +104,7 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({
 
       {isOpen && (
         <div
+          data-focus-preserve="true"
           className="absolute bottom-full left-0 mb-3 w-64 bg-linear-bg-elevated backdrop-blur-md border border-[rgba(255,255,255,0.08)] shadow-linear-highlight rounded-xl z-50 origin-bottom"
           style={{ animation: 'menu-enter 0.2s var(--ease-snappy) forwards' }}
         >

@@ -291,6 +291,8 @@ export const MessageHeader: React.FC<MessageHeaderProps> = ({
          ════════════════════════════════════════════════════════════════════════ */}
       {showSystemPromptModal && (
         <div
+          role="dialog"
+          aria-modal="true"
           className="absolute inset-0 z-[100] flex items-center justify-center bg-black/40 backdrop-blur-sm"
           onClick={() => setShowSystemPromptModal(false)}
         >

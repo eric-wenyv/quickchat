@@ -104,7 +104,7 @@ const Sidebar: React.FC<SidebarProps> = ({
       </div>
 
       {/* 3. 会话列表区域 (B-4) */}
-      <div className="flex-1 overflow-hidden mt-2">
+      <div className="flex-1 min-h-0 overflow-hidden mt-2">
         <ConversationList
           conversations={conversations}
           activeId={activeConversationId}

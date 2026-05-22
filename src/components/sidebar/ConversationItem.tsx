@@ -55,7 +55,7 @@ const ConversationItem: React.FC<ConversationItemProps> = ({
         onClick={onSelect}
         onContextMenu={handleContextMenu}
         className={`
-          group relative flex flex-col gap-1 p-2.5 cursor-pointer rounded-lg select-none overflow-hidden
+          group relative flex shrink-0 flex-col gap-1 p-2.5 cursor-pointer rounded-lg select-none overflow-hidden
           ${isActive
             ? 'bg-linear-bg-elevated shadow-linear-highlight border border-linear-border'
             : 'border border-transparent hover:bg-linear-surface active:scale-[0.98]'

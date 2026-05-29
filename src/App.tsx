@@ -24,7 +24,8 @@ import {
 import { chatCompletion, WEB_SEARCH_TOOL, generateConversationTitle } from "./services/ai";
 import type { ChatMessage, ChatContentPart } from "./services/ai";
 import { parseAttachments, getLanguageFromFilename } from "./utils/file";
-import { searchWeb, formatSearchResults, getSearchApiKey, setSearchApiKey } from "./services/search";
+import { searchWeb, formatSearchResults } from "./services/search";
+import { isThreadSending, markThreadIdle, markThreadSending, type ThreadSendingState } from "./utils/threadState";
 import type {
   ConversationSummary,
   Conversation,
@@ -88,7 +89,7 @@ export default function App() {
 
   const [isLoadingConversations, setIsLoadingConversations] = useState(false);
   const [isLoadingMessages, setIsLoadingMessages] = useState(false);
-  const [isSending, setIsSending] = useState(false);
+  const [sendingByConversationId, setSendingByConversationId] = useState<ThreadSendingState>({});
 
   const [searchQuery, setSearchQuery] = useState("");
   const [toast, setToast] = useState<{ id: number, title: string, desc?: string, type: "error" | "success" } | null>(null);
@@ -98,8 +99,36 @@ export default function App() {
   const [agentMode, setAgentMode] = useState(false);
 
   const pendingUpdatesRef = useRef<Record<UUID, string>>({});
+  const pendingUpdateThreadsRef = useRef<Record<UUID, UUID>>({});
   const rafRef = useRef<number | null>(null);
-  const abortControllerRef = useRef<AbortController | null>(null);
+  const abortControllersRef = useRef<Record<UUID, AbortController>>({});
+  const activeConversationIdRef = useRef<UUID | null>(null);
+  const messagesRef = useRef<Message[]>([]);
+  const messagesByConversationRef = useRef<Record<UUID, Message[]>>({});
+
+  const isSending = isThreadSending(sendingByConversationId, activeConversation?.id);
+
+  useEffect(() => {
+    activeConversationIdRef.current = activeConversation?.id ?? null;
+  }, [activeConversation?.id]);
+
+  useEffect(() => {
+    messagesRef.current = messages;
+    if (activeConversation?.id) {
+      messagesByConversationRef.current[activeConversation.id] = messages;
+    }
+  }, [messages, activeConversation?.id]);
+
+  const updateThreadMessages = useCallback((conversationId: UUID, updater: (prev: Message[]) => Message[]) => {
+    const base =
+      messagesByConversationRef.current[conversationId] ??
+      (activeConversationIdRef.current === conversationId ? messagesRef.current : []);
+    const next = updater(base);
+    messagesByConversationRef.current[conversationId] = next;
+    if (activeConversationIdRef.current === conversationId) {
+      setMessages(next);
+    }
+  }, []);
 
   // 统一的会话排序：置顶优先，再按最后消息时间降序
   const sortConversations = (convs: ConversationSummary[]) =>
@@ -356,7 +385,9 @@ export default function App() {
           }
         }
       }
-      setMessages(convMessages);
+      const cachedMessages = messagesByConversationRef.current[id];
+      setMessages(cachedMessages ?? convMessages);
+      messagesByConversationRef.current[id] = cachedMessages ?? convMessages;
     } catch (e) {
       console.error('加载消息失败:', e);
       showToast('加载消息失败', String(e));
@@ -398,6 +429,9 @@ export default function App() {
   const handleDeleteConversation = async (id: UUID) => {
     try {
       await dbDeleteConversation(id);
+      abortControllersRef.current[id]?.abort();
+      delete abortControllersRef.current[id];
+      delete messagesByConversationRef.current[id];
       const convs = await getConversations(100, 0);
       setConversations(convs);
       if (activeConversation?.id === id) {
@@ -512,24 +546,13 @@ export default function App() {
     // thinking_level 不在数据库 schema 中，仅内存维护（或后续扩展 schema）
   };
 
-  // --- 全局搜索 API Key 状态 ---
-  const [searchApiKey, setSearchApiKeyState] = useState(() => {
-    return getSearchApiKey();
-  });
-
-  const handleSetSearchApiKey = (key: string) => {
-    const trimmed = key.trim();
-    setSearchApiKeyState(trimmed);
-    setSearchApiKey(trimmed);
-  };
-
   // --- 将 Message[] 转换为 ChatMessage[] ---
   const IMAGE_MARKDOWN_REGEX = /!\[[^\]]*\]\((data:image\/[^;)]+;base64,[A-Za-z0-9+/=]+)\)/g;
 
-  const buildChatHistory = (currentMessages: Message[]): ChatMessage[] => {
+  const buildChatHistory = (conversation: Conversation, currentMessages: Message[]): ChatMessage[] => {
     const history: ChatMessage[] = [];
-    if (activeConversation?.system_prompt?.trim()) {
-      history.push({ role: 'system', content: activeConversation.system_prompt.trim() });
+    if (conversation.system_prompt?.trim()) {
+      history.push({ role: 'system', content: conversation.system_prompt.trim() });
     }
     for (const msg of currentMessages) {
       // 剥离文件附件，分离正文与附件元数据
@@ -590,31 +613,33 @@ export default function App() {
   // --- 发送消息（带 Tool Calling）---
   const handleSendMessage = async (content: string) => {
     if (!content.trim() || !activeConversation || !activeModelId) return;
-    setIsSending(true);
 
     const now = Date.now();
+    const threadConversation = activeConversation;
+    const convId = threadConversation.id;
+    setSendingByConversationId(prev => markThreadSending(prev, convId));
+
     const activeModel = models.find(m => m.id === activeModelId);
     if (!activeModel) {
       showToast('错误', '未找到激活的模型');
-      setIsSending(false);
+      setSendingByConversationId(prev => markThreadIdle(prev, convId));
       return;
     }
     if (!activeModel.api_key) {
       showToast('错误', '模型未配置 API Key');
-      setIsSending(false);
+      setSendingByConversationId(prev => markThreadIdle(prev, convId));
       return;
     }
 
     // 如果是新会话（未持久化），先保存
-    let convId = activeConversation.id;
     const isExisting = conversations.some(c => c.id === convId);
     if (!isExisting) {
       try {
-        await createConversation(activeConversation);
+        await createConversation(threadConversation);
         setConversations(prev => sortConversations([{
-          id: activeConversation.id,
-          title: activeConversation.title,
-          created_at: activeConversation.created_at,
+          id: threadConversation.id,
+          title: threadConversation.title,
+          created_at: threadConversation.created_at,
           last_message_at: now,
           last_message_preview: content.slice(0, 120),
           message_count: 0,
@@ -622,7 +647,7 @@ export default function App() {
         }, ...prev]));
       } catch (e) {
         showToast('保存会话失败', String(e));
-        setIsSending(false);
+        setSendingByConversationId(prev => markThreadIdle(prev, convId));
         return;
       }
     }
@@ -658,8 +683,10 @@ export default function App() {
       updated_at: now + 1,
     };
 
+    const previousThreadMessages = messagesByConversationRef.current[convId] ?? messagesRef.current;
+
     // 乐观更新 UI
-    setMessages(prev => [...prev, userMsg, aiMsg]);
+    updateThreadMessages(convId, prev => [...prev, userMsg, aiMsg]);
 
     // 保存到数据库
     try {
@@ -679,8 +706,8 @@ export default function App() {
         )
         : [{
           id: convId,
-          title: activeConversation.title,
-          created_at: activeConversation.created_at,
+          title: threadConversation.title,
+          created_at: threadConversation.created_at,
           last_message_at: now,
           last_message_preview: content.slice(0, 120),
           message_count: 1,
@@ -690,20 +717,22 @@ export default function App() {
     });
 
     // 构建对话历史
-    let chatHistory = buildChatHistory([...messages, userMsg]);
-    const tools = searchApiKey ? [WEB_SEARCH_TOOL] : undefined;
-    abortControllerRef.current = new AbortController();
+    let chatHistory = buildChatHistory(threadConversation, [...previousThreadMessages, userMsg]);
+    const tools = [WEB_SEARCH_TOOL];
+    const abortController = new AbortController();
+    abortControllersRef.current[convId] = abortController;
     const clearPendingAssistantUpdate = () => {
-      if (rafRef.current !== null) {
+      delete pendingUpdatesRef.current[aiMsgId];
+      delete pendingUpdateThreadsRef.current[aiMsgId];
+      if (rafRef.current !== null && Object.keys(pendingUpdatesRef.current).length === 0) {
         window.cancelAnimationFrame(rafRef.current);
         rafRef.current = null;
       }
-      delete pendingUpdatesRef.current[aiMsgId];
     };
 
     try {
       // 第一轮：可能触发 tool call
-      let result = await chatCompletion({ model: activeModel, messages: chatHistory, tools, signal: abortControllerRef.current?.signal });
+      let result = await chatCompletion({ model: activeModel, messages: chatHistory, tools, signal: abortController.signal });
 
       // 处理 Tool Calling 循环
       let toolLoopCount = 0;
@@ -712,7 +741,7 @@ export default function App() {
 
         // 显示"正在搜索..."
         const toolNames = result.toolCalls.map(tc => tc.function.name).join(', ');
-        setMessages(prev => prev.map(msg =>
+        updateThreadMessages(convId, prev => prev.map(msg =>
           msg.id === aiMsgId
             ? { ...msg, content: `正在调用工具: ${toolNames}...`, status: 'streaming' as const }
             : msg
@@ -750,7 +779,7 @@ export default function App() {
         }
 
         // 再次请求（不带 tools，避免无限循环）
-        result = await chatCompletion({ model: activeModel, messages: chatHistory, signal: abortControllerRef.current?.signal });
+        result = await chatCompletion({ model: activeModel, messages: chatHistory, signal: abortController.signal });
       }
 
       if (result.type === 'tool_calls') {
@@ -763,19 +792,28 @@ export default function App() {
       for await (const chunk of result.stream) {
         accumulated = chunk.accumulated;
         pendingUpdatesRef.current[aiMsgId] = accumulated;
+        pendingUpdateThreadsRef.current[aiMsgId] = convId;
         if (chunk.usage) {
           lastUsage = chunk.usage;
         }
 
         if (!rafRef.current) {
           rafRef.current = window.requestAnimationFrame(() => {
-            setMessages(prev => prev.map(msg => {
-              const pending = pendingUpdatesRef.current[msg.id];
-              if (pending !== undefined) {
-                return { ...msg, content: pending, status: 'streaming' as const };
-              }
-              return msg;
-            }));
+            const pendingEntries = Object.entries(pendingUpdatesRef.current);
+            const conversationIds = new Set(
+              pendingEntries
+                .map(([messageId]) => pendingUpdateThreadsRef.current[messageId])
+                .filter((id): id is UUID => Boolean(id))
+            );
+            for (const pendingConversationId of conversationIds) {
+              updateThreadMessages(pendingConversationId, prev => prev.map(msg => {
+                const pending = pendingUpdatesRef.current[msg.id];
+                if (pending !== undefined) {
+                  return { ...msg, content: pending, status: 'streaming' as const };
+                }
+                return msg;
+              }));
+            }
             rafRef.current = null;
           });
         }
@@ -800,7 +838,7 @@ export default function App() {
         output_tokens: outputTokens,
         updated_at: Date.now(),
       };
-      setMessages(prev => prev.map(msg => msg.id === aiMsgId ? finalMsg : msg));
+      updateThreadMessages(convId, prev => prev.map(msg => msg.id === aiMsgId ? finalMsg : msg));
       await updateMessage(aiMsgId, {
         content: accumulated,
         reasoning_content: result.reasoningContent,
@@ -823,18 +861,18 @@ export default function App() {
           const openrouterModel = models.find(m => m.provider === 'openrouter');
           if (!openrouterModel?.api_key) return;
 
-          const titleMessages = [...messages, userMsg, finalMsg].map(m => ({
+          const titleMessages = [...previousThreadMessages, userMsg, finalMsg].map(m => ({
             role: m.role,
             content: m.content,
           }));
 
           const newTitle = await generateConversationTitle(titleMessages, openrouterModel);
-          if (newTitle && newTitle !== activeConversation?.title) {
+          if (newTitle && newTitle !== threadConversation.title) {
             await dbUpdateConversation(convId, { title: newTitle });
             setConversations(prev => prev.map(c =>
               c.id === convId ? { ...c, title: newTitle } : c
             ));
-            if (activeConversation?.id === convId) {
+            if (activeConversationIdRef.current === convId) {
               setActiveConversation(prev => prev ? { ...prev, title: newTitle } : prev);
             }
           }
@@ -847,25 +885,26 @@ export default function App() {
       clearPendingAssistantUpdate();
       if (e.name === 'AbortError' || e.message?.toLowerCase()?.includes('abort')) {
         // 用户主动中断，保留当前已生成内容并标记完成
-        setMessages(prev => prev.map(msg => msg.id === aiMsgId ? { ...msg, status: 'completed' as const } : msg));
+        updateThreadMessages(convId, prev => prev.map(msg => msg.id === aiMsgId ? { ...msg, status: 'completed' as const } : msg));
         await updateMessage(aiMsgId, { status: 'completed' });
       } else {
         console.error(e);
         showToast('AI 流式错误', e.toString(), 'error');
-        setMessages(prev => prev.map(msg => msg.id === aiMsgId ? { ...msg, status: 'error' as const } : msg));
+        updateThreadMessages(convId, prev => prev.map(msg => msg.id === aiMsgId ? { ...msg, status: 'error' as const } : msg));
         await updateMessage(aiMsgId, { status: 'error' });
       }
     } finally {
-      setIsSending(false);
+      setSendingByConversationId(prev => markThreadIdle(prev, convId));
       clearPendingAssistantUpdate();
-      abortControllerRef.current = null;
+      delete abortControllersRef.current[convId];
     }
   };
 
   const handleStopGeneration = () => {
-    if (abortControllerRef.current) {
-      abortControllerRef.current.abort();
-      abortControllerRef.current = null;
+    const activeId = activeConversationIdRef.current;
+    if (activeId && abortControllersRef.current[activeId]) {
+      abortControllersRef.current[activeId].abort();
+      delete abortControllersRef.current[activeId];
     }
   };
 
@@ -957,8 +996,6 @@ export default function App() {
           onSave={handleSaveModel}
           onDelete={handleDeleteModel}
           onClose={() => setShowSettings(false)}
-          searchApiKey={searchApiKey}
-          onSearchApiKeyChange={handleSetSearchApiKey}
         />
       )}
 

@@ -7,8 +7,6 @@ interface ModelSettingsProps {
   onSave: (config: ModelConfig) => void;
   onDelete: (id: UUID) => void;
   onClose: () => void;
-  searchApiKey?: string;
-  onSearchApiKeyChange?: (key: string) => void;
 }
 
 const PROVIDER_BADGES: Record<string, { label: string; bg: string; text: string }> = {
@@ -22,8 +20,6 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({
   onSave,
   onDelete,
   onClose,
-  searchApiKey = '',
-  onSearchApiKeyChange,
 }) => {
   const [editing, setEditing] = useState<ModelConfig | null>(null);
   const [showForm, setShowForm] = useState(false);
@@ -71,44 +67,6 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({
 
         {/* Content */}
         <div className="flex-1 overflow-y-auto custom-scrollbar p-6">
-          {/* 搜索 API 配置 */}
-          {onSearchApiKeyChange && (
-            <div className="mb-5 p-4 rounded-lg bg-linear-surface border border-linear-border">
-              <div className="flex items-center gap-2 mb-2">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-linear-text-secondary">
-                  <circle cx="11" cy="11" r="8" /><path d="m21 21-4.3-4.3" />
-                </svg>
-                <h3 className="text-xs font-bold text-linear-text-primary">全局网络搜索</h3>
-              </div>
-              <p className="text-[11px] text-linear-text-tertiary mb-2">
-                这里的 SerpApi Key 是全局配置，只需设置一次，所有 AI 模型都会共用这份网络搜索能力。
-                <a href="https://serpapi.com/users/sign_up?plan=free" target="_blank" rel="noopener noreferrer" className="text-linear-accent hover:underline ml-1">获取 SerpApi Key →</a>
-              </p>
-              <div className="flex gap-2">
-                <input
-                  type="password"
-                  value={searchApiKey}
-                  onChange={e => onSearchApiKeyChange(e.target.value)}
-                  placeholder="SerpApi Key（全局共享）"
-                  className="flex-1 bg-linear-bg text-linear-text-secondary text-xs placeholder:text-linear-text-muted px-3 py-2 rounded-lg border border-linear-border focus:border-linear-border-hover outline-none transition-all"
-                />
-                {searchApiKey && (
-                  <button
-                    onClick={() => onSearchApiKeyChange('')}
-                    className="px-3 py-2 text-xs text-red-400 hover:bg-red-500/10 rounded-lg transition-colors cursor-pointer border border-red-500/20"
-                  >
-                    清除
-                  </button>
-                )}
-              </div>
-              {searchApiKey ? (
-                <p className="mt-1.5 text-[10px] text-emerald-400 font-medium">✓ 全局搜索已启用</p>
-              ) : (
-                <p className="mt-1.5 text-[10px] text-linear-text-muted">未配置，AI 将无法使用网络搜索</p>
-              )}
-            </div>
-          )}
-
           {showForm ? (
             <div>
               <h3 className="text-sm font-bold text-linear-text-primary mb-4">

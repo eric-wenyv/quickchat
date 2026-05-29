@@ -95,8 +95,13 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({
         id="model-selector-trigger"
         type="button"
         onClick={() => setIsOpen(!isOpen)}
-        className="group flex h-8 items-center gap-2 px-3 rounded-md bg-linear-surface-hover/80 hover:bg-linear-surface-hover border border-[rgba(255,255,255,0.16)] hover:border-[rgba(255,255,255,0.28)] text-linear-text-primary text-xs font-semibold backdrop-blur-sm cursor-pointer shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]"
-        style={{ transition: 'all 0.2s var(--ease-snappy)' }}
+        aria-haspopup="menu"
+        aria-expanded={isOpen}
+        className={`group flex h-8 items-center gap-1.5 rounded-md px-2.5 text-xs font-semibold cursor-pointer outline-none transition-colors duration-150 ${
+          isOpen
+            ? 'bg-linear-surface-hover text-linear-text-primary'
+            : 'bg-transparent text-linear-text-tertiary hover:bg-linear-surface-hover hover:text-linear-text-primary focus-visible:bg-linear-surface-hover focus-visible:text-linear-text-primary'
+        }`}
       >
         <span className="max-w-[120px] truncate">{activeModel?.display_name || 'Select Model'}</span>
         <svg
@@ -117,18 +122,19 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({
       {isOpen && (
         <div
           data-focus-preserve="true"
-          className="absolute bottom-full left-0 mb-3 w-72 bg-linear-bg-elevated/98 backdrop-blur-xl border border-[rgba(255,255,255,0.11)] shadow-linear-highlight rounded-xl z-50 origin-bottom"
+          role="menu"
+          className="absolute bottom-full left-0 mb-2 w-72 rounded-xl bg-linear-bg-elevated/98 p-1.5 shadow-[0_18px_45px_rgba(0,0,0,0.32)] backdrop-blur-xl z-50 origin-bottom"
           style={{ animation: 'menu-enter 0.2s var(--ease-snappy) forwards' }}
         >
-          <div className="p-2 space-y-1">
-            <div className="px-2 py-1.5 mb-1">
+          <div className="space-y-1">
+            <div className="p-1">
               <textarea
                 ref={textareaRef}
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 placeholder="Search models..."
                 rows={1}
-                className="w-full bg-linear-surface text-linear-text-secondary text-xs placeholder:text-linear-text-muted px-3 py-2 rounded-lg border border-linear-border focus:border-linear-border-hover outline-none transition-all duration-200 resize-none overflow-hidden"
+                className="w-full resize-none overflow-hidden rounded-lg bg-linear-surface/70 px-3 py-2 text-xs text-linear-text-secondary placeholder:text-linear-text-muted outline-none transition-colors duration-150 focus:bg-linear-surface-hover"
               />
             </div>
 
@@ -145,10 +151,12 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({
                         setIsOpen(false);
                         setSearchQuery('');
                       }}
-                      className={`group w-full flex items-center justify-between px-3 py-3 rounded-lg text-left border transition-colors cursor-pointer ${
+                      role="menuitemradio"
+                      aria-checked={isActive}
+                      className={`group w-full flex items-center justify-between gap-3 px-3 py-2.5 rounded-lg text-left transition-colors cursor-pointer ${
                         isActive
-                          ? 'bg-linear-surface border-white/10 text-linear-text-primary'
-                          : 'bg-transparent border-transparent text-linear-text-secondary hover:bg-linear-surface-hover hover:text-linear-text-primary'
+                          ? 'bg-linear-surface-hover text-linear-text-primary'
+                          : 'text-linear-text-secondary hover:bg-linear-surface hover:text-linear-text-primary'
                       }`}
                     >
                       <div className="flex items-center gap-2.5 min-w-0">
@@ -161,14 +169,14 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({
                         </div>
                       </div>
                       {isActive && (
-                        <div className="bg-linear-text-primary text-linear-bg rounded-full p-0.5 shadow-sm flex-shrink-0">
+                        <div className="text-linear-text-primary flex-shrink-0">
                           <svg
                             xmlns="http://www.w3.org/2000/svg"
-                            className="w-3 h-3"
+                            className="w-4 h-4"
                             viewBox="0 0 24 24"
                             fill="none"
                             stroke="currentColor"
-                            strokeWidth="4"
+                            strokeWidth="2.5"
                             strokeLinecap="round"
                             strokeLinejoin="round"
                           >

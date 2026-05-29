@@ -1,26 +1,10 @@
 // =============================================================================
 // Quick-Chat — Web Search Service
 // =============================================================================
-// 支持 SerpApi Google Search API
+// 支持 Tavily Search API
 // =============================================================================
 
 import { invoke } from '@tauri-apps/api/core';
-
-const SEARCH_API_KEY_STORAGE_KEY = 'quick_chat_serpapi_key';
-
-function readStoredSearchApiKey(): string {
-  if (typeof window === 'undefined') return '';
-  return window.localStorage.getItem(SEARCH_API_KEY_STORAGE_KEY)?.trim() || '';
-}
-
-function persistSearchApiKey(key: string): void {
-  if (typeof window === 'undefined') return;
-  if (key) {
-    window.localStorage.setItem(SEARCH_API_KEY_STORAGE_KEY, key);
-  } else {
-    window.localStorage.removeItem(SEARCH_API_KEY_STORAGE_KEY);
-  }
-}
 
 export interface SearchResult {
   title: string;
@@ -28,31 +12,17 @@ export interface SearchResult {
   snippet: string;
 }
 
-interface SerpApiSearchResponse {
-  search_metadata?: {
-    status?: string;
-    error?: string;
-  };
+interface TavilySearchResponse {
+  query?: string;
+  answer?: string;
+  response_time?: number;
   error?: string;
-  organic_results?: Array<{
+  results?: Array<{
     title?: string;
-    link?: string;
     url?: string;
-    snippet?: string;
-    description?: string;
+    content?: string;
+    raw_content?: string;
   }>;
-  knowledge_graph?: {
-    title?: string;
-    description?: string;
-    website?: string;
-    link?: string;
-  };
-  answer_box?: {
-    title?: string;
-    link?: string;
-    answer?: string;
-    snippet?: string;
-  };
 }
 
 function getErrorMessage(error: unknown): string {
@@ -61,79 +31,37 @@ function getErrorMessage(error: unknown): string {
   return '未知错误';
 }
 
-let searchApiKey: string = readStoredSearchApiKey();
-
-export function setSearchApiKey(key: string) {
-  searchApiKey = key.trim();
-  persistSearchApiKey(searchApiKey);
-}
-
-export function getSearchApiKey(): string {
-  if (!searchApiKey) {
-    searchApiKey = readStoredSearchApiKey();
+export function normalizeTavilySearchResponse(data: TavilySearchResponse): SearchResult[] {
+  if (!data.results || !Array.isArray(data.results)) {
+    return [];
   }
-  return searchApiKey;
-}
 
-export function hasSearchConfigured(): boolean {
-  return !!searchApiKey.trim();
+  return data.results.slice(0, 5).map((r) => ({
+    title: r.title || '',
+    url: r.url || '',
+    snippet: r.content || r.raw_content || '',
+  }));
 }
 
 /**
- * 使用 SerpApi Google Search API 搜索网页
- * https://serpapi.com/search-api
+ * 使用 Tavily Search API 搜索网页。
+ * API Key 由 Tauri 后端从项目根目录 .env 的 TAVILY_API_KEY 读取。
  */
 export async function searchWeb(query: string): Promise<SearchResult[]> {
-  const apiKey = getSearchApiKey();
-  if (!apiKey) {
-    throw new Error('SerpApi Key 未配置');
-  }
-
-  let data: SerpApiSearchResponse;
+  let data: TavilySearchResponse;
   try {
-    data = await invoke<SerpApiSearchResponse>('search_web', {
+    data = await invoke<TavilySearchResponse>('search_web', {
       query,
-      apiKey: apiKey,
     });
   } catch (error) {
-    throw new Error(`SerpApi 本地转发失败: ${getErrorMessage(error)}`);
+    throw new Error(`Tavily 本地转发失败: ${getErrorMessage(error)}`);
   }
 
-  const searchStatus = data?.search_metadata?.status;
-  if (searchStatus && searchStatus !== 'Success') {
-    const errorMessage = data?.error || data?.search_metadata?.error || '未知错误';
-    throw new Error(`SerpApi 搜索失败: ${errorMessage}`);
+  if (data?.error) {
+    throw new Error(`Tavily 搜索失败: ${data.error}`);
   }
 
-  const results: SearchResult[] = [];
-
-  if (data.organic_results && Array.isArray(data.organic_results)) {
-    for (const r of data.organic_results.slice(0, 5)) {
-      results.push({
-        title: r.title || '',
-        url: r.link || r.url || '',
-        snippet: r.snippet || r.description || '',
-      });
-    }
-  }
-
-  if (results.length === 0 && data.knowledge_graph?.description) {
-    results.push({
-      title: data.knowledge_graph.title || '搜索结果摘要',
-      url: data.knowledge_graph.website || data.knowledge_graph.link || '',
-      snippet: data.knowledge_graph.description,
-    });
-  }
-
-  if (results.length === 0 && data.answer_box) {
-    results.push({
-      title: data.answer_box.title || '搜索结果摘要',
-      url: data.answer_box.link || '',
-      snippet: data.answer_box.answer || data.answer_box.snippet || JSON.stringify(data.answer_box),
-    });
-  }
-
-  return results;
+  return normalizeTavilySearchResponse(data);
 }
 
 /**

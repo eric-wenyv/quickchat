@@ -179,7 +179,7 @@ export const ChatInputFooter: React.FC<ChatInputFooterProps> = ({
       <div className="absolute top-0 left-0 right-0 h-[1px] bg-gradient-to-r from-transparent via-linear-border to-transparent opacity-50" />
       <div className="max-w-3xl mx-auto">
         <div
-          className="relative group bg-linear-bg-elevated/95 border border-[rgba(255,255,255,0.11)] shadow-linear-highlight rounded-2xl hover:border-[rgba(255,255,255,0.2)]"
+          className="relative group bg-linear-bg-elevated/95 border border-[rgba(255,255,255,0.11)] shadow-linear-highlight rounded-2xl hover:border-[rgba(255,255,255,0.2)] focus-within:shadow-[0_0_0_3px_rgba(255,255,255,0.08),0_16px_40px_rgba(0,0,0,0.28)]"
           style={{ transition: 'border-color 0.14s var(--ease-snappy), box-shadow 0.14s var(--ease-snappy)' }}
         >
           {/* 图片预览区 */}

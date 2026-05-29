@@ -50,8 +50,15 @@ const ThinkingLevelSelector: React.FC<ThinkingLevelSelectorProps> = ({
   return (
     <div className="relative" ref={dropdownRef}>
       <button
+        type="button"
         onClick={() => setIsOpen(!isOpen)}
-        className="flex h-8 items-center gap-1.5 px-2.5 rounded-md bg-linear-surface-hover/80 hover:bg-linear-surface-hover border border-[rgba(255,255,255,0.16)] hover:border-[rgba(255,255,255,0.28)] transition-all duration-200 text-xs font-semibold text-linear-text-primary cursor-pointer shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]"
+        aria-haspopup="menu"
+        aria-expanded={isOpen}
+        className={`flex h-8 items-center gap-1.5 rounded-md px-2.5 text-xs font-semibold cursor-pointer outline-none transition-colors duration-150 ${
+          isOpen
+            ? 'bg-linear-surface-hover text-linear-text-primary'
+            : 'bg-transparent text-linear-text-tertiary hover:bg-linear-surface-hover hover:text-linear-text-primary focus-visible:bg-linear-surface-hover focus-visible:text-linear-text-primary'
+        }`}
         title="思考深度"
       >
         <span>思考: {LEVEL_LABELS[currentLevel]}</span>
@@ -65,7 +72,11 @@ const ThinkingLevelSelector: React.FC<ThinkingLevelSelectorProps> = ({
       </button>
 
       {isOpen && (
-        <div className="absolute bottom-full left-0 mb-2 w-28 bg-linear-bg-elevated backdrop-blur-md border border-[rgba(255,255,255,0.08)] shadow-linear-highlight rounded-lg z-50 animate-in fade-in slide-in-from-bottom-2 duration-200">
+        <div
+          role="menu"
+          className="absolute bottom-full left-0 mb-2 w-28 rounded-xl bg-linear-bg-elevated/98 p-1.5 shadow-[0_18px_45px_rgba(0,0,0,0.32)] backdrop-blur-xl z-50 origin-bottom"
+          style={{ animation: 'menu-enter 0.2s var(--ease-snappy) forwards' }}
+        >
           {(['LOW', 'MEDIUM', 'HIGH'] as const).map(level => (
             <button
               key={level}
@@ -73,13 +84,28 @@ const ThinkingLevelSelector: React.FC<ThinkingLevelSelectorProps> = ({
                 onUpdateThinkingLevel(activeModel.id, level);
                 setIsOpen(false);
               }}
-              className={`w-full flex items-center gap-2 px-3 py-2 text-left transition-all duration-200 cursor-pointer first:rounded-t-lg last:rounded-b-lg ${
+              role="menuitemradio"
+              aria-checked={currentLevel === level}
+              className={`w-full flex items-center justify-between gap-2 rounded-lg px-3 py-2 text-left transition-colors duration-150 cursor-pointer ${
                 currentLevel === level
-                  ? 'bg-linear-selection text-linear-text-primary'
+                  ? 'bg-linear-surface-hover text-linear-text-primary'
                   : 'text-linear-text-secondary hover:bg-linear-surface hover:text-linear-text-primary'
               }`}
             >
               <span className="text-xs font-semibold">{LEVEL_LABELS[level]}</span>
+              {currentLevel === level && (
+                <svg
+                  className="h-3.5 w-3.5 flex-shrink-0"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2.5"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <path d="M20 6 9 17l-5-5" />
+                </svg>
+              )}
             </button>
           ))}
         </div>

@@ -9,6 +9,7 @@ import { codeToHtml } from 'shiki';
 import type { Components } from 'react-markdown';
 import type { MessageStatus, FileAttachment } from '@/types/types';
 import { parseAttachments, formatFileSize, getFileIcon } from '@/utils/file';
+import { normalizeStreamingMarkdown } from '@/utils/markdown';
 
 interface MessageContentProps {
   content: string;
@@ -112,34 +113,6 @@ const AttachmentList: React.FC<{ attachments: FileAttachment[] }> = ({ attachmen
     </div>
   );
 };
-
-/**
- * 为流式 Markdown 做语法补全，防止未闭合标签导致整页结构闪烁/跳动。
- * 目前主要处理未闭合的代码块（```），在内存中临时补全闭合符号。
- */
-function normalizeStreamingMarkdown(content: string): string {
-  const lines = content.split('\n');
-  let inCodeBlock = false;
-  let lastFence = '';
-
-  for (const line of lines) {
-    const match = line.match(/^(```+)(\w*)/);
-    if (match) {
-      inCodeBlock = !inCodeBlock;
-      if (inCodeBlock) {
-        lastFence = match[1];
-      } else {
-        lastFence = '';
-      }
-    }
-  }
-
-  if (inCodeBlock && lastFence) {
-    return content + '\n' + lastFence + '\n';
-  }
-
-  return content;
-}
 
 const isTreeDiagram = (code: string): boolean => {
   const lines = code.split('\n').filter((l) => l.trim().length > 0);

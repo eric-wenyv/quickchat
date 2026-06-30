@@ -71,3 +71,49 @@ test('injects reusable artifact layout primitives', async () => {
   assert.match(srcDoc, /body :where\(\.qc-artifact-canvas\)/);
   assert.match(srcDoc, /body :where\(\.qc-artifact-log\),/);
 });
+
+test('splits raw qc artifact fragments outside markdown fences', async () => {
+  const { splitRenderableHtmlArtifacts } = await importArtifactUtils();
+  const raw = [
+    'Intro text',
+    '',
+    '<main class="qc-artifact"><button id="next">Next</button></main><script>document.getElementById("next").addEventListener("click", () => {})</script>',
+    '',
+    'Outro text',
+  ].join('\n');
+
+  const segments = splitRenderableHtmlArtifacts(raw);
+
+  assert.equal(segments.length, 3);
+  assert.deepEqual(segments.map((segment) => segment.type), ['markdown', 'artifact', 'markdown']);
+  assert.match(segments[0].content, /Intro text/);
+  assert.match(segments[1].content, /qc-artifact/);
+  assert.match(segments[1].content, /<script>/);
+  assert.equal(segments[1].language, 'html');
+  assert.match(segments[2].content, /Outro text/);
+});
+
+test('does not split raw artifact markup inside markdown fences', async () => {
+  const { splitRenderableHtmlArtifacts } = await importArtifactUtils();
+  const fenced = [
+    '```html',
+    '<main class="qc-artifact"><button id="next">Next</button></main><script>document.getElementById("next").addEventListener("click", () => {})</script>',
+    '```',
+  ].join('\n');
+
+  const segments = splitRenderableHtmlArtifacts(fenced);
+
+  assert.equal(segments.length, 1);
+  assert.equal(segments[0].type, 'markdown');
+  assert.match(segments[0].content, /```html/);
+});
+
+test('keeps artifact layout primitives overridable', async () => {
+  const { buildArtifactSrcDoc } = await importArtifactUtils();
+  const srcDoc = buildArtifactSrcDoc('<main class="qc-artifact"><div class="qc-artifact-canvas" style="display:flex"></div></main>');
+
+  assert.doesNotMatch(srcDoc, /display: grid !important/);
+  assert.doesNotMatch(srcDoc, /display: flex !important/);
+  assert.match(srcDoc, /body :where\(\.qc-artifact-canvas\) \{[\s\S]*display: flex;/);
+  assert.match(srcDoc, /body :where\(\.qc-artifact-canvas\) \{[\s\S]*min-height: 0;/);
+});

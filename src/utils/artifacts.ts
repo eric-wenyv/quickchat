@@ -2,7 +2,8 @@ const HTML_DOCUMENT_RE = /<!doctype\s+html|<html[\s>]/i;
 const HTML_SHELL_RE = /<head[\s>]|<body[\s>]/i;
 const HTML_TAG_RE = /<[a-z!][\s\S]*>/i;
 const INTERACTIVE_HTML_RE = /<script[\s>]|<style[\s>]|<canvas[\s>]|<svg[\s>]|<button[\s>]|<input[\s>]|<select[\s>]|<textarea[\s>]|addEventListener\s*\(|\son[a-z]+\s*=/i;
-
+const RAW_QC_ARTIFACT_MAIN_RE = /<main\b(?=[^>]*\bclass\s*=\s*(?:"[^"]*\bqc-artifact\b[^"]*"|'[^']*\bqc-artifact\b[^']*'))[^>]*>/gi;
+const RAW_HTML_DOCUMENT_START_RE = /<!doctype\s+html\b|<html[\s>]/gi;
 const ARTIFACT_LANGUAGES = new Set([
   'artifact',
   'app',
@@ -91,18 +92,17 @@ body :where(.app, .container, .wrapper, .page, main, section, article) {
 }
 body :where(.qc-artifact) {
   width: 100% !important;
-  min-height: clamp(420px, 58vw, 720px);
-  display: grid !important;
-  grid-template-rows: auto minmax(280px, 1fr) auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
   gap: var(--qc-gap);
-  align-content: stretch;
   padding: var(--qc-pad) !important;
   background: transparent !important;
   border: 0 !important;
   box-shadow: none !important;
 }
 body :where(.qc-artifact-header) {
-  display: flex !important;
+  display: flex;
   align-items: flex-start;
   justify-content: space-between;
   gap: 10px 16px;
@@ -136,7 +136,7 @@ body :where(.qc-artifact-badge) {
 }
 body :where(.qc-artifact-layout) {
   min-width: 0;
-  display: grid !important;
+  display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(260px, 360px);
   gap: clamp(14px, 2vw, 24px);
   align-items: stretch;
@@ -147,20 +147,23 @@ body :where(.qc-artifact-layout[data-layout="single"]) {
 }
 body :where(.qc-artifact-canvas) {
   min-width: 0;
-  min-height: clamp(280px, 38vw, 540px);
+  min-height: 0;
   position: relative;
-  display: grid !important;
-  place-items: center;
-  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--qc-gap);
+  overflow: visible;
   background: transparent !important;
 }
 body :where(.qc-artifact-canvas > svg, .qc-artifact-canvas > canvas) {
   max-width: 100%;
-  max-height: min(540px, 62vh);
+  max-height: min(420px, 58vh);
 }
 body :where(.qc-artifact-side) {
   min-width: 0;
-  display: flex !important;
+  display: flex;
   flex-direction: column;
   gap: 12px;
   align-self: stretch;
@@ -270,7 +273,7 @@ body :where(.qc-artifact-log, .log, .logs, .timeline, .events)::-webkit-scrollba
     grid-template-columns: minmax(0, 1fr);
   }
   body :where(.qc-artifact-canvas) {
-    min-height: 320px;
+    min-height: 0;
   }
   body :where(.qc-artifact-log),
   body :where(.log, .logs, .timeline, .events) {
@@ -347,6 +350,150 @@ export function isRenderableHtmlArtifact(code: string, language: string): boolea
   return HTML_SHELL_RE.test(trimmed) || INTERACTIVE_HTML_RE.test(trimmed);
 }
 
+export type ArtifactContentSegment =
+  | { type: 'markdown'; content: string }
+  | { type: 'artifact'; content: string; language: string };
+
+type TextRange = {
+  start: number;
+  end: number;
+};
+
+function getMarkdownFenceRanges(content: string): TextRange[] {
+  const ranges: TextRange[] = [];
+  const openingFenceRe = /(^|\n)([ \t]{0,3})(`{3,}|~{3,})[^\n]*(?:\n|$)/g;
+  let openingMatch: RegExpExecArray | null;
+
+  while ((openingMatch = openingFenceRe.exec(content)) !== null) {
+    const fencePrefix = openingMatch[1];
+    const fence = openingMatch[3];
+    const marker = fence[0];
+    const fenceStart = openingMatch.index + fencePrefix.length;
+    const closeFenceRe = new RegExp(`(^|\\n)[ \\t]{0,3}\\${marker}{${fence.length},}[ \\t]*(?:\\n|$)`, 'g');
+    closeFenceRe.lastIndex = openingFenceRe.lastIndex;
+
+    const closingMatch = closeFenceRe.exec(content);
+    const fenceEnd = closingMatch ? closeFenceRe.lastIndex : content.length;
+    ranges.push({ start: fenceStart, end: fenceEnd });
+    openingFenceRe.lastIndex = fenceEnd;
+  }
+
+  return ranges;
+}
+
+function isIndexInRanges(index: number, ranges: TextRange[]): boolean {
+  return ranges.some((range) => index >= range.start && index < range.end);
+}
+
+function findMatchingTagEnd(content: string, start: number, tagName: string): number {
+  const tagRe = new RegExp(`<\\/?${tagName}\\b[^>]*>`, 'gi');
+  tagRe.lastIndex = start;
+
+  let depth = 0;
+  let match: RegExpExecArray | null;
+  while ((match = tagRe.exec(content)) !== null) {
+    if (match[0].startsWith('</')) {
+      depth -= 1;
+    } else {
+      depth += 1;
+    }
+
+    if (depth === 0) {
+      return tagRe.lastIndex;
+    }
+  }
+
+  return -1;
+}
+
+function extendWithTrailingExecutableBlocks(content: string, end: number): number {
+  let cursor = end;
+
+  while (cursor < content.length) {
+    const match = content
+      .slice(cursor)
+      .match(/^\s*<(script|style)\b[\s\S]*?<\/\1>/i);
+
+    if (!match) break;
+    cursor += match[0].length;
+  }
+
+  return cursor;
+}
+
+function getRawArtifactCandidates(content: string, fenceRanges: TextRange[]): TextRange[] {
+  const candidates: TextRange[] = [];
+
+  const documentStartRe = new RegExp(RAW_HTML_DOCUMENT_START_RE.source, RAW_HTML_DOCUMENT_START_RE.flags);
+  let documentMatch: RegExpExecArray | null;
+  while ((documentMatch = documentStartRe.exec(content)) !== null) {
+    const start = documentMatch.index;
+    if (isIndexInRanges(start, fenceRanges)) continue;
+
+    const closeIndex = content.toLowerCase().indexOf('</html>', start);
+    if (closeIndex === -1) continue;
+
+    const end = closeIndex + '</html>'.length;
+    const candidate = content.slice(start, end);
+    if (isRenderableHtmlArtifact(candidate, 'html')) {
+      candidates.push({ start, end });
+      documentStartRe.lastIndex = end;
+    }
+  }
+
+  const artifactMainRe = new RegExp(RAW_QC_ARTIFACT_MAIN_RE.source, RAW_QC_ARTIFACT_MAIN_RE.flags);
+  let artifactMatch: RegExpExecArray | null;
+  while ((artifactMatch = artifactMainRe.exec(content)) !== null) {
+    const start = artifactMatch.index;
+    if (isIndexInRanges(start, fenceRanges)) continue;
+
+    const mainEnd = findMatchingTagEnd(content, start, 'main');
+    if (mainEnd === -1) continue;
+
+    const end = extendWithTrailingExecutableBlocks(content, mainEnd);
+    const candidate = content.slice(start, end);
+    if (isRenderableHtmlArtifact(candidate, 'html')) {
+      candidates.push({ start, end });
+      artifactMainRe.lastIndex = end;
+    }
+  }
+
+  return candidates.sort((a, b) => a.start - b.start || b.end - a.end);
+}
+
+export function splitRenderableHtmlArtifacts(content: string): ArtifactContentSegment[] {
+  const fenceRanges = getMarkdownFenceRanges(content);
+  const candidates = getRawArtifactCandidates(content, fenceRanges);
+  const segments: ArtifactContentSegment[] = [];
+  let cursor = 0;
+
+  for (const candidate of candidates) {
+    if (candidate.start < cursor) continue;
+
+    if (candidate.start > cursor) {
+      segments.push({
+        type: 'markdown',
+        content: content.slice(cursor, candidate.start),
+      });
+    }
+
+    segments.push({
+      type: 'artifact',
+      content: content.slice(candidate.start, candidate.end).trim(),
+      language: 'html',
+    });
+    cursor = candidate.end;
+  }
+
+  if (cursor < content.length) {
+    segments.push({
+      type: 'markdown',
+      content: content.slice(cursor),
+    });
+  }
+
+  return segments.filter((segment) => segment.content.length > 0);
+}
 function injectIntoHead(documentHtml: string, addition: string): string {
   if (/<\/head>/i.test(documentHtml)) {
     return documentHtml.replace(/<\/head>/i, `${addition}\n</head>`);

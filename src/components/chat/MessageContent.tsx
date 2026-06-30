@@ -10,7 +10,7 @@ import type { Components } from 'react-markdown';
 import type { MessageStatus, FileAttachment } from '@/types/types';
 import { parseAttachments, formatFileSize, getFileIcon } from '@/utils/file';
 import { normalizeStreamingMarkdown } from '@/utils/markdown';
-import { isRenderableHtmlArtifact } from '@/utils/artifacts';
+import { isRenderableHtmlArtifact, splitRenderableHtmlArtifacts } from '@/utils/artifacts';
 import HtmlArtifact from './HtmlArtifact';
 
 interface MessageContentProps {
@@ -378,7 +378,11 @@ const MessageContent: React.FC<MessageContentProps> = ({ content, status }) => {
   const { text: textContent, attachments } = parseAttachments(content);
   const isThinking = textContent.trim() === '' && status === 'streaming';
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
-
+  const normalizedTextContent = useMemo(() => normalizeStreamingMarkdown(textContent), [textContent]);
+  const contentSegments = useMemo(
+    () => splitRenderableHtmlArtifacts(normalizedTextContent),
+    [normalizedTextContent]
+  );
   const markdownComponents = useMemo<Components>(
     () => ({
       pre({ children }) {
@@ -494,17 +498,28 @@ const MessageContent: React.FC<MessageContentProps> = ({ content, status }) => {
           </div>
         ) : (
           <div className="qc-markdown prose prose-sm max-w-none dark:prose-invert leading-[1.6] prose-p:leading-[1.6] prose-p:my-2.5 prose-p:text-linear-text-body prose-headings:text-linear-text-primary prose-headings:font-semibold prose-headings:tracking-tight prose-headings:leading-tight prose-headings:mt-5 prose-headings:mb-2 prose-h1:text-[1.15em] prose-h2:text-[1.08em] prose-h3:text-[1.05em] prose-strong:text-linear-text-primary prose-strong:font-semibold prose-a:text-linear-text-secondary prose-a:underline prose-a:underline-offset-4 hover:prose-a:text-linear-text-primary prose-code:text-linear-text-primary prose-code:bg-linear-surface-hover prose-code:border prose-code:border-linear-border prose-code:px-1.5 prose-code:py-0.5 prose-code:rounded-[4px] prose-code:font-medium prose-code:before:content-none prose-code:after:content-none prose-pre:bg-transparent prose-pre:p-0 prose-blockquote:border-l-[rgba(255,255,255,0.16)] prose-blockquote:text-linear-text-tertiary prose-blockquote:bg-[#202020] prose-blockquote:pl-4 prose-blockquote:py-1 prose-blockquote:not-italic prose-ul:list-disc prose-ul:pl-5 prose-ol:list-decimal prose-ol:pl-5 prose-li:my-1 prose-li:text-linear-text-body prose-hr:border-[rgba(255,255,255,0.12)] prose-hr:my-5 prose-img:rounded-lg prose-img:shadow-none">
-            <ReactMarkdown
-              remarkPlugins={[remarkGfm, remarkMath, remarkBreaks]}
-              rehypePlugins={[rehypeKatex]}
-              components={markdownComponents}
-              urlTransform={(url) => {
-                if (url.startsWith('data:')) return url;
-                return url;
-              }}
-            >
-              {normalizeStreamingMarkdown(textContent)}
-            </ReactMarkdown>
+            {contentSegments.map((segment, index) =>
+              segment.type === 'artifact' ? (
+                <HtmlArtifact
+                  key={`artifact-${index}`}
+                  code={segment.content}
+                  language={segment.language}
+                />
+              ) : (
+                <ReactMarkdown
+                  key={`markdown-${index}`}
+                  remarkPlugins={[remarkGfm, remarkMath, remarkBreaks]}
+                  rehypePlugins={[rehypeKatex]}
+                  components={markdownComponents}
+                  urlTransform={(url) => {
+                    if (url.startsWith('data:')) return url;
+                    return url;
+                  }}
+                >
+                  {segment.content}
+                </ReactMarkdown>
+              )
+            )}
             {attachments.length > 0 && <AttachmentList attachments={attachments} />}
           </div>
         )}

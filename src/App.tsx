@@ -37,6 +37,23 @@ import type {
 
 import "./App.css";
 
+const BUILT_IN_ARTIFACT_PROMPT = [
+  'Quick Chat supports sandboxed interactive artifacts in assistant replies.',
+  'Proactively create an artifact when the user asks to explain, analyze, compare, teach, or reason about an algorithm, protocol, data structure, operating-system mechanism, network flow, state machine, math process, scheduling policy, or other step-by-step system behavior, even if the user did not explicitly ask for HTML or an app.',
+  'For these explanation-heavy topics, prefer a concise textual explanation plus one complete single-file HTML document in a fenced code block with language html. Skip the artifact only when the user explicitly asks for text only, code only, or no visualization.',
+  'Keep all HTML, CSS, and JavaScript inline. Do not rely on external CDNs, remote scripts, network requests, backend services, local storage, or cookies.',
+  'Make the artifact useful immediately: include sample data, visible state, labels, step controls, reset controls, comparisons, and short status text when they help users inspect the concept.',
+  'The artifact is rendered in a borderless host area on a #181818 chat background. Design it as part of the app surface, not as a framed embedded webpage.',
+  'Use Quick Chat layout primitives when building artifacts: <main class="qc-artifact">, .qc-artifact-header, .qc-artifact-layout, .qc-artifact-canvas, .qc-artifact-side, .qc-artifact-controls, .qc-artifact-stats, .qc-artifact-panel, .qc-artifact-log, and .qc-artifact-badge. These classes are pre-styled by the host.',
+  'For algorithm visualizers, use this default shape: header at top, a two-column .qc-artifact-layout with the main diagram in .qc-artifact-canvas and controls, stats, details, or legends in .qc-artifact-side, then a compact .qc-artifact-log. On narrow widths it will stack automatically.',
+  'If no side rail is needed, use .qc-artifact-layout.qc-single or data-layout="single" and keep the canvas centered. The main diagram must use the available width and be centered horizontally; never pin the visualization to the left while leaving the right side empty.',
+  'Keep controls and logs near the visualization, not far below it. Logs should be compact, scroll internally, and avoid forcing the whole artifact tall.',
+  'Use a Claude-like integrated layout: transparent top-level shell, no outer card, panel, border, shadow, or rounded frame around the whole artifact, no browser chrome, no large page header, no full-screen landing hero, and no body/page scrolling.',
+  'Internal buttons, inputs, table lines, diagram nodes, and small grouped controls may use subtle borders, but avoid enclosing the entire visualization or every region in heavy cards.',
+  'Avoid fixed 100vh layouts, fixed-width desktop-only designs, sticky/fixed overlays, decorative gradients, and excessive padding. Do not override the qc-artifact layout classes with fixed page positioning. The host will resize the frame to content height.',
+  'Use the user\'s language for all surrounding explanation and visible artifact text. Only create an artifact when it adds value; otherwise answer normally.',
+].join('\n');
+
 // -----------------------------------------------------------------------------
 // 全局 Error Boundary
 // -----------------------------------------------------------------------------
@@ -551,6 +568,7 @@ export default function App() {
 
   const buildChatHistory = (conversation: Conversation, currentMessages: Message[]): ChatMessage[] => {
     const history: ChatMessage[] = [];
+    history.push({ role: 'system', content: BUILT_IN_ARTIFACT_PROMPT });
     if (conversation.system_prompt?.trim()) {
       history.push({ role: 'system', content: conversation.system_prompt.trim() });
     }

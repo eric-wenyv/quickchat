@@ -10,6 +10,8 @@ import type { Components } from 'react-markdown';
 import type { MessageStatus, FileAttachment } from '@/types/types';
 import { parseAttachments, formatFileSize, getFileIcon } from '@/utils/file';
 import { normalizeStreamingMarkdown } from '@/utils/markdown';
+import { isRenderableHtmlArtifact } from '@/utils/artifacts';
+import HtmlArtifact from './HtmlArtifact';
 
 interface MessageContentProps {
   content: string;
@@ -384,11 +386,14 @@ const MessageContent: React.FC<MessageContentProps> = ({ content, status }) => {
       },
 
       code({ className, children, ...props }) {
-        const match = /language-(\w+)/.exec(className || '');
+        const match = /language-([\w-]+)/.exec(className || '');
         const language = match ? match[1] : '';
         const code = String(children).replace(/\n$/, '');
 
         if (match) {
+          if (isRenderableHtmlArtifact(code, language)) {
+            return <HtmlArtifact code={code} language={language} />;
+          }
           return <CodeBlock code={code} language={language} />;
         }
 

@@ -216,22 +216,22 @@ const CodeBlock: React.FC<{ code: string; language: string }> = React.memo(
     const isTree = isTreeDiagram(code);
 
     return (
-      <div className="group relative rounded-lg overflow-hidden border border-linear-border bg-linear-bg-elevated shadow-linear-highlight my-4">
+      <div className="not-prose group relative rounded-lg overflow-hidden border border-[rgba(255,255,255,0.12)] bg-[#202020] shadow-linear-highlight my-4">
         {/* Header */}
-        <div className="flex items-center justify-between px-4 py-2 bg-linear-surface border-b border-linear-border">
+        <div className="flex items-center justify-between px-4 py-2 bg-[#343434] border-b border-[rgba(255,255,255,0.1)]">
           <div className="flex items-center gap-2">
             <span className="text-xs font-medium text-linear-text-tertiary uppercase tracking-wider">
               {displayLang}
             </span>
             {isTree && (
-              <span className="text-[10px] px-1.5 py-0.5 rounded bg-linear-accent/10 text-linear-accent font-medium">
+              <span className="text-[10px] px-1.5 py-0.5 rounded bg-[rgba(255,255,255,0.075)] text-linear-accent font-medium">
                 tree
               </span>
             )}
           </div>
           <button
             onClick={copy}
-            className="flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium text-linear-text-tertiary hover:text-linear-text-secondary hover:bg-linear-surface-hover transition-colors opacity-0 group-hover:opacity-100 focus:opacity-100"
+            className="flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium text-linear-text-tertiary hover:text-linear-text-secondary hover:bg-[rgba(255,255,255,0.08)] transition-colors opacity-0 group-hover:opacity-100 focus:opacity-100"
             title="复制代码"
           >
             {copied ? (
@@ -255,7 +255,7 @@ const CodeBlock: React.FC<{ code: string; language: string }> = React.memo(
         {/* Code Body */}
         <div className="overflow-x-auto">
           {isTree ? (
-            <pre className="p-4 bg-linear-bg-elevated text-linear-text-secondary whitespace-pre leading-relaxed text-sm font-mono">
+            <pre className="p-4 bg-[#202020] text-linear-text-secondary whitespace-pre leading-relaxed text-sm font-mono">
               {code.split('\n').map((line, i) => (
                 <div key={i}>
                   <TreeLine line={line} />
@@ -438,7 +438,7 @@ const MessageContent: React.FC<MessageContentProps> = ({ content, status }) => {
 
       table({ children }) {
         return (
-          <div className="overflow-x-auto my-4 rounded-lg border border-linear-border">
+          <div className="overflow-x-auto my-4 rounded-lg border border-[rgba(255,255,255,0.12)] bg-[#202020]">
             <table className="w-full text-sm text-left border-collapse">
               {children}
             </table>
@@ -448,7 +448,7 @@ const MessageContent: React.FC<MessageContentProps> = ({ content, status }) => {
 
       thead({ children }) {
         return (
-          <thead className="bg-linear-surface text-linear-text-primary font-semibold">
+          <thead className="bg-[#343434] text-linear-text-primary font-semibold">
             {children}
           </thead>
         );
@@ -456,7 +456,7 @@ const MessageContent: React.FC<MessageContentProps> = ({ content, status }) => {
 
       tr({ children }) {
         return (
-          <tr className="border-b border-linear-border last:border-b-0 hover:bg-linear-surface/50 transition-colors">
+          <tr className="border-b border-[rgba(255,255,255,0.09)] last:border-b-0 hover:bg-[rgba(255,255,255,0.05)] transition-colors">
             {children}
           </tr>
         );
@@ -493,7 +493,7 @@ const MessageContent: React.FC<MessageContentProps> = ({ content, status }) => {
             </div>
           </div>
         ) : (
-          <div className="prose prose-sm max-w-none dark:prose-invert leading-[1.6] prose-p:leading-[1.6] prose-p:my-2.5 prose-p:text-linear-text-body prose-headings:text-linear-text-primary prose-headings:font-semibold prose-headings:tracking-tight prose-headings:leading-tight prose-headings:mt-5 prose-headings:mb-2 prose-h1:text-[1.15em] prose-h2:text-[1.08em] prose-h3:text-[1.05em] prose-strong:text-linear-text-primary prose-strong:font-semibold prose-a:text-linear-text-secondary prose-a:underline prose-a:underline-offset-4 hover:prose-a:text-linear-text-primary prose-code:text-linear-text-primary prose-code:bg-linear-surface-hover prose-code:border prose-code:border-linear-border prose-code:px-1.5 prose-code:py-0.5 prose-code:rounded-[4px] prose-code:font-medium prose-code:before:content-none prose-code:after:content-none prose-pre:bg-transparent prose-pre:p-0 prose-blockquote:border-l-linear-border prose-blockquote:text-linear-text-tertiary prose-blockquote:pl-4 prose-blockquote:italic prose-ul:list-disc prose-ul:pl-5 prose-ol:list-decimal prose-ol:pl-5 prose-li:my-1 prose-li:text-linear-text-body prose-hr:border-linear-border prose-hr:my-5 prose-img:rounded-lg prose-img:shadow-none">
+          <div className="qc-markdown prose prose-sm max-w-none dark:prose-invert leading-[1.6] prose-p:leading-[1.6] prose-p:my-2.5 prose-p:text-linear-text-body prose-headings:text-linear-text-primary prose-headings:font-semibold prose-headings:tracking-tight prose-headings:leading-tight prose-headings:mt-5 prose-headings:mb-2 prose-h1:text-[1.15em] prose-h2:text-[1.08em] prose-h3:text-[1.05em] prose-strong:text-linear-text-primary prose-strong:font-semibold prose-a:text-linear-text-secondary prose-a:underline prose-a:underline-offset-4 hover:prose-a:text-linear-text-primary prose-code:text-linear-text-primary prose-code:bg-linear-surface-hover prose-code:border prose-code:border-linear-border prose-code:px-1.5 prose-code:py-0.5 prose-code:rounded-[4px] prose-code:font-medium prose-code:before:content-none prose-code:after:content-none prose-pre:bg-transparent prose-pre:p-0 prose-blockquote:border-l-[rgba(255,255,255,0.16)] prose-blockquote:text-linear-text-tertiary prose-blockquote:bg-[#202020] prose-blockquote:pl-4 prose-blockquote:py-1 prose-blockquote:not-italic prose-ul:list-disc prose-ul:pl-5 prose-ol:list-decimal prose-ol:pl-5 prose-li:my-1 prose-li:text-linear-text-body prose-hr:border-[rgba(255,255,255,0.12)] prose-hr:my-5 prose-img:rounded-lg prose-img:shadow-none">
             <ReactMarkdown
               remarkPlugins={[remarkGfm, remarkMath, remarkBreaks]}
               rehypePlugins={[rehypeKatex]}

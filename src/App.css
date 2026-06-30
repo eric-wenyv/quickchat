@@ -129,9 +129,10 @@ body,
   }
 }
 
-/* Shiki code block overrides - blend into Linear dark theme */
+/* Shiki code block overrides - blend into neutral markdown surfaces */
 .shiki-code-block pre {
   margin: 0;
+  background: #202020 !important;
   padding: 1rem;
   font-size: 0.875rem;
   line-height: 1.7;
@@ -140,6 +141,43 @@ body,
 
 .shiki-code-block pre code {
   font-family: inherit;
+}
+
+
+
+.shiki-code-block pre code {
+  display: block;
+  background: transparent !important;
+  border: 0 !important;
+  padding: 0 !important;
+  box-shadow: none !important;
+}
+
+.shiki-code-block pre code span {
+  background: transparent !important;
+  background-color: transparent !important;
+  box-shadow: none !important;
+}
+/* Markdown special surfaces: neutral, non-blue structural backgrounds. */
+.qc-markdown blockquote {
+  border-left-color: rgba(255, 255, 255, 0.16);
+  background: #202020;
+}
+
+.qc-markdown table {
+  background: #202020;
+}
+
+.qc-markdown thead {
+  background: #343434;
+}
+
+.qc-markdown tbody tr:hover {
+  background: rgba(255, 255, 255, 0.045);
+}
+
+.qc-markdown mark {
+  background: rgba(255, 255, 255, 0.12);
 }
 
 /* KaTeX overrides for dark theme harmony */

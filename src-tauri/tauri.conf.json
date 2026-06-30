@@ -22,7 +22,18 @@
         "center": true,
         "resizable": true,
         "visible": true,
-        "dragDropEnabled": false
+        "dragDropEnabled": false,
+        "windowEffects": {
+          "effects": [
+            "acrylic"
+          ],
+          "color": [
+            30,
+            30,
+            30,
+            210
+          ]
+        }
       }
     ],
     "security": {

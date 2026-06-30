@@ -117,7 +117,7 @@ const CodexMenuBar: React.FC<CodexMenuBarProps> = ({
   return (
     <header
       data-tauri-drag-region
-      className="codex-glass-chrome relative z-40 flex h-9 w-full shrink-0 items-center justify-between border-b border-linear-border text-linear-text-tertiary select-none"
+      className="codex-glass-chrome relative z-40 flex h-9 w-full shrink-0 items-center justify-between text-linear-text-tertiary select-none"
       style={{ WebkitAppRegion: 'drag' } as React.CSSProperties}
     >
       <div
@@ -347,7 +347,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
   }, []); // 空依赖：只注册一次，回调通过 ref 保持最新
 
   return (
-    <div className="flex h-screen w-screen flex-col bg-linear-bg text-linear-text-secondary font-sans overflow-hidden selection:bg-linear-surface-hover selection:text-linear-text-primary antialiased">
+    <div className="flex h-screen w-screen flex-col bg-transparent text-linear-text-secondary font-sans overflow-hidden selection:bg-linear-surface-hover selection:text-linear-text-primary antialiased">
       <CodexMenuBar
         isSidebarOpen={isSidebarOpen}
         onToggleSidebar={() => setIsSidebarOpen(prev => !prev)}
@@ -398,7 +398,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
         右侧主对话区区域 (C-1): 应用核心交互平面
         利用 flex-1 中自适应剩余空间。
       */}
-        <main className="flex-1 min-w-0 h-full relative z-10 flex flex-col overflow-hidden border-t border-linear-border/70 bg-linear-bg">
+        <main className="flex-1 min-w-0 h-full relative z-10 flex flex-col overflow-hidden bg-linear-bg">
 
           {/* 
           集成主对话区容器 

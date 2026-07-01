@@ -175,11 +175,11 @@ export const ChatInputFooter: React.FC<ChatInputFooterProps> = ({
   const canSend = (!!content.trim() || pendingImages.length > 0 || pendingFiles.length > 0) && !disabled;
 
   return (
-    <footer className="w-full px-4 pt-2 pb-4 bg-linear-bg relative">
-      <div className="absolute top-0 left-0 right-0 h-[1px] bg-gradient-to-r from-transparent via-linear-border to-transparent opacity-50" />
-      <div className="max-w-3xl mx-auto">
+    <footer className="w-full px-4 pt-2 pb-2 bg-linear-bg relative">
+      <div className="absolute top-0 left-0 right-0 h-[1px] bg-gradient-to-r from-transparent via-linear-border to-transparent opacity-35" />
+      <div className="mx-auto w-full max-w-[920px]">
         <div
-          className="relative group bg-linear-bg-elevated/95 border border-[rgba(255,255,255,0.11)] shadow-linear-highlight rounded-2xl hover:border-[rgba(255,255,255,0.2)] focus-within:shadow-[0_0_0_3px_rgba(255,255,255,0.08),0_16px_40px_rgba(0,0,0,0.28)]"
+          className="relative group overflow-visible bg-[#2D2D2D] border border-[rgba(255,255,255,0.12)] shadow-[0_18px_48px_rgba(0,0,0,0.28)] rounded-[18px] hover:border-[rgba(255,255,255,0.18)] focus-within:border-[rgba(255,255,255,0.22)] focus-within:shadow-[0_0_0_1px_rgba(255,255,255,0.06),0_18px_54px_rgba(0,0,0,0.34)]"
           style={{ transition: 'border-color 0.14s var(--ease-snappy), box-shadow 0.14s var(--ease-snappy)' }}
         >
           {/* 图片预览区 */}
@@ -233,7 +233,7 @@ export const ChatInputFooter: React.FC<ChatInputFooterProps> = ({
             </div>
           )}
 
-          <div className="px-2 pt-2 pb-1">
+          <div className="px-4 pt-3 pb-1">
             <ChatTextArea
               ref={textareaRef}
               value={content}
@@ -246,8 +246,8 @@ export const ChatInputFooter: React.FC<ChatInputFooterProps> = ({
             />
           </div>
 
-          <div className="flex items-center justify-between px-4 py-3 border-t border-linear-border/50">
-            <div className="flex items-center gap-1.5 min-w-0">
+          <div className="flex items-center justify-between px-5 pt-1 pb-2">
+            <div className="flex items-center gap-2 min-w-0">
               <ModelSelector
                 models={models}
                 activeModelId={activeModelId}
@@ -260,7 +260,7 @@ export const ChatInputFooter: React.FC<ChatInputFooterProps> = ({
               />
             </div>
 
-            <div className="flex items-center gap-4">
+            <div className="flex items-center gap-3">
               <div className={`hidden sm:block transition-all duration-300 ${content.trim() || pendingImages.length > 0 ? 'opacity-40 translate-x-0' : 'opacity-0 translate-x-2'}`}>
                 <span className="text-[10px] font-medium text-linear-text-tertiary uppercase tracking-widest">
                   {content.length} chars

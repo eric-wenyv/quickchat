@@ -134,6 +134,79 @@ body :where(.qc-artifact-badge) {
   font-size: 12px;
   white-space: nowrap;
 }
+body :where(.qc-step-demo) {
+  --qc-pad: clamp(12px, 1.6vw, 22px);
+  gap: clamp(10px, 1.4vw, 16px);
+}
+body :where(.qc-step-demo .qc-artifact-header) {
+  align-items: center;
+  margin-bottom: 0;
+}
+body :where(.qc-step-demo .qc-artifact-title) {
+  font-size: clamp(18px, 1.7vw, 24px) !important;
+}
+body :where(.qc-step-demo .qc-artifact-subtitle) {
+  max-width: 72ch;
+  font-size: 12px !important;
+}
+body :where(.qc-step-demo .qc-artifact-layout) {
+  grid-template-columns: minmax(0, 1fr);
+  align-items: center;
+}
+body :where(.qc-step-stage) {
+  width: 100%;
+  min-height: clamp(220px, 34vw, 380px);
+  display: grid;
+  place-items: center;
+  gap: 12px;
+  overflow: hidden;
+  border: 1px solid var(--qc-border) !important;
+  border-radius: 8px !important;
+  background: rgba(255, 255, 255, 0.025) !important;
+  padding: clamp(12px, 2vw, 20px) !important;
+}
+body :where(.qc-step-stage > svg, .qc-step-stage > canvas) {
+  max-width: 100%;
+  max-height: min(360px, 48vh);
+}
+body :where(.qc-step-status) {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+body :where(.qc-step-status > *, .qc-state-chip) {
+  min-height: 26px;
+  border: 1px solid var(--qc-border) !important;
+  border-radius: 999px !important;
+  background: rgba(255, 255, 255, 0.04) !important;
+  color: var(--qc-body) !important;
+  padding: 4px 9px !important;
+  font-size: 12px !important;
+  line-height: 1.2 !important;
+}
+body :where(.qc-step-controls) {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0 auto;
+}
+body :where(.qc-step-caption) {
+  max-width: 72ch;
+  margin: 0 auto !important;
+  color: var(--qc-muted) !important;
+  font-size: 13px !important;
+  text-align: center;
+}
+body :where(.qc-step-demo table) {
+  font-size: 12px;
+}
+body :where(.qc-step-demo th, .qc-step-demo td) {
+  padding: 4px 8px !important;
+}
 body :where(.qc-artifact-layout) {
   min-width: 0;
   display: grid;
@@ -195,8 +268,11 @@ body :where(.qc-artifact-stat) {
   background: rgba(255, 255, 255, 0.035) !important;
   padding: 8px 10px !important;
 }
-body :where(.qc-artifact-log),
-body :where(.log, .logs, .timeline, .events) {
+body :where(.qc-artifact-log, .log, .logs, .execution-log, .console-log, [data-role="log"], [data-qc-policy-hidden="true"]) {
+  display: none !important;
+}
+body :where(.qc-artifact[data-allow-logs="true"] .qc-artifact-log, .qc-artifact[data-allow-logs="true"] .log, .qc-artifact[data-allow-logs="true"] .logs, .qc-artifact[data-allow-logs="true"] .execution-log, .qc-artifact[data-allow-logs="true"] .console-log, .qc-artifact[data-allow-logs="true"] [data-role="log"]) {
+  display: block !important;
   max-height: 180px;
   overflow: auto;
   border: 1px solid var(--qc-border) !important;
@@ -244,6 +320,32 @@ body :where(input, select, textarea) {
   color: var(--qc-text) !important;
   padding: 6px 10px !important;
 }
+body :where(.qc-step-controls button, .qc-step-button, .qc-artifact:not([data-allow-large-controls="true"]) .qc-artifact-controls button, .qc-artifact:not([data-allow-large-controls="true"]) .controls button, .qc-artifact:not([data-allow-large-controls="true"]) .actions button, .qc-artifact:not([data-allow-large-controls="true"]) .toolbar button) {
+  width: auto !important;
+  min-width: 0 !important;
+  height: 32px !important;
+  min-height: 32px !important;
+  max-height: 36px !important;
+  aspect-ratio: auto !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  gap: 6px !important;
+  padding: 4px 10px !important;
+  font-size: 13px !important;
+  line-height: 1 !important;
+}
+body :where(.qc-step-controls button svg, .qc-step-button svg, .qc-artifact:not([data-allow-large-controls="true"]) .qc-artifact-controls button svg, .qc-artifact:not([data-allow-large-controls="true"]) .controls button svg, .qc-artifact:not([data-allow-large-controls="true"]) .actions button svg, .qc-artifact:not([data-allow-large-controls="true"]) .toolbar button svg) {
+  width: 16px !important;
+  height: 16px !important;
+  flex: none !important;
+}
+body :where(.qc-artifact:not([data-allow-inputs="true"]) input, .qc-artifact:not([data-allow-inputs="true"]) select, .qc-artifact:not([data-allow-inputs="true"]) textarea, .qc-artifact:not([data-allow-inputs="true"]) .source-input, .qc-artifact:not([data-allow-inputs="true"]) .custom-input, .qc-artifact:not([data-allow-inputs="true"]) .program-input, .qc-artifact:not([data-allow-inputs="true"]) .input-editor, .qc-artifact:not([data-allow-inputs="true"]) .input-panel) {
+  display: none !important;
+}
+body :where(.qc-artifact:not([data-allow-autoplay="true"]) input[type="range"], .qc-artifact:not([data-allow-autoplay="true"]) .speed-control, .qc-artifact:not([data-allow-autoplay="true"]) .speed-row, .qc-artifact:not([data-allow-autoplay="true"]) .autoplay, .qc-artifact:not([data-allow-autoplay="true"]) .auto-run, .qc-artifact:not([data-allow-autoplay="true"]) .playback-controls, .qc-artifact:not([data-allow-autoplay="true"]) [data-role="speed-control"], .qc-artifact:not([data-allow-autoplay="true"]) [data-role="autoplay"], .qc-artifact:not([data-allow-autoplay="true"]) button[aria-label*="自动"], .qc-artifact:not([data-allow-autoplay="true"]) button[title*="自动"], .qc-artifact:not([data-allow-autoplay="true"]) button[aria-label*="autoplay" i], .qc-artifact:not([data-allow-autoplay="true"]) button[title*="autoplay" i], .qc-artifact:not([data-allow-autoplay="true"]) button[aria-label*="speed" i], .qc-artifact:not([data-allow-autoplay="true"]) button[title*="speed" i]) {
+  display: none !important;
+}
 body :where(table) {
   border-collapse: collapse;
   color: var(--qc-body) !important;
@@ -256,11 +358,11 @@ html::-webkit-scrollbar {
   width: 0 !important;
   height: 0 !important;
 }
-body :where(.qc-artifact-log, .log, .logs, .timeline, .events)::-webkit-scrollbar {
+body :where(.qc-artifact[data-allow-logs="true"] .qc-artifact-log, .qc-artifact[data-allow-logs="true"] .log, .qc-artifact[data-allow-logs="true"] .logs)::-webkit-scrollbar {
   width: 6px;
   height: 6px;
 }
-body :where(.qc-artifact-log, .log, .logs, .timeline, .events)::-webkit-scrollbar-thumb {
+body :where(.qc-artifact[data-allow-logs="true"] .qc-artifact-log, .qc-artifact[data-allow-logs="true"] .log, .qc-artifact[data-allow-logs="true"] .logs)::-webkit-scrollbar-thumb {
   background: rgba(255, 255, 255, 0.14);
   border-radius: 999px;
 }
@@ -275,8 +377,7 @@ body :where(.qc-artifact-log, .log, .logs, .timeline, .events)::-webkit-scrollba
   body :where(.qc-artifact-canvas) {
     min-height: 0;
   }
-  body :where(.qc-artifact-log),
-  body :where(.log, .logs, .timeline, .events) {
+  body :where(.qc-artifact[data-allow-logs="true"] .qc-artifact-log, .qc-artifact[data-allow-logs="true"] .log, .qc-artifact[data-allow-logs="true"] .logs) {
     max-height: 150px;
   }
 }
@@ -286,7 +387,97 @@ function artifactRuntimeScript(artifactId: string): string {
   return `<script data-quick-chat-artifact-runtime>
 (() => {
   const artifactId = ${JSON.stringify(artifactId)};
+  const POLICY_HIDDEN_ATTR = 'data-qc-policy-hidden';
   let lastHeight = 0;
+  let scheduled = false;
+
+  const cleanText = (value) => String(value || '').replace(/\\s+/g, ' ').trim();
+  const isElement = (value) => value instanceof HTMLElement;
+  const getRoot = () => document.querySelector('.qc-artifact') || document.body;
+  const optedIn = (root, attr) => isElement(root) && root.getAttribute(attr) === 'true';
+  const signatureOf = (element) => {
+    if (!isElement(element)) return '';
+    const className = typeof element.className === 'string' ? element.className : '';
+    return cleanText([element.id, className, element.getAttribute('role'), element.getAttribute('data-role')].join(' '));
+  };
+  const hideElement = (element) => {
+    if (!isElement(element) || element.classList.contains('qc-policy-keep')) return;
+    element.setAttribute(POLICY_HIDDEN_ATTR, 'true');
+    element.hidden = true;
+    element.style.setProperty('display', 'none', 'important');
+  };
+  const hideNearestControl = (control, root) => {
+    if (!isElement(control)) return;
+    let target = control;
+    let node = control.parentElement;
+    let depth = 0;
+    while (node && node !== root && node !== document.body && depth < 4) {
+      const signature = signatureOf(node);
+      const controlCount = node.querySelectorAll('input, select, textarea').length;
+      const buttonCount = node.querySelectorAll('button').length;
+      const shortText = cleanText(node.textContent).length < 180;
+      if (/(^|[\\s_-])(field|input|source|program|editor|speed|slider|custom|form)([\\s_-]|$)/i.test(signature) || (controlCount === 1 && buttonCount === 0 && shortText)) {
+        target = node;
+      }
+      if (/(^|[\\s_-])(controls|toolbar|actions)([\\s_-]|$)/i.test(signature) && buttonCount > 0) break;
+      node = node.parentElement;
+      depth += 1;
+    }
+    hideElement(target);
+  };
+  const compactButton = (button) => {
+    if (!isElement(button)) return;
+    button.style.setProperty('width', 'auto', 'important');
+    button.style.setProperty('min-width', '0', 'important');
+    button.style.setProperty('height', '32px', 'important');
+    button.style.setProperty('min-height', '32px', 'important');
+    button.style.setProperty('max-height', '36px', 'important');
+    button.style.setProperty('aspect-ratio', 'auto', 'important');
+    button.style.setProperty('display', 'inline-flex', 'important');
+    button.style.setProperty('align-items', 'center', 'important');
+    button.style.setProperty('justify-content', 'center', 'important');
+    button.style.setProperty('gap', '6px', 'important');
+    button.style.setProperty('padding', '4px 10px', 'important');
+    button.style.setProperty('font-size', '13px', 'important');
+    button.querySelectorAll('svg').forEach((icon) => {
+      if (!isElement(icon)) return;
+      icon.style.setProperty('width', '16px', 'important');
+      icon.style.setProperty('height', '16px', 'important');
+      icon.style.setProperty('flex', 'none', 'important');
+    });
+  };
+  const applyArtifactPolicy = () => {
+    const root = getRoot();
+    if (!root) return;
+
+    if (!optedIn(root, 'data-allow-logs')) {
+      root.querySelectorAll('.qc-artifact-log, .log, .logs, .execution-log, .console-log, [data-role="log"]').forEach(hideElement);
+      root.querySelectorAll('section, aside, footer, div').forEach((element) => {
+        if (element === root || !isElement(element)) return;
+        const signature = signatureOf(element);
+        const leadingText = cleanText(element.textContent).slice(0, 140);
+        const looksLikeLog = /(^|[\\s_-])(log|logs|console|trace|transcript|execution-log|console-log)([\\s_-]|$)/i.test(signature) || /(运行日志|控制台运行日志|执行日志|execution log|console log|event log|transcript)/i.test(leadingText);
+        if (looksLikeLog) hideElement(element);
+      });
+    }
+
+    if (!optedIn(root, 'data-allow-inputs')) {
+      root.querySelectorAll('input:not([type="range"]), select, textarea').forEach((control) => hideNearestControl(control, root));
+      root.querySelectorAll('.source-input, .custom-input, .program-input, .input-editor, .input-panel').forEach(hideElement);
+    }
+
+    if (!optedIn(root, 'data-allow-autoplay')) {
+      root.querySelectorAll('input[type="range"], .speed-control, .speed-row, .autoplay, .auto-run, .playback-controls, [data-role="speed-control"], [data-role="autoplay"]').forEach((control) => hideNearestControl(control, root));
+      root.querySelectorAll('button').forEach((button) => {
+        const label = cleanText([button.textContent, button.getAttribute('aria-label'), button.getAttribute('title')].join(' '));
+        if (/(自动|自动运行|播放|autoplay|auto run|run automatically|speed|速度)/i.test(label)) hideElement(button);
+      });
+    }
+
+    if (!optedIn(root, 'data-allow-large-controls')) {
+      root.querySelectorAll('.qc-step-controls button, .qc-step-button, .qc-artifact-controls button, .controls button, .actions button, .toolbar button').forEach(compactButton);
+    }
+  };
   const measure = () => {
     const body = document.body;
     const html = document.documentElement;
@@ -307,7 +498,16 @@ function artifactRuntimeScript(artifactId: string): string {
     lastHeight = height;
     window.parent.postMessage({ type: 'quick-chat-artifact-size', artifactId, height }, '*');
   };
-  const schedule = () => requestAnimationFrame(measure);
+  const run = () => {
+    scheduled = false;
+    applyArtifactPolicy();
+    measure();
+  };
+  const schedule = () => {
+    if (scheduled) return;
+    scheduled = true;
+    requestAnimationFrame(run);
+  };
   window.addEventListener('load', schedule);
   window.addEventListener('resize', schedule);
   if ('ResizeObserver' in window) {
@@ -315,9 +515,13 @@ function artifactRuntimeScript(artifactId: string): string {
     observer.observe(document.documentElement);
     if (document.body) observer.observe(document.body);
   }
-  setTimeout(measure, 0);
-  setTimeout(measure, 100);
-  setTimeout(measure, 500);
+  if ('MutationObserver' in window && document.body) {
+    const observer = new MutationObserver(schedule);
+    observer.observe(document.body, { childList: true, subtree: true, characterData: true });
+  }
+  schedule();
+  setTimeout(schedule, 100);
+  setTimeout(schedule, 500);
 })();
 </script>`;
 }

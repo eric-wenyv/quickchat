@@ -22,6 +22,8 @@ interface AppLayoutProps {
   conversations: ConversationSummary[];
   /** 当前激活的会话详情 */
   activeConversation: Conversation | null;
+  /** 点击后立即高亮的会话 ID */
+  selectedConversationId: UUID | null;
   /** 当前会话的消息流 */
   messages: Message[];
   /** 可选模型配置列表 */
@@ -206,6 +208,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
   onToggleTheme,
   conversations,
   activeConversation,
+  selectedConversationId,
   messages,
   models,
   activeModelId,
@@ -369,7 +372,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
           <div className="h-full w-full shrink-0" style={{ minWidth: MIN_SIDEBAR_WIDTH }}>
             <Sidebar
               conversations={conversations}
-              activeConversationId={activeConversation?.id ?? null}
+              activeConversationId={selectedConversationId ?? activeConversation?.id ?? null}
               onSelectConversation={onSelectConversation}
               onCreateConversation={onCreateConversation}
               onDeleteConversation={onDeleteConversation}

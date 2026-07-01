@@ -54,7 +54,7 @@ const ThinkingLevelSelector: React.FC<ThinkingLevelSelectorProps> = ({
         onClick={() => setIsOpen(!isOpen)}
         aria-haspopup="menu"
         aria-expanded={isOpen}
-        className={`flex h-8 items-center gap-1.5 rounded-md px-2.5 text-xs font-semibold cursor-pointer outline-none transition-colors duration-150 ${
+        className={`flex h-7 items-center gap-1 rounded-full px-2.5 text-[11px] font-semibold cursor-pointer outline-none transition-colors duration-150 ${
           isOpen
             ? 'bg-linear-surface-hover text-linear-text-primary'
             : 'bg-transparent text-linear-text-tertiary hover:bg-linear-surface-hover hover:text-linear-text-primary focus-visible:bg-linear-surface-hover focus-visible:text-linear-text-primary'
@@ -63,7 +63,7 @@ const ThinkingLevelSelector: React.FC<ThinkingLevelSelectorProps> = ({
       >
         <span>思考: {LEVEL_LABELS[currentLevel]}</span>
         <svg
-          className={`w-3 h-3 transition-transform duration-200 ${isOpen ? 'rotate-180' : ''}`}
+          className={`w-2.5 h-2.5 transition-transform duration-200 ${isOpen ? 'rotate-180' : ''}`}
           viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"
           strokeLinecap="round" strokeLinejoin="round"
         >
@@ -74,7 +74,7 @@ const ThinkingLevelSelector: React.FC<ThinkingLevelSelectorProps> = ({
       {isOpen && (
         <div
           role="menu"
-          className="absolute bottom-full left-0 mb-2 w-28 rounded-xl bg-linear-bg-elevated/98 p-1.5 shadow-[0_18px_45px_rgba(0,0,0,0.32)] backdrop-blur-xl z-50 origin-bottom"
+          className="absolute bottom-full left-0 mb-2 w-24 rounded-xl bg-linear-bg-elevated/98 p-1.5 shadow-[0_18px_45px_rgba(0,0,0,0.32)] backdrop-blur-xl z-50 origin-bottom"
           style={{ animation: 'menu-enter 0.2s var(--ease-snappy) forwards' }}
         >
           {(['LOW', 'MEDIUM', 'HIGH'] as const).map(level => (

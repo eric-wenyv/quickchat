@@ -44,12 +44,17 @@ const BUILT_IN_ARTIFACT_PROMPT = [
   'When presenting execution order, call chains, request lifecycles, pipelines, flowcharts, sequence diagrams, or state machines, use a fenced mermaid code block instead of ASCII art or box-drawing characters. Choose sequenceDiagram for ordered interactions and flowchart LR/TD for process flows.',
   'Keep Mermaid diagrams compact: use short labels, avoid decorative styling directives, keep branches grouped, and split very large processes into multiple smaller diagrams instead of one oversized chart.',
   'Keep all HTML, CSS, and JavaScript inline. Do not rely on external CDNs, remote scripts, network requests, backend services, local storage, or cookies.',
-  'Make the artifact useful immediately: include sample data, visible state, labels, step controls, reset controls, comparisons, and short status text when they help users inspect the concept.',
+  'For algorithm, parser, state-machine, scheduling, pipeline, and data-structure explanations, default to a compact single-step teaching animation, not a general-purpose simulator.',
+  'Use one fixed representative example unless the user explicitly asks for editable input. Do not add custom input fields, source editors, sliders, speed controls, autoplay, mode pickers, comparison panels, or advanced settings by default.',
+  'A step visualizer should expose only compact controls: Step/Next and Reset. Make Step advance exactly one meaningful transition and show the result through animation, highlight movement, state chips, pointers, or table-row emphasis.',
+  'Do not create an execution log, console log, event feed, or scrolling text transcript by default. Explain state changes in the visual stage itself. Add a log only if the user explicitly asks for one, and then mark the top-level qc-artifact with data-allow-logs="true".',
+  'If the user explicitly asks for editable inputs, forms, autoplay, speed controls, or large controls, mark the top-level qc-artifact with data-allow-inputs="true", data-allow-autoplay="true", or data-allow-large-controls="true" as appropriate.',
+  'Make the artifact useful immediately: include sample data, visible state, labels, compact step controls, reset controls, and short status text when they help users inspect the concept.',
   'The artifact is rendered in a borderless host area on a #181818 chat background. Design it as part of the app surface, not as a framed embedded webpage.',
-  'Use Quick Chat layout primitives when building artifacts: <main class="qc-artifact">, .qc-artifact-header, .qc-artifact-layout, .qc-artifact-canvas, .qc-artifact-side, .qc-artifact-controls, .qc-artifact-stats, .qc-artifact-panel, .qc-artifact-log, and .qc-artifact-badge. These classes are pre-styled by the host.',
-  'For algorithm visualizers, use this default shape: header at top, a two-column .qc-artifact-layout with the main diagram in .qc-artifact-canvas and controls, stats, details, or legends in .qc-artifact-side, then a compact .qc-artifact-log. On narrow widths it will stack automatically.',
+  'Use Quick Chat layout primitives when building artifacts: <main class="qc-artifact qc-step-demo">, .qc-artifact-header, .qc-artifact-layout, .qc-artifact-canvas, .qc-artifact-side, .qc-artifact-controls, .qc-artifact-stats, .qc-artifact-panel, .qc-artifact-badge, plus step-demo helpers .qc-step-stage, .qc-step-controls, .qc-step-status, .qc-step-caption, and .qc-step-button. These classes are pre-styled by the host.',
+  'For algorithm visualizers, use this default shape: a small header, one centered .qc-step-stage for the animated concept, compact .qc-step-status chips for current state, and a .qc-step-controls row below the stage. Use a side rail only when it materially improves the visual explanation.',
   'If no side rail is needed, use .qc-artifact-layout.qc-single or data-layout="single" and keep the canvas centered. The main diagram must use the available width and be centered horizontally; never pin the visualization to the left while leaving the right side empty.',
-  'Keep controls and logs near the visualization, not far below it. Logs should be compact, scroll internally, and avoid forcing the whole artifact tall.',
+  'Keep controls directly beside or below the visualization. Avoid long static tables, large text blocks, and distant footer panels; the animation must remain the primary visual focus.',
   'Use a Claude-like integrated layout: transparent top-level shell, no outer card, panel, border, shadow, or rounded frame around the whole artifact, no browser chrome, no large page header, no full-screen landing hero, and no body/page scrolling.',
   'Internal buttons, inputs, table lines, diagram nodes, and small grouped controls may use subtle borders, but avoid enclosing the entire visualization or every region in heavy cards.',
   'Avoid fixed 100vh layouts, fixed-width desktop-only designs, sticky/fixed overlays, decorative gradients, and excessive padding. Do not override the qc-artifact layout classes with fixed page positioning. The host will resize the frame to content height.',
@@ -101,6 +106,7 @@ export default function App() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [models, setModels] = useState<ModelConfig[]>([]);
   const [activeConversation, setActiveConversation] = useState<Conversation | null>(null);
+  const [selectedConversationId, setSelectedConversationId] = useState<UUID | null>(null);
   const [activeModelId, setActiveModelId] = useState<UUID>('');
   const [dbReady, setDbReady] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
@@ -124,6 +130,7 @@ export default function App() {
   const activeConversationIdRef = useRef<UUID | null>(null);
   const messagesRef = useRef<Message[]>([]);
   const messagesByConversationRef = useRef<Record<UUID, Message[]>>({});
+  const selectRequestIdRef = useRef(0);
 
   const isSending = isThreadSending(sendingByConversationId, activeConversation?.id);
 
@@ -365,14 +372,48 @@ export default function App() {
   const handleSelectConversation = async (id: UUID) => {
     localStorage.setItem("quick_chat_last_active_conv", id);
 
+    const requestId = ++selectRequestIdRef.current;
+    const cachedMessages = messagesByConversationRef.current[id];
+    const summary = conversations.find(c => c.id === id);
+    const canUseCachedMessages = cachedMessages !== undefined && (
+      cachedMessages.length > 0 ||
+      (summary?.message_count ?? 0) === 0
+    );
+
+    setSelectedConversationId(id);
     setIsLoadingMessages(true);
+    setMessages(canUseCachedMessages ? cachedMessages : []);
+
+    if (summary) {
+      activeConversationIdRef.current = id;
+      setActiveConversation(prev => prev?.id === id ? prev : {
+        id,
+        title: summary.title,
+        model_id: activeModelId,
+        system_prompt: null,
+        created_at: summary.created_at,
+        updated_at: summary.last_message_at,
+        agent_url: summary.agent_url ?? null,
+        pinned: summary.pinned ?? 0,
+      });
+      if (summary.agent_url) {
+        setAgentUrl(summary.agent_url);
+        setAgentMode(true);
+      } else {
+        setAgentMode(false);
+      }
+    }
+
     try {
       const [convDetail, convMessages] = await Promise.all([
         getConversation(id),
         getMessages(id, 200),
       ]);
 
+      if (selectRequestIdRef.current !== requestId) return;
+
       if (convDetail) {
+        activeConversationIdRef.current = convDetail.id;
         setActiveConversation(convDetail);
         // 若会话绑定了 Agent 地址，自动进入 Agent 模式
         if (convDetail.agent_url) {
@@ -384,9 +425,12 @@ export default function App() {
       } else {
         // 会话可能不存在，从列表找摘要信息
         const convs = await getConversations(100, 0);
+        if (selectRequestIdRef.current !== requestId) return;
+
         setConversations(convs);
         const s = convs.find(c => c.id === id);
         if (s) {
+          activeConversationIdRef.current = id;
           setActiveConversation({
             id,
             title: s.title,
@@ -395,6 +439,7 @@ export default function App() {
             created_at: s.created_at,
             updated_at: s.last_message_at,
             agent_url: s.agent_url ?? null,
+            pinned: s.pinned ?? 0,
           });
           if (s.agent_url) {
             setAgentUrl(s.agent_url);
@@ -402,16 +447,26 @@ export default function App() {
           } else {
             setAgentMode(false);
           }
+        } else {
+          activeConversationIdRef.current = null;
+          setSelectedConversationId(null);
+          setActiveConversation(null);
+          setAgentMode(false);
         }
       }
-      const cachedMessages = messagesByConversationRef.current[id];
-      setMessages(cachedMessages ?? convMessages);
-      messagesByConversationRef.current[id] = cachedMessages ?? convMessages;
+
+      const nextMessages = canUseCachedMessages ? cachedMessages : convMessages;
+      setMessages(nextMessages);
+      messagesByConversationRef.current[id] = nextMessages;
     } catch (e) {
+      if (selectRequestIdRef.current !== requestId) return;
       console.error('加载消息失败:', e);
       showToast('加载消息失败', String(e));
+      setSelectedConversationId(activeConversationIdRef.current);
     } finally {
-      setIsLoadingMessages(false);
+      if (selectRequestIdRef.current === requestId) {
+        setIsLoadingMessages(false);
+      }
     }
   };
 
@@ -440,8 +495,12 @@ export default function App() {
       updated_at: now,
       agent_url: null,
     };
+    selectRequestIdRef.current += 1;
+    setSelectedConversationId(newConv.id);
+    activeConversationIdRef.current = newConv.id;
     setActiveConversation(newConv);
     setMessages([]);
+    messagesByConversationRef.current[newConv.id] = [];
     setAgentMode(false);
   }, [activeModelId, models, activeConversation, messages, agentMode]);
 
@@ -458,6 +517,8 @@ export default function App() {
           await handleSelectConversation(convs[0].id);
         } else {
           localStorage.removeItem("quick_chat_last_active_conv");
+          setSelectedConversationId(null);
+          activeConversationIdRef.current = null;
           setActiveConversation(null);
           setMessages([]);
           setAgentMode(false);
@@ -1043,6 +1104,7 @@ export default function App() {
         onToggleTheme={toggleTheme}
         conversations={filteredConversations}
         activeConversation={activeConversation}
+        selectedConversationId={selectedConversationId}
         messages={messages}
         models={models}
         activeModelId={activeModelId}

@@ -95,7 +95,7 @@ export const ChatTextArea = forwardRef<ChatTextAreaHandle, ChatTextAreaProps>(({
       onPaste={handlePaste}
       disabled={disabled}
       placeholder={placeholder}
-      className="w-full bg-transparent border-none focus:ring-0 focus:outline-none resize-none py-3 px-4 text-[14px] leading-[1.6] text-linear-text-body placeholder:text-linear-text-muted min-h-[52px] max-h-[300px] scrollbar-hide transition-all duration-200 ease-in-out disabled:opacity-50"
+      className="w-full bg-transparent border-none focus:ring-0 focus:outline-none resize-none p-0 text-[15px] leading-[1.55] text-linear-text-body placeholder:text-linear-text-muted min-h-[38px] max-h-[180px] scrollbar-hide transition-all duration-200 ease-in-out disabled:opacity-50"
       rows={1}
     />
   );

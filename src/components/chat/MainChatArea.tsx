@@ -257,13 +257,13 @@ export const MainChatArea: React.FC<MainChatAreaProps> = ({
                       className="absolute right-5 top-1/2 -translate-y-1/2 z-20 flex flex-col items-center py-3 overflow-hidden"
                       style={{
                         width: isNavHovered ? 192 : 20,
-                        backgroundColor: isNavHovered ? 'rgba(21, 22, 24, 0.95)' : 'rgba(21, 22, 24, 0)',
-                        backdropFilter: isNavHovered ? 'blur(12px)' : 'blur(0px)',
-                        borderRadius: isNavHovered ? '12px 0 0 12px' : '0',
+                        backgroundColor: isNavHovered ? 'rgba(24, 24, 24, 0.42)' : 'transparent',
+                        backdropFilter: isNavHovered ? 'blur(28px) saturate(1.35)' : 'none',
+                        borderRadius: isNavHovered ? '12px 0 0 12px' : 0,
                         borderWidth: '1px 0 1px 1px',
                         borderStyle: 'solid',
-                        borderColor: isNavHovered ? 'rgba(255,255,255,0.06)' : 'transparent',
-                        boxShadow: isNavHovered ? '0 4px 20px rgba(0,0,0,0.25)' : 'none',
+                        borderColor: isNavHovered ? 'rgba(255,255,255,0.08)' : 'transparent',
+                        boxShadow: isNavHovered ? '0 16px 48px rgba(0,0,0,0.32)' : 'none',
                         outline: 'none',
                         transition: [
                           'width 0.28s var(--ease-snappy)',
@@ -296,8 +296,8 @@ export const MainChatArea: React.FC<MainChatAreaProps> = ({
                               <span
                                 aria-hidden="true"
                                 className={`absolute inset-y-0 left-1 right-1 rounded-md transition-[opacity,transform] duration-200 ${isActive
-                                    ? 'translate-x-0 opacity-100 bg-linear-selection'
-                                    : '-translate-x-4 opacity-0 bg-linear-surface group-hover:translate-x-0 group-hover:opacity-100'
+                                    ? 'translate-x-0 opacity-0'
+                                    : '-translate-x-4 opacity-0 group-hover:translate-x-0'
                                   }`}
                                 style={{ transitionTimingFunction: 'var(--ease-snappy)' }}
                               />

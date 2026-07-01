@@ -215,6 +215,14 @@ async function ensureModelColumns(db: Database): Promise<void> {
         "UPDATE model_configs SET thinking_level = 'MEDIUM' WHERE thinking_level IS NULL AND model_id LIKE '%gemini-3%';"
       );
     }
+    if (!colNames.has('supports_vision')) {
+      await db.execute("ALTER TABLE model_configs ADD COLUMN supports_vision INTEGER NOT NULL DEFAULT 0;");
+      console.log('[DB] Added column: model_configs.supports_vision');
+      // 为已知的支持图片的模型自动启用
+      await db.execute(
+        "UPDATE model_configs SET supports_vision = 1 WHERE model_id LIKE '%gemini%' OR model_id LIKE '%gpt-4o%' OR model_id LIKE '%claude-3%' OR model_id LIKE '%vision%' OR model_id LIKE '%llava%';"
+      );
+    }
   } catch (e) {
     console.error('[DB] ensureModelColumns failed:', e);
   }
@@ -280,6 +288,7 @@ export async function getModelConfigs(): Promise<ModelConfig[]> {
     max_tokens: number;
     top_p: number;
     thinking_level: string | null;
+    supports_vision: number;
     is_default: number;
     created_at: number;
     updated_at: number;
@@ -305,6 +314,7 @@ export async function getModelConfigs(): Promise<ModelConfig[]> {
       max_tokens: r.max_tokens,
       top_p: r.top_p,
       thinking_level: thinkingLevel,
+      supports_vision: Boolean(r.supports_vision),
       is_default: Boolean(r.is_default),
       created_at: r.created_at,
       updated_at: r.updated_at,
@@ -318,8 +328,8 @@ export async function saveModelConfig(config: ModelConfig): Promise<void> {
     await db.execute('UPDATE model_configs SET is_default = 0');
   }
   await db.execute(
-    `INSERT INTO model_configs (id, provider, model_id, display_name, api_key, api_endpoint, temperature, max_tokens, top_p, thinking_level, is_default, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `INSERT INTO model_configs (id, provider, model_id, display_name, api_key, api_endpoint, temperature, max_tokens, top_p, thinking_level, supports_vision, is_default, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
      ON CONFLICT(id) DO UPDATE SET
        provider = excluded.provider,
        model_id = excluded.model_id,
@@ -330,6 +340,7 @@ export async function saveModelConfig(config: ModelConfig): Promise<void> {
        max_tokens = excluded.max_tokens,
        top_p = excluded.top_p,
        thinking_level = excluded.thinking_level,
+       supports_vision = excluded.supports_vision,
        is_default = excluded.is_default,
        updated_at = excluded.updated_at`,
     [
@@ -343,6 +354,7 @@ export async function saveModelConfig(config: ModelConfig): Promise<void> {
       config.max_tokens,
       config.top_p,
       config.thinking_level,
+      config.supports_vision ? 1 : 0,
       config.is_default ? 1 : 0,
       config.created_at,
       config.updated_at,
@@ -367,6 +379,7 @@ export async function updateModelConfig(
   if (updates.max_tokens !== undefined) { sets.push('max_tokens = ?'); vals.push(updates.max_tokens); }
   if (updates.top_p !== undefined) { sets.push('top_p = ?'); vals.push(updates.top_p); }
   if (updates.thinking_level !== undefined) { sets.push('thinking_level = ?'); vals.push(updates.thinking_level); }
+  if (updates.supports_vision !== undefined) { sets.push('supports_vision = ?'); vals.push(updates.supports_vision ? 1 : 0); }
   if (updates.is_default !== undefined) {
     if (updates.is_default) {
       await db.execute('UPDATE model_configs SET is_default = 0');

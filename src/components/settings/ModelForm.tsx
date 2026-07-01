@@ -35,6 +35,7 @@ export const ModelForm: React.FC<ModelFormProps> = ({ initial, onSave, onCancel 
   const [maxTokens, setMaxTokens] = useState(initial?.max_tokens ?? 4096);
   const [topP, setTopP] = useState(initial?.top_p ?? 0.95);
   const [isDefault, setIsDefault] = useState(initial?.is_default || false);
+  const [supportsVision, setSupportsVision] = useState(initial?.supports_vision ?? false);
   const [errors, setErrors] = useState<Record<string, string>>({});
 
   useEffect(() => {
@@ -71,6 +72,7 @@ export const ModelForm: React.FC<ModelFormProps> = ({ initial, onSave, onCancel 
       max_tokens: Math.max(1, maxTokens),
       top_p: Math.max(0, Math.min(1, topP)),
       thinking_level: modelId.includes('gemini-3') ? 'MEDIUM' : null,
+      supports_vision: supportsVision,
       is_default: isDefault,
       created_at: initial?.created_at ?? now,
       updated_at: now,
@@ -191,6 +193,18 @@ export const ModelForm: React.FC<ModelFormProps> = ({ initial, onSave, onCancel 
           />
         </div>
       </div>
+
+      {/* Supports Vision */}
+      <label className="flex items-center gap-2 cursor-pointer">
+        <input
+          type="checkbox"
+          checked={supportsVision}
+          onChange={e => setSupportsVision(e.target.checked)}
+          className="w-4 h-4 rounded border-linear-border text-linear-accent focus:ring-linear-accent"
+        />
+        <span className="text-xs font-semibold text-linear-text-secondary">支持图片输入 (Vision)</span>
+        <span className="text-[11px] text-linear-text-muted">— 勾选后该模型可接收图片并直接理解</span>
+      </label>
 
       {/* Default */}
       <label className="flex items-center gap-2 cursor-pointer">

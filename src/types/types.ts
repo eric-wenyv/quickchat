@@ -161,6 +161,8 @@ export interface ModelConfig {
   top_p: number;
   /** 思考模式级别 (Gemini 3.x: LOW/MEDIUM/HIGH) */
   thinking_level: 'LOW' | 'MEDIUM' | 'HIGH' | null;
+  /** 是否支持图片输入（vision） */
+  supports_vision: boolean;
   /** 是否为当前激活的默认模型 */
   is_default: boolean;
   created_at: EpochMillis;
@@ -260,6 +262,7 @@ export interface SaveModelConfigPayload {
   temperature: number;
   max_tokens: number;
   top_p: number;
+  supports_vision: boolean;
   is_default: boolean;
 }
 
@@ -271,6 +274,7 @@ export interface UpdateModelConfigPayload {
   temperature?: number;
   max_tokens?: number;
   top_p?: number;
+  supports_vision?: boolean;
   is_default?: boolean;
 }
 

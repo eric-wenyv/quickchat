@@ -22,9 +22,10 @@ import {
   saveSystemPrompt,
   deleteSystemPrompt,
 } from "./services/db";
-import { appendCitationList, chatCompletion, generateConversationTitle, getWebSearchOptions, WEB_SEARCH_TOOL } from "./services/ai";
+import { appendCitationList, chatCompletion, describeImage, generateConversationTitle, getWebSearchOptions, WEB_SEARCH_TOOL } from "./services/ai";
 import type { ChatMessage, ChatContentPart } from "./services/ai";
 import { parseAttachments, getLanguageFromFilename } from "./utils/file";
+import { parseImageDescriptions, serializeImageDescriptions, type ImageDescription } from "./utils/image-description";
 import { searchWeb, formatSearchResults } from "./services/search";
 import { isThreadSending, markThreadIdle, markThreadSending, type ThreadSendingState } from "./utils/threadState";
 import type {
@@ -111,6 +112,7 @@ export default function App() {
   const [activeConversation, setActiveConversation] = useState<Conversation | null>(null);
   const [selectedConversationId, setSelectedConversationId] = useState<UUID | null>(null);
   const [activeModelId, setActiveModelId] = useState<UUID>('');
+  const [visionModelId, setVisionModelId] = useState<string | null>(() => localStorage.getItem('quick_chat_vision_model_id') || null);
   const [dbReady, setDbReady] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [systemPrompts, setSystemPrompts] = useState<SystemPrompt[]>([]);
@@ -346,6 +348,7 @@ export default function App() {
         max_tokens: 8192,
         top_p: 0.95,
         thinking_level: 'MEDIUM',
+        supports_vision: true,
         is_default: toAdd.length === 0,
         created_at: now,
         updated_at: now,
@@ -365,6 +368,7 @@ export default function App() {
         max_tokens: 8192,
         top_p: 0.95,
         thinking_level: null,
+        supports_vision: true,
         is_default: toAdd.length === 0,
         created_at: now,
         updated_at: now,
@@ -725,15 +729,17 @@ export default function App() {
   // --- 将 Message[] 转换为 ChatMessage[] ---
   const IMAGE_MARKDOWN_REGEX = /!\[[^\]]*\]\((data:image\/[^;)]+;base64,[A-Za-z0-9+/=]+)\)/g;
 
-  const buildChatHistory = (conversation: Conversation, currentMessages: Message[]): ChatMessage[] => {
+  const buildChatHistory = (conversation: Conversation, currentMessages: Message[], supportsVision: boolean): ChatMessage[] => {
     const history: ChatMessage[] = [];
     history.push({ role: 'system', content: BUILT_IN_ARTIFACT_PROMPT });
     if (conversation.system_prompt?.trim()) {
       history.push({ role: 'system', content: conversation.system_prompt.trim() });
     }
     for (const msg of currentMessages) {
-      // 剥离文件附件，分离正文与附件元数据
-      const { text: textWithoutAttachments, attachments } = parseAttachments(msg.content);
+      // 先剥离图片描述注释（不在 UI 显示，但 API 需要时可用）
+      const { text: textWithoutImgDesc, descriptions: imgDescriptions } = parseImageDescriptions(msg.content);
+      // 再剥离文件附件，分离正文与附件元数据
+      const { text: textWithoutAttachments, attachments } = parseAttachments(textWithoutImgDesc);
       const textAttachments = attachments.filter((a) => typeof a.textContent === 'string');
       if (attachments.length > 0) {
         console.log('[buildChatHistory] attachments:', attachments.map(a => ({ name: a.name, hasText: typeof a.textContent === 'string', textLength: a.textContent?.length })));
@@ -767,14 +773,25 @@ export default function App() {
           // 去除多余空行
           textOnly = textOnly.replace(/\n{3,}/g, '\n\n');
 
-          const parts: ChatContentPart[] = [];
-          if (textOnly) {
-            parts.push({ type: 'text', text: textOnly });
+          if (supportsVision) {
+            // 模型支持图片：发送 image_url 内容部分
+            const parts: ChatContentPart[] = [];
+            if (textOnly) {
+              parts.push({ type: 'text', text: textOnly });
+            }
+            for (const url of imageUrls) {
+              parts.push({ type: 'image_url', image_url: { url } });
+            }
+            content = parts;
+          } else if (imgDescriptions.length > 0) {
+            // 模型不支持图片：用图片描述文本替代图片
+            const descBlocks = imgDescriptions.map((desc) => {
+              const preview = desc.url.slice(0, 60);
+              return `[图片描述: ${preview}...] ${desc.description}`;
+            });
+            const descSuffix = descBlocks.join('\n\n');
+            content = textOnly ? `${textOnly}\n\n${descSuffix}` : descSuffix;
           }
-          for (const url of imageUrls) {
-            parts.push({ type: 'image_url', image_url: { url } });
-          }
-          content = parts;
         }
       }
 
@@ -893,8 +910,50 @@ export default function App() {
       return sortConversations(updated);
     });
 
+    // ── 图片描述：当前模型不支持 vision 时，用 vision 模型解析图片 ──
+    let effectiveUserContent = content;
+    const supportsVision = activeModel.supports_vision;
+    if (!supportsVision) {
+      const imageMatches = Array.from(content.matchAll(IMAGE_MARKDOWN_REGEX));
+      if (imageMatches.length > 0) {
+        // 查找用户指定的图片解析模型，fallback 到自动选择第一个 supports_vision 模型
+        const visionModel =
+          (visionModelId ? models.find(m => m.id === visionModelId && m.supports_vision && m.api_key) : null) ||
+          models.find(m => m.supports_vision && m.api_key);
+        if (visionModel) {
+          const imageUrls = imageMatches.map(m => m[1]);
+          const descriptions: ImageDescription[] = [];
+          for (const url of imageUrls) {
+            try {
+              const desc = await describeImage(url, visionModel);
+              if (desc) {
+                descriptions.push({ url, description: desc });
+              }
+            } catch (e) {
+              console.error('图片描述失败:', e);
+            }
+          }
+          if (descriptions.length > 0) {
+            const descSuffix = serializeImageDescriptions(descriptions);
+            effectiveUserContent = content + descSuffix;
+            // 更新内存中的用户消息（不影响 UI 显示，因为 parseImageDescriptions 会剥离）
+            const updatedUserMsg: Message = { ...userMsg, content: effectiveUserContent };
+            updateThreadMessages(convId, prev => prev.map(msg =>
+              msg.id === userMsgId ? updatedUserMsg : msg
+            ));
+            // 更新数据库中的用户消息
+            try {
+              await updateMessage(userMsgId, { content: effectiveUserContent, updated_at: Date.now() });
+            } catch (e) {
+              console.error('更新图片描述到消息失败:', e);
+            }
+          }
+        }
+      }
+    }
+
     // 构建对话历史
-    let chatHistory = buildChatHistory(threadConversation, [...previousThreadMessages, userMsg]);
+    let chatHistory = buildChatHistory(threadConversation, [...previousThreadMessages, { ...userMsg, content: effectiveUserContent }], supportsVision);
     const webSearch = getWebSearchOptions(activeModel);
     const tools = webSearch.enabled && webSearch.mode === 'legacy_tavily' ? [WEB_SEARCH_TOOL] : undefined;
     const abortController = new AbortController();
@@ -1189,6 +1248,12 @@ export default function App() {
       {showSettings && (
         <ModelSettings
           models={models}
+          visionModelId={visionModelId}
+          onSelectVisionModel={(id) => {
+            setVisionModelId(id);
+            if (id) localStorage.setItem('quick_chat_vision_model_id', id);
+            else localStorage.removeItem('quick_chat_vision_model_id');
+          }}
           onSave={handleSaveModel}
           onDelete={handleDeleteModel}
           onClose={() => setShowSettings(false)}

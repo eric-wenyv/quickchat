@@ -4,6 +4,8 @@ import { ModelForm } from './ModelForm';
 
 interface ModelSettingsProps {
   models: ModelConfig[];
+  visionModelId: string | null;
+  onSelectVisionModel: (id: string | null) => void;
   onSave: (config: ModelConfig) => void;
   onDelete: (id: UUID) => void;
   onClose: () => void;
@@ -17,6 +19,8 @@ const PROVIDER_BADGES: Record<string, { label: string; bg: string; text: string 
 
 export const ModelSettings: React.FC<ModelSettingsProps> = ({
   models,
+  visionModelId,
+  onSelectVisionModel,
   onSave,
   onDelete,
   onClose,
@@ -157,9 +161,35 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({
           )}
         </div>
 
-        {/* Footer */}
+        {/* Footer — 图片解析模型选择 + 添加按钮 */}
         {!showForm && (
-          <div className="flex-shrink-0 px-6 py-4 border-t border-linear-border">
+          <div className="flex-shrink-0 px-6 py-4 border-t border-linear-border space-y-3">
+            {/* 图片解析模型选择器 */}
+            {models.filter(m => m.supports_vision).length > 0 && (
+              <div>
+                <label className="block text-xs font-bold text-linear-text-secondary mb-1.5">
+                  图片解析模型
+                  <span className="font-normal text-linear-text-muted ml-1">— 当主模型不支持图片时，用此模型解析图片内容</span>
+                </label>
+                <div className="relative">
+                  <select
+                    value={visionModelId ?? ''}
+                    onChange={e => onSelectVisionModel(e.target.value || null)}
+                    className="w-full bg-linear-surface text-linear-text-secondary text-sm px-3 py-2.5 rounded-lg border border-linear-border focus:border-linear-border-hover outline-none transition-all duration-200 appearance-none cursor-pointer"
+                  >
+                    <option value="">自动选择（第一个 Vision 模型）</option>
+                    {models.filter(m => m.supports_vision).map(m => (
+                      <option key={m.id} value={m.id}>
+                        {m.display_name} ({m.model_id})
+                      </option>
+                    ))}
+                  </select>
+                  <svg className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-linear-text-tertiary pointer-events-none" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="m6 9 6 6 6-6" />
+                  </svg>
+                </div>
+              </div>
+            )}
             <button
               onClick={handleAdd}
               className="w-full flex items-center justify-center gap-2 px-4 py-2.5 text-sm font-semibold text-linear-text-primary bg-linear-surface hover:bg-linear-surface-hover rounded-lg transition-colors cursor-pointer border border-linear-border"

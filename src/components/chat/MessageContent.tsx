@@ -8,6 +8,7 @@ import remarkBreaks from 'remark-breaks';
 import type { Components } from 'react-markdown';
 import type { MessageStatus, FileAttachment } from '@/types/types';
 import { parseAttachments, formatFileSize, getFileIcon } from '@/utils/file';
+import { parseImageDescriptions } from '@/utils/image-description';
 import { normalizeStreamingMarkdown } from '@/utils/markdown';
 import { isRenderableHtmlArtifact, splitRenderableHtmlArtifacts } from '@/utils/artifacts';
 import HtmlArtifact from './HtmlArtifact';
@@ -612,7 +613,9 @@ const LinkPreviewModal: React.FC<{
 };
 
 const MessageContent: React.FC<MessageContentProps> = ({ content, status }) => {
-  const { text: textContent, attachments } = parseAttachments(content);
+  // 先剥离图片描述注释（不在 UI 中显示），再解析文件附件
+  const { text: contentWithoutImgDesc } = parseImageDescriptions(content);
+  const { text: textContent, attachments } = parseAttachments(contentWithoutImgDesc);
   const isThinking = textContent.trim() === '' && status === 'streaming';
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const normalizedTextContent = useMemo(() => normalizeStreamingMarkdown(textContent), [textContent]);

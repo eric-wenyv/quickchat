@@ -784,3 +784,67 @@ export async function generateConversationTitle(
       .slice(0, 20) || null
   );
 }
+
+// ---------------------------------------------------------------------------
+// 图片描述（非流式，用 vision 模型解析图片内容为文本）
+// ---------------------------------------------------------------------------
+
+/**
+ * 使用指定的 vision 模型描述图片内容。
+ * 非流式调用，返回纯文本描述。
+ *
+ * @param imageDataUrl 图片的 data URL（base64 编码）
+ * @param visionModel 支持 vision 的模型配置
+ * @returns 图片的文字描述，失败时返回 null
+ */
+export async function describeImage(
+  imageDataUrl: string,
+  visionModel: ModelConfig
+): Promise<string | null> {
+  const endpoint = getApiEndpoint(visionModel);
+  const url = `${endpoint.replace(/\/$/, '')}/chat/completions`;
+  const headers = buildHeaders(visionModel);
+
+  const messages: ChatMessage[] = [
+    {
+      role: 'user',
+      content: [
+        { type: 'text', text: '请详细描述这张图片的内容。包括图片中的文字、场景、人物、物体等关键信息。用中文回复。' },
+        { type: 'image_url', image_url: { url: imageDataUrl } },
+      ],
+    },
+  ];
+
+  const body = {
+    model: visionModel.model_id,
+    messages,
+    stream: false,
+    temperature: 0.3,
+    max_tokens: 1024,
+  };
+
+  const response = await fetch(url, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify(body),
+  });
+
+  if (!response.ok) {
+    let errorText = '';
+    try {
+      const errorJson = await response.json();
+      errorText = errorJson.error?.message || JSON.stringify(errorJson);
+    } catch {
+      errorText = await response.text();
+    }
+    throw new Error(`图片描述 API 请求失败 (${response.status}): ${errorText || response.statusText}`);
+  }
+
+  const data = await response.json();
+  const description =
+    data.choices?.[0]?.message?.content?.trim() ||
+    data.choices?.[0]?.text?.trim() ||
+    null;
+
+  return description;
+}

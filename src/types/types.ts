@@ -76,6 +76,12 @@ export type MessageStatus =
   | "completed"  // AI 响应完毕
   | "error";     // 出错
 
+/** 前端临时活动状态，仅用于 UI，不写入数据库或模型历史 */
+export interface MessageActivity {
+  kind: "thinking" | "tool";
+  label: string;
+}
+
 /** 文件附件 */
 export interface FileAttachment {
   /** 附件唯一 ID (UUIDv4) */
@@ -118,6 +124,8 @@ export interface Message {
   created_at: EpochMillis;
   /** 最后更新时间 (ms)，流式输出时持续更新 */
   updated_at: EpochMillis;
+  /** 当前 assistant 消息的临时 UI 活动状态 */
+  activity?: MessageActivity | null;
 }
 
 // ---------------------------------------------------------------------------

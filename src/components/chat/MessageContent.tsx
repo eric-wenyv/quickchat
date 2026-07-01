@@ -6,7 +6,7 @@ import remarkMath from 'remark-math';
 import rehypeKatex from 'rehype-katex';
 import remarkBreaks from 'remark-breaks';
 import type { Components } from 'react-markdown';
-import type { MessageStatus, FileAttachment } from '@/types/types';
+import type { MessageActivity, MessageStatus, FileAttachment } from '@/types/types';
 import { parseAttachments, formatFileSize, getFileIcon } from '@/utils/file';
 import { parseImageDescriptions } from '@/utils/image-description';
 import { normalizeStreamingMarkdown } from '@/utils/markdown';
@@ -16,6 +16,7 @@ import HtmlArtifact from './HtmlArtifact';
 interface MessageContentProps {
   content: string;
   status: MessageStatus;
+  activity?: MessageActivity | null;
 }
 
 const FileIcon: React.FC<{ type: string }> = ({ type }) => {
@@ -612,11 +613,31 @@ const LinkPreviewModal: React.FC<{
   );
 };
 
-const MessageContent: React.FC<MessageContentProps> = ({ content, status }) => {
+const ActivityPill: React.FC<{ label: string }> = ({ label }) => (
+  <div className="flex items-center gap-3 py-2 select-none">
+    <div className="relative inline-flex max-w-full items-center gap-2 overflow-hidden rounded-full border border-linear-border bg-linear-surface px-3 py-1.5">
+      <span className="relative z-10 h-3 w-3 flex-shrink-0 rounded-full border-2 border-linear-border border-t-linear-text-secondary animate-spin" />
+      <span className="relative z-10 truncate text-xs font-medium tracking-wide text-linear-text-tertiary">
+        {label}
+      </span>
+      <div
+        className="absolute inset-0 z-0"
+        style={{
+          background: 'linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.06) 50%, transparent 100%)',
+          animation: 'shimmer 1.5s linear infinite',
+        }}
+      />
+    </div>
+  </div>
+);
+
+const MessageContent: React.FC<MessageContentProps> = ({ content, status, activity }) => {
   // 先剥离图片描述注释（不在 UI 中显示），再解析文件附件
   const { text: contentWithoutImgDesc } = parseImageDescriptions(content);
   const { text: textContent, attachments } = parseAttachments(contentWithoutImgDesc);
-  const isThinking = textContent.trim() === '' && status === 'streaming';
+  const hasTextContent = textContent.trim() !== '';
+  const activityLabel = activity?.label ?? (status === 'streaming' && !hasTextContent ? '思考中...' : null);
+  const showActivityOnly = status === 'streaming' && !hasTextContent && Boolean(activityLabel);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const normalizedTextContent = useMemo(() => normalizeStreamingMarkdown(textContent), [textContent]);
   const contentSegments = useMemo(
@@ -725,20 +746,8 @@ const MessageContent: React.FC<MessageContentProps> = ({ content, status }) => {
   return (
     <div className="w-full text-linear-text-body selection:bg-linear-surface-hover selection:text-linear-text-primary">
       <article className="w-full">
-        {isThinking ? (
-          <div className="flex items-center gap-3 py-2 select-none">
-            {/* Shimmer pill */}
-            <div className="relative overflow-hidden rounded-full px-3 py-1.5 bg-linear-surface border border-linear-border">
-              <span className="relative z-10 text-xs text-linear-text-tertiary font-medium tracking-wide">思考中...</span>
-              <div
-                className="absolute inset-0 z-0"
-                style={{
-                  background: 'linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.06) 50%, transparent 100%)',
-                  animation: 'shimmer 1.5s linear infinite',
-                }}
-              />
-            </div>
-          </div>
+        {showActivityOnly && activityLabel ? (
+          <ActivityPill label={activityLabel} />
         ) : (
           <div className="qc-markdown prose prose-sm max-w-none dark:prose-invert leading-[1.6] prose-p:leading-[1.6] prose-p:my-2.5 prose-p:text-linear-text-body prose-headings:text-linear-text-primary prose-headings:font-semibold prose-headings:tracking-tight prose-headings:leading-tight prose-headings:mt-5 prose-headings:mb-2 prose-h1:text-[1.15em] prose-h2:text-[1.08em] prose-h3:text-[1.05em] prose-strong:text-linear-text-primary prose-strong:font-semibold prose-a:text-linear-text-secondary prose-a:underline prose-a:underline-offset-4 hover:prose-a:text-linear-text-primary prose-code:text-linear-text-primary prose-code:bg-linear-surface-hover prose-code:border prose-code:border-linear-border prose-code:px-1.5 prose-code:py-0.5 prose-code:rounded-[4px] prose-code:font-medium prose-code:before:content-none prose-code:after:content-none prose-pre:bg-transparent prose-pre:p-0 prose-blockquote:border-l-[rgba(255,255,255,0.16)] prose-blockquote:text-linear-text-tertiary prose-blockquote:bg-[#202020] prose-blockquote:pl-4 prose-blockquote:py-1 prose-blockquote:not-italic prose-ul:list-disc prose-ul:pl-5 prose-ol:list-decimal prose-ol:pl-5 prose-li:my-1 prose-li:text-linear-text-body prose-hr:border-[rgba(255,255,255,0.12)] prose-hr:my-5 prose-img:rounded-lg prose-img:shadow-none">
             {contentSegments.map((segment, index) =>
@@ -766,7 +775,7 @@ const MessageContent: React.FC<MessageContentProps> = ({ content, status }) => {
             {attachments.length > 0 && <AttachmentList attachments={attachments} />}
           </div>
         )}
-        {status === 'streaming' && !isThinking && (
+        {status === 'streaming' && !showActivityOnly && (
           <span
             className="inline-block w-[2px] h-[1.1em] ml-1 bg-linear-accent rounded-sm align-middle -translate-y-[1px]"
             style={{ animation: 'terminal-blink 1.2s ease-in-out infinite' }}

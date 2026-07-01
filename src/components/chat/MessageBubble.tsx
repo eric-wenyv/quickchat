@@ -102,6 +102,7 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({ message, onDelete }) => {
             <MessageContent
               content={message.content}
               status={message.status}
+              activity={message.activity ?? null}
             />
           </div>
         </div>

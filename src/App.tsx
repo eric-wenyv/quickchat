@@ -875,6 +875,7 @@ export default function App() {
       model_id: activeModelId,
       created_at: now + 1,
       updated_at: now + 1,
+      activity: { kind: 'thinking', label: '思考中...' },
     };
 
     const previousThreadMessages = messagesByConversationRef.current[convId] ?? messagesRef.current;
@@ -968,14 +969,6 @@ export default function App() {
     };
 
     try {
-      if (webSearch.enabled && webSearch.mode === 'official') {
-        updateThreadMessages(convId, prev => prev.map(msg =>
-          msg.id === aiMsgId
-            ? { ...msg, content: '正在使用 OpenRouter Web Search 获取实时信息...', status: 'streaming' as const }
-            : msg
-        ));
-      }
-
       let result = await chatCompletion({
         model: activeModel,
         messages: chatHistory,
@@ -992,7 +985,7 @@ export default function App() {
           const toolNames = result.toolCalls.map(tc => tc.function.name).join(', ');
           updateThreadMessages(convId, prev => prev.map(msg =>
             msg.id === aiMsgId
-              ? { ...msg, content: `正在调用工具: ${toolNames}...`, status: 'streaming' as const }
+              ? { ...msg, activity: { kind: 'tool' as const, label: `正在调用工具: ${toolNames}...` }, status: 'streaming' as const }
               : msg
           ));
 
@@ -1024,6 +1017,12 @@ export default function App() {
               tool_call_id: call.id,
             });
           }
+
+          updateThreadMessages(convId, prev => prev.map(msg =>
+            msg.id === aiMsgId
+              ? { ...msg, activity: { kind: 'thinking' as const, label: '思考中...' }, status: 'streaming' as const }
+              : msg
+          ));
 
           result = await chatCompletion({
             model: activeModel,
@@ -1063,7 +1062,7 @@ export default function App() {
               updateThreadMessages(pendingConversationId, prev => prev.map(msg => {
                 const pending = pendingUpdatesRef.current[msg.id];
                 if (pending !== undefined) {
-                  return { ...msg, content: pending, status: 'streaming' as const };
+                  return { ...msg, content: pending, status: 'streaming' as const, activity: pending.trim() ? null : msg.activity };
                 }
                 return msg;
               }));
@@ -1092,6 +1091,7 @@ export default function App() {
         input_tokens: inputTokens,
         output_tokens: outputTokens,
         updated_at: Date.now(),
+        activity: null,
       };
       updateThreadMessages(convId, prev => prev.map(msg => msg.id === aiMsgId ? finalMsg : msg));
       await updateMessage(aiMsgId, {
@@ -1140,12 +1140,12 @@ export default function App() {
       clearPendingAssistantUpdate();
       if (e.name === 'AbortError' || e.message?.toLowerCase()?.includes('abort')) {
         // 用户主动中断，保留当前已生成内容并标记完成
-        updateThreadMessages(convId, prev => prev.map(msg => msg.id === aiMsgId ? { ...msg, status: 'completed' as const } : msg));
+        updateThreadMessages(convId, prev => prev.map(msg => msg.id === aiMsgId ? { ...msg, status: 'completed' as const, activity: null } : msg));
         await updateMessage(aiMsgId, { status: 'completed' });
       } else {
         console.error(e);
         showToast('AI 流式错误', e.toString(), 'error');
-        updateThreadMessages(convId, prev => prev.map(msg => msg.id === aiMsgId ? { ...msg, status: 'error' as const } : msg));
+        updateThreadMessages(convId, prev => prev.map(msg => msg.id === aiMsgId ? { ...msg, status: 'error' as const, activity: null } : msg));
         await updateMessage(aiMsgId, { status: 'error' });
       }
     } finally {

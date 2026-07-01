@@ -40,7 +40,8 @@ import "./App.css";
 const BUILT_IN_ARTIFACT_PROMPT = [
   'Quick Chat supports sandboxed interactive artifacts in assistant replies.',
   'Proactively create an artifact when the user asks to explain, analyze, compare, teach, or reason about an algorithm, protocol, data structure, operating-system mechanism, network flow, state machine, math process, scheduling policy, or other step-by-step system behavior, even if the user did not explicitly ask for HTML or an app.',
-  'For these explanation-heavy topics, prefer a concise textual explanation plus one complete single-file HTML document in a fenced code block with language html. Skip the artifact only when the user explicitly asks for text only, code only, or no visualization.',
+  'For these explanation-heavy topics, prefer a concise textual explanation plus either a fenced Mermaid diagram for static flow, sequence, state, or process views, or one complete single-file HTML document in a fenced code block with language html when interactivity adds value. Skip the visual only when the user explicitly asks for text only, code only, or no visualization.',
+  'When presenting execution order, call chains, request lifecycles, pipelines, flowcharts, sequence diagrams, or state machines, use a fenced mermaid code block instead of ASCII art or box-drawing characters. Choose sequenceDiagram for ordered interactions and flowchart LR/TD for process flows.',
   'Keep all HTML, CSS, and JavaScript inline. Do not rely on external CDNs, remote scripts, network requests, backend services, local storage, or cookies.',
   'Make the artifact useful immediately: include sample data, visible state, labels, step controls, reset controls, comparisons, and short status text when they help users inspect the concept.',
   'The artifact is rendered in a borderless host area on a #181818 chat background. Design it as part of the app surface, not as a framed embedded webpage.',

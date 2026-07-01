@@ -176,6 +176,28 @@ body,
   background: rgba(255, 255, 255, 0.12);
 }
 
+/* Mermaid diagram surfaces */
+.qc-mermaid {
+  color: #dedee3;
+}
+
+.qc-mermaid svg {
+  display: block;
+  width: max-content;
+  max-width: none !important;
+  min-width: min(100%, 560px);
+  height: auto;
+  margin: 0 auto;
+  background: transparent !important;
+}
+
+.qc-mermaid text,
+.qc-mermaid .nodeLabel,
+.qc-mermaid .edgeLabel,
+.qc-mermaid .messageText,
+.qc-mermaid .actor > text {
+  font-family: Inter, ui-sans-serif, system-ui, sans-serif !important;
+}
 /* KaTeX overrides for dark theme harmony */
 .dark .katex {
   color: #e8e8e8;

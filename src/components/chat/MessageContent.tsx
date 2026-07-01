@@ -124,6 +124,9 @@ const isTreeDiagram = (code: string): boolean => {
   return treeLineCount >= 1 && treeLineCount / lines.length >= 0.3;
 };
 
+const isMermaidDiagramLanguage = (language: string): boolean =>
+  ['mermaid', 'mmd'].includes(language.trim().toLowerCase());
+
 const TREE_CHAR_REGEX = /[├└│─┬┼┤┌┐┘┴]/g;
 
 const TreeLine: React.FC<{ line: string }> = ({ line }) => {
@@ -175,6 +178,140 @@ const useCopy = (text: string) => {
 
   return { copied, copy };
 };
+
+const MermaidBlock: React.FC<{ code: string }> = React.memo(({ code }) => {
+  const { copied, copy } = useCopy(code);
+  const [svg, setSvg] = useState('');
+  const [error, setError] = useState<string | null>(null);
+  const [isDark, setIsDark] = useState(() =>
+    document.documentElement.classList.contains('dark')
+  );
+  const renderId = useMemo(
+    () => `qc-mermaid-${Math.random().toString(36).slice(2)}`,
+    []
+  );
+
+  useEffect(() => {
+    const observer = new MutationObserver(() => {
+      setIsDark(document.documentElement.classList.contains('dark'));
+    });
+    observer.observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ['class'],
+    });
+    return () => observer.disconnect();
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const renderDiagram = async () => {
+      setError(null);
+      try {
+        const { default: mermaid } = await import('mermaid');
+        mermaid.initialize({
+          startOnLoad: false,
+          securityLevel: 'strict',
+          theme: isDark ? 'dark' : 'base',
+          themeVariables: {
+            background: 'transparent',
+            primaryColor: isDark ? '#2c2c2f' : '#f8f8f8',
+            primaryTextColor: isDark ? '#f4f4f5' : '#1f2328',
+            primaryBorderColor: isDark ? 'rgba(255, 255, 255, 0.22)' : '#d0d7de',
+            lineColor: isDark ? '#b8c7d9' : '#57606a',
+            secondaryColor: isDark ? '#202020' : '#ffffff',
+            tertiaryColor: isDark ? '#343434' : '#f6f8fa',
+            textColor: isDark ? '#dedee3' : '#24292f',
+            fontFamily: 'Inter, ui-sans-serif, system-ui, sans-serif',
+          },
+          flowchart: {
+            htmlLabels: false,
+            curve: 'basis',
+          },
+          sequence: {
+            diagramMarginX: 28,
+            diagramMarginY: 18,
+            actorMargin: 42,
+            messageMargin: 34,
+            mirrorActors: false,
+          },
+        });
+
+        const result = await mermaid.render(`${renderId}-${isDark ? 'dark' : 'light'}`, code);
+        if (!cancelled) {
+          setSvg(result.svg);
+        }
+      } catch (e) {
+        console.warn('Mermaid render failed:', e);
+        if (!cancelled) {
+          setSvg('');
+          setError(e instanceof Error ? e.message : '无法渲染 Mermaid 图表');
+        }
+      }
+    };
+
+    renderDiagram();
+    return () => { cancelled = true; };
+  }, [code, isDark, renderId]);
+
+  return (
+    <div className="not-prose group relative rounded-lg overflow-hidden border border-[rgba(255,255,255,0.12)] bg-[#202020] shadow-linear-highlight my-4">
+      <div className="flex items-center justify-between px-4 py-2 bg-[#343434] border-b border-[rgba(255,255,255,0.1)]">
+        <div className="flex items-center gap-2">
+          <span className="text-xs font-medium text-linear-text-tertiary uppercase tracking-wider">
+            mermaid
+          </span>
+          <span className="text-[10px] px-1.5 py-0.5 rounded bg-[rgba(255,255,255,0.075)] text-linear-accent font-medium">
+            diagram
+          </span>
+        </div>
+        <button
+          onClick={copy}
+          className="flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium text-linear-text-tertiary hover:text-linear-text-secondary hover:bg-[rgba(255,255,255,0.08)] transition-colors opacity-0 group-hover:opacity-100 focus:opacity-100"
+          title="复制 Mermaid 源码"
+        >
+          {copied ? (
+            <>
+              <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+              </svg>
+              <span>已复制</span>
+            </>
+          ) : (
+            <>
+              <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+              </svg>
+              <span>复制</span>
+            </>
+          )}
+        </button>
+      </div>
+
+      {error ? (
+        <div className="space-y-3 p-4">
+          <div className="rounded-md border border-red-400/20 bg-red-400/10 px-3 py-2 text-sm text-red-200">
+            Mermaid 渲染失败，已显示源码。
+          </div>
+          <pre className="text-linear-text-secondary whitespace-pre leading-relaxed text-sm font-mono overflow-x-auto">
+            {code}
+          </pre>
+        </div>
+      ) : svg ? (
+        <div
+          className="qc-mermaid overflow-x-auto p-4"
+          dangerouslySetInnerHTML={{ __html: svg }}
+        />
+      ) : (
+        <div className="flex items-center gap-3 p-4 text-sm text-linear-text-tertiary">
+          <div className="w-4 h-4 border-2 border-linear-border border-t-linear-text-secondary rounded-full animate-spin" />
+          正在渲染图表...
+        </div>
+      )}
+    </div>
+  );
+});
+MermaidBlock.displayName = 'MermaidBlock';
 
 const CodeBlock: React.FC<{ code: string; language: string }> = React.memo(
   ({ code, language }) => {
@@ -397,6 +534,9 @@ const MessageContent: React.FC<MessageContentProps> = ({ content, status }) => {
         if (match) {
           if (isRenderableHtmlArtifact(code, language)) {
             return <HtmlArtifact code={code} language={language} />;
+          }
+          if (isMermaidDiagramLanguage(language)) {
+            return <MermaidBlock code={code} />;
           }
           return <CodeBlock code={code} language={language} />;
         }

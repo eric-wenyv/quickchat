@@ -5,7 +5,6 @@ import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
 import rehypeKatex from 'rehype-katex';
 import remarkBreaks from 'remark-breaks';
-import { codeToHtml } from 'shiki';
 import type { Components } from 'react-markdown';
 import type { MessageStatus, FileAttachment } from '@/types/types';
 import { parseAttachments, formatFileSize, getFileIcon } from '@/utils/file';
@@ -433,6 +432,10 @@ const CodeBlock: React.FC<{ code: string; language: string }> = React.memo(
       let cancelled = false;
       const highlight = async () => {
         try {
+          // Dynamic import so shiki's orchestrator + oniguruma WASM engine
+          // and the requested grammar chunk load on demand instead of being
+          // statically bundled into the main MessageContent chunk.
+          const { codeToHtml } = await import('shiki');
           const result = await codeToHtml(code, {
             lang: language || 'text',
             theme: isDark ? 'github-dark-dimmed' : 'github-light',

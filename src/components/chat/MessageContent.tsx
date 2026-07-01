@@ -179,10 +179,80 @@ const useCopy = (text: string) => {
   return { copied, copy };
 };
 
+const MermaidFullscreenModal: React.FC<{
+  svg: string;
+  copied: boolean;
+  onCopy: () => void;
+  onClose: () => void;
+}> = ({ svg, copied, onCopy, onClose }) => {
+  useEffect(() => {
+    const handleEsc = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    document.addEventListener('keydown', handleEsc);
+    return () => document.removeEventListener('keydown', handleEsc);
+  }, [onClose]);
+
+  return createPortal(
+    <div
+      className="fixed inset-0 z-[220] flex flex-col bg-[#181818]/95 backdrop-blur-md animate-in fade-in duration-150"
+      onClick={onClose}
+    >
+      <div
+        className="flex h-12 flex-shrink-0 items-center justify-between border-b border-linear-border bg-[#202020] px-4"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <span className="text-xs font-medium uppercase tracking-wider text-linear-text-tertiary">
+          mermaid diagram
+        </span>
+        <div className="flex items-center gap-1">
+          <button
+            onClick={onCopy}
+            className="flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-medium text-linear-text-tertiary transition-colors hover:bg-[rgba(255,255,255,0.08)] hover:text-linear-text-secondary"
+            title="复制 Mermaid 源码"
+          >
+            {copied ? (
+              <>
+                <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                </svg>
+                <span>已复制</span>
+              </>
+            ) : (
+              <>
+                <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                </svg>
+                <span>复制</span>
+              </>
+            )}
+          </button>
+          <button
+            onClick={onClose}
+            className="rounded-md p-1.5 text-linear-text-tertiary transition-colors hover:bg-[rgba(255,255,255,0.08)] hover:text-linear-text-secondary"
+            title="关闭全屏"
+          >
+            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+      </div>
+      <div
+        className="qc-mermaid-fullscreen-viewport custom-scrollbar flex-1 p-6"
+        onClick={(e) => e.stopPropagation()}
+        dangerouslySetInnerHTML={{ __html: svg }}
+      />
+    </div>,
+    document.body
+  );
+};
+
 const MermaidBlock: React.FC<{ code: string }> = React.memo(({ code }) => {
   const { copied, copy } = useCopy(code);
   const [svg, setSvg] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const [isFullscreen, setIsFullscreen] = useState(false);
   const [isDark, setIsDark] = useState(() =>
     document.documentElement.classList.contains('dark')
   );
@@ -223,10 +293,15 @@ const MermaidBlock: React.FC<{ code: string }> = React.memo(({ code }) => {
             tertiaryColor: isDark ? '#343434' : '#f6f8fa',
             textColor: isDark ? '#dedee3' : '#24292f',
             fontFamily: 'Inter, ui-sans-serif, system-ui, sans-serif',
+            fontSize: '14px',
           },
           flowchart: {
             htmlLabels: false,
             curve: 'basis',
+            nodeSpacing: 38,
+            rankSpacing: 48,
+            padding: 12,
+            useMaxWidth: true,
           },
           sequence: {
             diagramMarginX: 28,
@@ -265,27 +340,41 @@ const MermaidBlock: React.FC<{ code: string }> = React.memo(({ code }) => {
             diagram
           </span>
         </div>
-        <button
-          onClick={copy}
-          className="flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium text-linear-text-tertiary hover:text-linear-text-secondary hover:bg-[rgba(255,255,255,0.08)] transition-colors opacity-0 group-hover:opacity-100 focus:opacity-100"
-          title="复制 Mermaid 源码"
-        >
-          {copied ? (
-            <>
+        <div className="flex items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
+          {svg && !error && (
+            <button
+              onClick={() => setIsFullscreen(true)}
+              className="flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium text-linear-text-tertiary hover:text-linear-text-secondary hover:bg-[rgba(255,255,255,0.08)] transition-colors"
+              title="全屏查看"
+            >
               <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                <path strokeLinecap="round" strokeLinejoin="round" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 1v4m0 0h-4m4 0l-5-5" />
               </svg>
-              <span>已复制</span>
-            </>
-          ) : (
-            <>
-              <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
-              </svg>
-              <span>复制</span>
-            </>
+              <span>全屏</span>
+            </button>
           )}
-        </button>
+          <button
+            onClick={copy}
+            className="flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium text-linear-text-tertiary hover:text-linear-text-secondary hover:bg-[rgba(255,255,255,0.08)] transition-colors"
+            title="复制 Mermaid 源码"
+          >
+            {copied ? (
+              <>
+                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                </svg>
+                <span>已复制</span>
+              </>
+            ) : (
+              <>
+                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                </svg>
+                <span>复制</span>
+              </>
+            )}
+          </button>
+        </div>
       </div>
 
       {error ? (
@@ -299,7 +388,7 @@ const MermaidBlock: React.FC<{ code: string }> = React.memo(({ code }) => {
         </div>
       ) : svg ? (
         <div
-          className="qc-mermaid overflow-x-auto p-4"
+          className="qc-mermaid custom-scrollbar p-4"
           dangerouslySetInnerHTML={{ __html: svg }}
         />
       ) : (
@@ -307,6 +396,14 @@ const MermaidBlock: React.FC<{ code: string }> = React.memo(({ code }) => {
           <div className="w-4 h-4 border-2 border-linear-border border-t-linear-text-secondary rounded-full animate-spin" />
           正在渲染图表...
         </div>
+      )}
+      {isFullscreen && svg && !error && (
+        <MermaidFullscreenModal
+          svg={svg}
+          copied={copied}
+          onCopy={copy}
+          onClose={() => setIsFullscreen(false)}
+        />
       )}
     </div>
   );

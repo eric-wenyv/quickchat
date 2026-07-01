@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import type { ModelConfig, UUID } from '@/types/types';
 import { ModelForm } from './ModelForm';
 
@@ -17,6 +17,174 @@ const PROVIDER_BADGES: Record<string, { label: string; bg: string; text: string 
   openai_compatible: { label: 'OA', bg: 'bg-emerald-500/10', text: 'text-emerald-600' },
 };
 
+interface VisionModelSelectorProps {
+  models: ModelConfig[];
+  value: string | null;
+  onChange: (id: string | null) => void;
+}
+
+const VisionModelSelector: React.FC<VisionModelSelectorProps> = ({
+  models,
+  value,
+  onChange,
+}) => {
+  const [isOpen, setIsOpen] = useState(false);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+  const visionModels = useMemo(() => models.filter(m => m.supports_vision), [models]);
+  const selectedModel = useMemo(
+    () => visionModels.find(m => m.id === value) ?? null,
+    [visionModels, value],
+  );
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+        setIsOpen(false);
+      }
+    };
+    if (isOpen) document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [isOpen]);
+
+  const handleSelect = (id: string | null) => {
+    onChange(id);
+    setIsOpen(false);
+  };
+
+  return (
+    <div className="relative" ref={dropdownRef}>
+      <button
+        type="button"
+        onClick={() => setIsOpen(prev => !prev)}
+        aria-haspopup="menu"
+        aria-expanded={isOpen}
+        className={`group flex w-full items-center justify-between gap-3 rounded-lg border px-3 py-2.5 text-left outline-none transition-all duration-150 cursor-pointer ${
+          isOpen
+            ? 'bg-linear-surface-hover border-linear-border-hover text-linear-text-primary'
+            : 'bg-linear-surface border-linear-border text-linear-text-secondary hover:bg-linear-surface-hover hover:border-linear-border-hover hover:text-linear-text-primary focus-visible:bg-linear-surface-hover focus-visible:border-linear-border-hover'
+        }`}
+      >
+        <span className="flex min-w-0 items-center gap-2.5">
+          <span className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-[5px] bg-linear-surface-hover text-linear-text-tertiary">
+            <svg
+              className="h-4 w-4"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <rect width="18" height="18" x="3" y="3" rx="2" ry="2" />
+              <circle cx="9" cy="9" r="2" />
+              <path d="m21 15-3.1-3.1a2 2 0 0 0-2.8 0L6 21" />
+            </svg>
+          </span>
+          <span className="flex min-w-0 flex-col gap-0.5">
+            <span className="truncate text-sm font-semibold tracking-tight">
+              {selectedModel?.display_name ?? '自动选择 Vision 模型'}
+            </span>
+            <span className="truncate text-[10px] font-medium uppercase tracking-[0.08em] text-linear-text-tertiary">
+              {selectedModel?.model_id ?? '使用第一个可用的图片模型'}
+            </span>
+          </span>
+        </span>
+        <svg
+          className={`h-4 w-4 flex-shrink-0 text-linear-text-tertiary transition-transform duration-200 ${isOpen ? 'rotate-180' : ''}`}
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2.5"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        >
+          <path d="m6 9 6 6 6-6" />
+        </svg>
+      </button>
+
+      {isOpen && (
+        <div
+          role="menu"
+          className="absolute bottom-full left-0 z-50 mb-2 w-full min-w-[280px] rounded-xl bg-linear-bg-elevated/98 p-1.5 shadow-[0_18px_45px_rgba(0,0,0,0.32)] backdrop-blur-xl origin-bottom"
+          style={{ animation: 'menu-enter 0.2s var(--ease-snappy) forwards' }}
+        >
+          <button
+            type="button"
+            role="menuitemradio"
+            aria-checked={!selectedModel}
+            onClick={() => handleSelect(null)}
+            className={`flex w-full items-center justify-between gap-3 rounded-lg px-3 py-2.5 text-left transition-colors duration-150 cursor-pointer ${
+              !selectedModel
+                ? 'bg-linear-surface-hover text-linear-text-primary'
+                : 'text-linear-text-secondary hover:bg-linear-surface hover:text-linear-text-primary'
+            }`}
+          >
+            <span className="flex min-w-0 items-center gap-2.5">
+              <span className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-[5px] bg-linear-surface text-[9px] font-bold text-linear-text-tertiary">
+                A
+              </span>
+              <span className="flex min-w-0 flex-col gap-0.5">
+                <span className="truncate text-sm font-semibold tracking-tight">自动选择</span>
+                <span className="truncate text-[10px] font-medium uppercase tracking-[0.08em] text-linear-text-tertiary">
+                  第一个可用的 Vision 模型
+                </span>
+              </span>
+            </span>
+            {!selectedModel && <CheckIcon className="h-4 w-4 flex-shrink-0" />}
+          </button>
+
+          <div className="max-h-52 overflow-y-auto custom-scrollbar">
+            {visionModels.map(model => {
+              const badge = PROVIDER_BADGES[model.provider] || { label: '?', bg: 'bg-gray-500/10', text: 'text-gray-400' };
+              const isActive = selectedModel?.id === model.id;
+              return (
+                <button
+                  key={model.id}
+                  type="button"
+                  role="menuitemradio"
+                  aria-checked={isActive}
+                  onClick={() => handleSelect(model.id)}
+                  className={`flex w-full items-center justify-between gap-3 rounded-lg px-3 py-2.5 text-left transition-colors duration-150 cursor-pointer ${
+                    isActive
+                      ? 'bg-linear-surface-hover text-linear-text-primary'
+                      : 'text-linear-text-secondary hover:bg-linear-surface hover:text-linear-text-primary'
+                  }`}
+                >
+                  <span className="flex min-w-0 items-center gap-2.5">
+                    <span className={`flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-[5px] ${badge.bg} ${badge.text} text-[8px] font-bold`}>
+                      {badge.label}
+                    </span>
+                    <span className="flex min-w-0 flex-col gap-0.5">
+                      <span className="truncate text-sm font-semibold tracking-tight">{model.display_name}</span>
+                      <span className="truncate text-[10px] font-medium uppercase tracking-[0.08em] text-linear-text-tertiary">
+                        {model.model_id}
+                      </span>
+                    </span>
+                  </span>
+                  {isActive && <CheckIcon className="h-4 w-4 flex-shrink-0" />}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
+const CheckIcon: React.FC<{ className?: string }> = ({ className }) => (
+  <svg
+    className={className}
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2.5"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+  >
+    <path d="M20 6 9 17l-5-5" />
+  </svg>
+);
 export const ModelSettings: React.FC<ModelSettingsProps> = ({
   models,
   visionModelId,
@@ -171,23 +339,11 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({
                   图片解析模型
                   <span className="font-normal text-linear-text-muted ml-1">— 当主模型不支持图片时，用此模型解析图片内容</span>
                 </label>
-                <div className="relative">
-                  <select
-                    value={visionModelId ?? ''}
-                    onChange={e => onSelectVisionModel(e.target.value || null)}
-                    className="w-full bg-linear-surface text-linear-text-secondary text-sm px-3 py-2.5 rounded-lg border border-linear-border focus:border-linear-border-hover outline-none transition-all duration-200 appearance-none cursor-pointer"
-                  >
-                    <option value="">自动选择（第一个 Vision 模型）</option>
-                    {models.filter(m => m.supports_vision).map(m => (
-                      <option key={m.id} value={m.id}>
-                        {m.display_name} ({m.model_id})
-                      </option>
-                    ))}
-                  </select>
-                  <svg className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-linear-text-tertiary pointer-events-none" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="m6 9 6 6 6-6" />
-                  </svg>
-                </div>
+                <VisionModelSelector
+                  models={models}
+                  value={visionModelId}
+                  onChange={onSelectVisionModel}
+                />
               </div>
             )}
             <button

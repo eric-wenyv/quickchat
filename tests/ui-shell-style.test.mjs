@@ -85,5 +85,5 @@ test('sidebar collapse clips fixed content instead of reflowing labels', async (
   assert.match(searchBar, /whitespace-nowrap/);
   assert.match(messageHeader, /text-\[15px\]/);
   assert.doesNotMatch(messageHeader, /md:text-lg/);
-  assert.match(emptyState, /text-\[18px\]/);
+  assert.match(emptyState, /text-\[28px\]/);
 });

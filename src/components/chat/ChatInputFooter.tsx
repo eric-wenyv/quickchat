@@ -246,7 +246,7 @@ export const ChatInputFooter: React.FC<ChatInputFooterProps> = ({
             />
           </div>
 
-          <div className="flex items-center justify-between px-5 pt-1 pb-2">
+          <div className="flex items-center justify-between px-4 pt-1 pb-2">
             <div className="flex items-center gap-2 min-w-0">
               <ModelSelector
                 models={models}

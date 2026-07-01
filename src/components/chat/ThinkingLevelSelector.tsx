@@ -54,7 +54,7 @@ const ThinkingLevelSelector: React.FC<ThinkingLevelSelectorProps> = ({
         onClick={() => setIsOpen(!isOpen)}
         aria-haspopup="menu"
         aria-expanded={isOpen}
-        className={`flex h-7 items-center gap-1 rounded-full px-2.5 text-[11px] font-semibold cursor-pointer outline-none transition-colors duration-150 ${
+        className={`flex h-8 items-center gap-1.5 rounded-full px-3 text-[14px] font-semibold cursor-pointer outline-none transition-colors duration-150 ${
           isOpen
             ? 'bg-linear-surface-hover text-linear-text-primary'
             : 'bg-transparent text-linear-text-tertiary hover:bg-linear-surface-hover hover:text-linear-text-primary focus-visible:bg-linear-surface-hover focus-visible:text-linear-text-primary'
@@ -63,7 +63,7 @@ const ThinkingLevelSelector: React.FC<ThinkingLevelSelectorProps> = ({
       >
         <span>思考: {LEVEL_LABELS[currentLevel]}</span>
         <svg
-          className={`w-2.5 h-2.5 transition-transform duration-200 ${isOpen ? 'rotate-180' : ''}`}
+          className={`w-4 h-4 transition-transform duration-200 ${isOpen ? 'rotate-180' : ''}`}
           viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"
           strokeLinecap="round" strokeLinejoin="round"
         >

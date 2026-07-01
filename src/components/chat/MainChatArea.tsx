@@ -93,7 +93,6 @@ export const MainChatArea: React.FC<MainChatAreaProps> = ({
   onFileDrop,
   onStopGeneration,
 }) => {
-  const showNoConversation = !conversation;
   const showNoMessages = conversation && messages.length === 0 && !isLoadingMessages;
   const inputFocusKey = conversation
     ? `${conversation.id}:${isLoadingMessages ? 'loading' : 'ready'}:${messages.length === 0 ? 'empty' : 'messages'}`
@@ -201,6 +200,14 @@ export const MainChatArea: React.FC<MainChatAreaProps> = ({
     }
   };
 
+  if (!conversation) {
+    return (
+      <div className="relative flex flex-col h-full w-full overflow-hidden bg-linear-bg items-center justify-center">
+        <div className="w-8 h-8 border-2 border-linear-border border-t-linear-accent rounded-full animate-spin" />
+      </div>
+    );
+  }
+
   return (
     <div
       className="relative flex flex-col h-full w-full overflow-hidden bg-linear-bg"
@@ -209,28 +216,22 @@ export const MainChatArea: React.FC<MainChatAreaProps> = ({
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
     >
-      {showNoConversation ? (
-        <div className="flex-1 overflow-hidden">
-          <EmptyState type="no_conversation" />
-        </div>
-      ) : (
-        <>
-          {/* 顶部导航与状态栏 */}
-          <MessageHeader
-            conversation={conversation}
-            tokenStats={tokenStats}
-            onRename={(newTitle) => onRenameConversation(conversation.id, newTitle)}
-            onUpdateSystemPrompt={onUpdateSystemPrompt}
-            savedPrompts={systemPrompts}
-            onSavePrompt={onSaveSystemPromptPreset}
-            onDeletePrompt={onDeleteSystemPromptPreset}
-          />
+      {/* 顶部导航与状态栏 */}
+      <MessageHeader
+        conversation={conversation}
+        tokenStats={tokenStats}
+        onRename={(newTitle) => onRenameConversation(conversation.id, newTitle)}
+        onUpdateSystemPrompt={onUpdateSystemPrompt}
+        savedPrompts={systemPrompts}
+        onSavePrompt={onSaveSystemPromptPreset}
+        onDeletePrompt={onDeleteSystemPromptPreset}
+      />
 
-          {/* 消息展示核心区 */}
-          <main className="flex-1 relative overflow-hidden flex flex-col min-h-0">
+      {/* 消息展示核心区 */}
+      <main className="flex-1 relative overflow-hidden flex flex-col min-h-0">
             {showNoMessages ? (
               <div className="flex-1 flex flex-col items-center justify-center px-4 pb-12">
-                <EmptyState type="no_messages" conversationId={conversation?.id} />
+                <EmptyState conversationId={conversation.id} />
                 <div className="w-full max-w-2xl mt-8">
                   <ChatInputFooter
                     onSend={onSendMessage}
@@ -402,8 +403,6 @@ export const MainChatArea: React.FC<MainChatAreaProps> = ({
               </>
             )}
           </main>
-        </>
-      )}
     </div>
   );
 };

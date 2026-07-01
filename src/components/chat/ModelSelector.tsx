@@ -102,19 +102,18 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({
         onClick={() => setIsOpen(!isOpen)}
         aria-haspopup="menu"
         aria-expanded={isOpen}
-        className={`group flex h-7 items-center gap-1 rounded-full px-2.5 text-[11px] font-semibold cursor-pointer outline-none transition-colors duration-150 ${
+        className={`group flex h-8 items-center gap-1.5 rounded-full px-3 text-[14px] font-semibold cursor-pointer outline-none transition-colors duration-150 ${
           isOpen
             ? "bg-linear-surface-hover text-linear-text-primary"
             : "bg-transparent text-linear-text-tertiary hover:bg-linear-surface-hover hover:text-linear-text-primary focus-visible:bg-linear-surface-hover focus-visible:text-linear-text-primary"
         }`}
       >
-        <span className="max-w-[108px] truncate">
+        <span className="max-w-[140px] truncate">
           {activeModel?.display_name || "Select Model"}
         </span>
         <svg
           xmlns="http://www.w3.org/2000/svg"
-          className={`w-3 h-3 ${isOpen ? "rotate-180" : ""}`}
-          style={{ transition: "transform 0.2s var(--ease-snappy)" }}
+          className={`w-4 h-4 transition-transform duration-200 ${isOpen ? "rotate-180" : ""}`}
           viewBox="0 0 24 24"
           fill="none"
           stroke="currentColor"

@@ -285,16 +285,25 @@ export default function App() {
       }
 
       // 恢复上次活跃会话，失效时 fallback 到最新会话
+      let hasSelectedConversation = false;
       const lastActiveId = localStorage.getItem("quick_chat_last_active_conv");
       if (lastActiveId) {
         const target = convs.find(c => c.id === lastActiveId);
         if (target) {
           await handleSelectConversation(target.id);
+          hasSelectedConversation = true;
         } else if (convs.length > 0) {
           await handleSelectConversation(convs[0].id);
+          hasSelectedConversation = true;
         }
       } else if (convs.length > 0) {
         await handleSelectConversation(convs[0].id);
+        hasSelectedConversation = true;
+      }
+
+      // 首次安装或没有任何历史会话时，直接创建一个新对话，不再显示旧版默认欢迎页
+      if (!hasSelectedConversation) {
+        handleCreateConversation();
       }
     } catch (e) {
       console.error('加载数据失败:', e);
@@ -482,8 +491,13 @@ export default function App() {
       showToast('无法创建', '请先配置 AI 模型');
       return;
     }
-    // 在 Agent 模式下允许创建新对话（退出 Agent 模式），避免空对话拦截导致按钮无响应
-    if (activeConversation && messages.length === 0 && !agentMode) return;
+    // 如果当前已经有一个存在于列表中的空活跃会话，避免重复创建
+    const hasEmptyActiveInList =
+      activeConversation &&
+      messages.length === 0 &&
+      !agentMode &&
+      conversations.some(c => c.id === activeConversation.id);
+    if (hasEmptyActiveInList) return;
 
     const now = Date.now();
     const newConv: Conversation = {
@@ -502,7 +516,7 @@ export default function App() {
     setMessages([]);
     messagesByConversationRef.current[newConv.id] = [];
     setAgentMode(false);
-  }, [activeModelId, models, activeConversation, messages, agentMode]);
+  }, [activeModelId, models, activeConversation, messages, agentMode, conversations]);
 
   const handleDeleteConversation = async (id: UUID) => {
     try {
@@ -516,12 +530,8 @@ export default function App() {
         if (convs.length > 0) {
           await handleSelectConversation(convs[0].id);
         } else {
-          localStorage.removeItem("quick_chat_last_active_conv");
-          setSelectedConversationId(null);
-          activeConversationIdRef.current = null;
-          setActiveConversation(null);
-          setMessages([]);
-          setAgentMode(false);
+          // 删除最后一个会话后，直接创建新对话，不显示旧版默认页
+          handleCreateConversation();
         }
       }
       showToast('已删除', '对话已移除', 'success');

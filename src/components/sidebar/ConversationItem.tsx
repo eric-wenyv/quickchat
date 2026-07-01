@@ -61,7 +61,10 @@ const ConversationItem: React.FC<ConversationItemProps> = ({
             : 'border border-transparent hover:bg-linear-surface active:scale-[0.98]'
           }
         `}
-        style={{ transition: 'background-color 0.15s var(--ease-snappy), transform 0.15s var(--ease-snappy)' }}
+        style={{
+          transition: 'background-color 0.15s var(--ease-snappy), border-color 0.15s var(--ease-snappy), box-shadow 0.15s var(--ease-snappy), transform 0.15s var(--ease-snappy)',
+          animation: isActive ? 'conversation-selected 0.18s var(--ease-snappy)' : undefined,
+        }}
       >
         {/* 第一行：标题与时间 */}
         <div className="flex items-center justify-between gap-2 overflow-hidden">

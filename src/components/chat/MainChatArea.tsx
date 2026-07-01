@@ -257,13 +257,22 @@ export const MainChatArea: React.FC<MainChatAreaProps> = ({
                       className="absolute right-5 top-1/2 -translate-y-1/2 z-20 flex flex-col items-center py-3 overflow-hidden"
                       style={{
                         width: isNavHovered ? 192 : 20,
-                        backgroundColor: isNavHovered ? 'rgba(21, 22, 24, 0.95)' : 'transparent',
-                        backdropFilter: isNavHovered ? 'blur(12px)' : 'none',
+                        backgroundColor: isNavHovered ? 'rgba(21, 22, 24, 0.95)' : 'rgba(21, 22, 24, 0)',
+                        backdropFilter: isNavHovered ? 'blur(12px)' : 'blur(0px)',
                         borderRadius: isNavHovered ? '12px 0 0 12px' : '0',
-                        border: isNavHovered ? '1px solid rgba(255,255,255,0.06)' : 'none',
-                        borderRight: 'none',
+                        borderWidth: '1px 0 1px 1px',
+                        borderStyle: 'solid',
+                        borderColor: isNavHovered ? 'rgba(255,255,255,0.06)' : 'transparent',
                         boxShadow: isNavHovered ? '0 4px 20px rgba(0,0,0,0.25)' : 'none',
-                        transition: 'all 0.25s var(--ease-snappy)',
+                        outline: 'none',
+                        transition: [
+                          'width 0.28s var(--ease-snappy)',
+                          'background-color 0.18s ease',
+                          'backdrop-filter 0.18s ease',
+                          'border-color 0.18s ease',
+                          'border-radius 0.2s var(--ease-snappy)',
+                          'box-shadow 0.2s ease',
+                        ].join(', '),
                       }}
                       onMouseEnter={() => setIsNavHovered(true)}
                       onMouseLeave={() => setIsNavHovered(false)}
@@ -280,29 +289,49 @@ export const MainChatArea: React.FC<MainChatAreaProps> = ({
                             <button
                               key={msg.id}
                               onClick={() => handleNavClick(idx)}
-                              className="group w-full flex items-center gap-2 px-2 py-1.5 rounded-md cursor-pointer"
+                              className="group relative w-full overflow-hidden rounded-md border border-transparent px-2 py-1.5 text-left outline-none cursor-pointer focus:outline-none focus-visible:outline-none focus-visible:ring-0"
+                              aria-label={`跳转到第 ${idx + 1} 条用户消息`}
                               title={isNavHovered ? undefined : msg.content.slice(0, 100)}
                             >
-                              {/* 短横线标记 */}
-                              <div
-                                className={`h-[2px] shrink-0 rounded-full transition-all ${isActive
-                                    ? 'bg-linear-accent'
-                                    : 'bg-linear-border'
+                              <span
+                                aria-hidden="true"
+                                className={`absolute inset-y-0 left-1 right-1 rounded-md transition-[opacity,transform] duration-200 ${isActive
+                                    ? 'translate-x-0 opacity-100 bg-linear-selection'
+                                    : '-translate-x-4 opacity-0 bg-linear-surface group-hover:translate-x-0 group-hover:opacity-100'
                                   }`}
-                                style={{
-                                  width: isNavHovered ? 16 : 12,
-                                  transition: 'width 0.2s var(--ease-snappy), background-color 0.15s var(--ease-snappy)',
-                                }}
+                                style={{ transitionTimingFunction: 'var(--ease-snappy)' }}
                               />
-                              {/* 悬浮后显示的文字 */}
-                              {isNavHovered && (
-                                <span className={`text-xs truncate flex-1 text-left transition-colors duration-150 ${isActive
-                                    ? 'text-linear-accent font-medium'
-                                    : 'text-linear-text-secondary group-hover:text-linear-text-primary'
-                                  }`}>
+                              <span className="relative z-10 flex w-full items-center gap-2 transition-transform duration-200 ease-out group-hover:translate-x-1">
+                                {/* 短横线标记 */}
+                                <span
+                                  className={`h-[2px] shrink-0 rounded-full transition-transform group-hover:scale-x-125 ${isActive
+                                      ? 'bg-linear-accent'
+                                      : 'bg-linear-border group-hover:bg-linear-border-hover'
+                                    }`}
+                                  style={{
+                                    width: isNavHovered ? 16 : 12,
+                                    transformOrigin: 'left center',
+                                    transition: 'width 0.2s var(--ease-snappy), background-color 0.15s var(--ease-snappy), transform 0.2s var(--ease-snappy)',
+                                  }}
+                                />
+                                {/* 悬浮后显示的文字 */}
+                                <span
+                                  aria-hidden={!isNavHovered}
+                                  className={`min-w-0 flex-1 whitespace-nowrap truncate text-xs text-left transition-[max-width,opacity,transform,color] duration-200 ${isActive
+                                      ? 'text-linear-accent font-medium'
+                                      : 'text-linear-text-secondary group-hover:text-linear-text-primary'
+                                    }`}
+                                  style={{
+                                    maxWidth: isNavHovered ? 144 : 0,
+                                    opacity: isNavHovered ? 1 : 0,
+                                    transform: isNavHovered ? 'translateX(0)' : 'translateX(-6px)',
+                                    transitionDelay: isNavHovered ? `${70 + Math.min(idx * 18, 180)}ms` : '0ms',
+                                    transitionTimingFunction: 'var(--ease-snappy)',
+                                  }}
+                                >
                                   {preview || '[空消息]'}
                                 </span>
-                              )}
+                              </span>
                             </button>
                           );
                         })}

@@ -3,6 +3,13 @@ import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
+import React from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
+import ReactMarkdown from 'react-markdown';
+import remarkBreaks from 'remark-breaks';
+import remarkGfm from 'remark-gfm';
+import remarkMath from 'remark-math';
+import rehypeKatex from 'rehype-katex';
 import ts from 'typescript';
 import katex from 'katex';
 
@@ -33,6 +40,21 @@ function assertKatexClean(markdown) {
   }
 }
 
+function assertMarkdownRendersWithoutKatexError(markdown) {
+  const html = renderToStaticMarkup(
+    React.createElement(
+      ReactMarkdown,
+      {
+        remarkPlugins: [remarkGfm, remarkMath, remarkBreaks],
+        rehypePlugins: [rehypeKatex],
+      },
+      markdown
+    )
+  );
+
+  assert.ok(!html.includes('katex-error'), 'markdown should render without KaTeX errors');
+}
+
 test('normalizeMarkdownMath repairs single-line math opened with double dollar and closed with single dollar', async () => {
   const { normalizeMarkdownMath } = await importMarkdownUtils();
 
@@ -48,4 +70,55 @@ test('normalizeMarkdownMath repairs single-line math opened with double dollar a
     '- $\\{a\\} \\cap \\{\\} = \\emptyset$',
   ].join('\n'));
   assertKatexClean(normalized);
+});
+
+test('normalizeMarkdownMath repairs single-line math closed with double dollar', async () => {
+  const { normalizeMarkdownMath } = await importMarkdownUtils();
+
+  const input = [
+    "- $\\text{SELECT}(S'\\rightarrow \\varepsilon) = \\text{FOLLOW}(S') = \\{\\}$$",
+    '- $\\{a\\} \\cap \\{\\} = \\emptyset$$(no conflict)',
+  ].join('\n');
+
+  const normalized = normalizeMarkdownMath(input);
+
+  assert.equal(normalized, [
+    "- $\\text{SELECT}(S'\\rightarrow \\varepsilon) = \\text{FOLLOW}(S') = \\{\\}$",
+    '- $\\{a\\} \\cap \\{\\} = \\emptyset$(no conflict)',
+  ].join('\n'));
+  assertKatexClean(normalized);
+});
+
+test('normalizeMarkdownMath preserves valid single-line double-dollar math', async () => {
+  const { normalizeMarkdownMath } = await importMarkdownUtils();
+
+  const input = [
+    "- $$\\text{SELECT}(S'\\rightarrow aB) = \\text{FIRST}(aB) = \\{a\\}$$",
+    '- $$\\{a\\} \\cap \\{\\} = \\emptyset$$(no conflict)',
+  ].join('\n');
+
+  const normalized = normalizeMarkdownMath(input);
+
+  assert.equal(normalized, input);
+  assertKatexClean(normalized);
+});
+
+test('normalizeMarkdownMath keeps escaped dollar signs inside math from closing the delimiter', async () => {
+  const { normalizeMarkdownMath } = await importMarkdownUtils();
+
+  const input = [
+    "- $\\text{SELECT}(S' \\rightarrow \\varepsilon) = \\text{FOLLOW}(S') = \\{\\$\\}$",
+    '- $\\{a\\} \\cap \\{\\$\\} = \\emptyset$(no conflict)',
+    '| $B$ | $\\{a, \\$\\}$ |',
+  ].join('\n');
+
+  const normalized = normalizeMarkdownMath(input);
+
+  assert.equal(normalized, [
+    "- $\\text{SELECT}(S' \\rightarrow \\varepsilon) = \\text{FOLLOW}(S') = \\{\\char\"24\\}$",
+    '- $\\{a\\} \\cap \\{\\char\"24\\} = \\emptyset$(no conflict)',
+    '| $B$ | $\\{a, \\char\"24\\}$ |',
+  ].join('\n'));
+  assertKatexClean(normalized);
+  assertMarkdownRendersWithoutKatexError(normalized);
 });

@@ -1,13 +1,89 @@
 /**
- * Repairs a common LLM math delimiter typo where an inline formula starts with
- * `$$` but ends with a single `$`. Without this, KaTeX receives the trailing
- * dollar as part of the expression and renders a parse error.
+ * Repairs common LLM math delimiter typos and shields escaped dollar signs
+ * inside inline math from remark-math's dollar delimiter parser.
  */
 export function normalizeMarkdownMath(content: string): string {
-  return content
-    .split('\n')
-    .map((line) => line.replace(/(^|[^\$])\$\$([^$\n]+)\$/g, '$1$$$2$'))
-    .join('\n');
+  return content.split('\n').map(normalizeMarkdownMathLine).join('\n');
+}
+
+interface MathDelimiterMatch {
+  index: number;
+  delimiter: '$' | '$$';
+}
+
+function normalizeMarkdownMathLine(line: string): string {
+  let normalized = '';
+  let index = 0;
+
+  while (index < line.length) {
+    if (line[index] !== '$' || isEscapedDollar(line, index)) {
+      normalized += line[index];
+      index += 1;
+      continue;
+    }
+
+    const opener: '$' | '$$' = line[index + 1] === '$' ? '$$' : '$';
+    const bodyStart = index + opener.length;
+    const closing = findMathClosingDelimiter(line, bodyStart, opener);
+
+    if (!closing) {
+      normalized += line.slice(index);
+      break;
+    }
+
+    const delimiter = closing.delimiter === opener ? opener : '$';
+    const body = line.slice(bodyStart, closing.index).replace(/\\\$/g, '\\char"24');
+    normalized += delimiter + body + delimiter;
+    index = closing.index + closing.delimiter.length;
+  }
+
+  return normalized;
+}
+
+function findMathClosingDelimiter(
+  line: string,
+  startIndex: number,
+  opener: '$' | '$$'
+): MathDelimiterMatch | null {
+  if (opener === '$$') {
+    const doubleClose = findNextMathDelimiter(line, startIndex, '$$');
+    if (doubleClose) return doubleClose;
+  }
+
+  return findNextMathDelimiter(line, startIndex, '$');
+}
+
+function findNextMathDelimiter(
+  line: string,
+  startIndex: number,
+  delimiter: '$' | '$$'
+): MathDelimiterMatch | null {
+  for (let index = startIndex; index < line.length; index += 1) {
+    if (line[index] !== '$' || isEscapedDollar(line, index)) continue;
+
+    if (line[index + 1] === '$') {
+      if (delimiter === '$$') {
+        return { index, delimiter: '$$' };
+      }
+      return { index, delimiter: '$$' };
+    }
+
+    if (delimiter === '$') {
+      return { index, delimiter: '$' };
+    }
+  }
+
+  return null;
+}
+
+function isEscapedDollar(line: string, dollarIndex: number): boolean {
+  let slashCount = 0;
+
+  for (let index = dollarIndex - 1; index >= 0 && line[index] === '\\'; index -= 1) {
+    slashCount += 1;
+  }
+
+  return slashCount % 2 === 1;
 }
 
 /**

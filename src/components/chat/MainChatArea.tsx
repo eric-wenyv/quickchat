@@ -1,6 +1,7 @@
 import React, { useState, useMemo, useRef, useCallback, useEffect } from 'react';
 import type { Conversation, Message, ModelConfig, SystemPrompt, UUID } from '@/types/types';
 import { MessageHeader } from './MessageHeader';
+import { useAutoFocusChatInput } from '@/hooks/useAutoFocusChatInput';
 
 interface TokenStats {
   totalTokens: number;
@@ -103,6 +104,11 @@ export const MainChatArea: React.FC<MainChatAreaProps> = ({
   onStopGeneration,
 }) => {
   const showNoMessages = conversation && messages.length === 0 && !isLoadingMessages;
+
+  // 全局键盘自动聚焦：用户按下任意可打印字符时自动聚焦聊天输入框，
+  // 但若当前焦点在其他文本输入（搜索框、设置里的 input 等）或模态遮罩打开时不抢占。
+  useAutoFocusChatInput();
+
   const inputFocusKey = conversation
     ? `${conversation.id}:${isLoadingMessages ? 'loading' : 'ready'}:${messages.length === 0 ? 'empty' : 'messages'}`
     : 'no-conversation';

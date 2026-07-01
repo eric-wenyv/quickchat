@@ -49,11 +49,12 @@ test('composer keeps model, thinking and send controls without extra status chro
   assert.match(modelSelector, /providerBadge/);
   assert.match(modelSelector, /h-8/);
   assert.match(thinkingSelector, /h-8/);
-  assert.match(composer, /focus-within:shadow-\[0_0_0_3px_rgba\(255,255,255,0\.08\),0_16px_40px_rgba\(0,0,0,0\.28\)\]/);
+  assert.match(composer, /rounded-2xl/);
+  assert.match(composer, /focus-within:shadow-\[0_0_0_1px_rgba\(255,255,255,0\.06\),0_18px_54px_rgba\(0,0,0,0\.34\)\]/);
   assert.match(modelSelector, /cursor-pointer/);
   assert.match(thinkingSelector, /cursor-pointer/);
-  assert.match(modelSelector, /className=\{`group flex h-8 items-center gap-1\.5 rounded-md px-2\.5/);
-  assert.match(thinkingSelector, /className=\{`flex h-8 items-center gap-1\.5 rounded-md px-2\.5/);
+  assert.match(modelSelector, /className=\{`group flex h-8 items-center gap-1\.5 rounded-full px-3/);
+  assert.match(thinkingSelector, /className=\{`flex h-8 items-center gap-1\.5 rounded-full px-3/);
   assert.match(modelSelector, /bg-transparent text-linear-text-tertiary hover:bg-linear-surface-hover/);
   assert.match(thinkingSelector, /bg-transparent text-linear-text-tertiary hover:bg-linear-surface-hover/);
   assert.doesNotMatch(modelSelector, /border border-\[rgba\(255,255,255,0\.16\)\]/);
@@ -69,6 +70,17 @@ test('composer keeps model, thinking and send controls without extra status chro
   assert.doesNotMatch(modelSelector, /animate-ping/);
   assert.doesNotMatch(modelSelector, /w-2 h-2 rounded-full/);
   assert.doesNotMatch(thinkingSelector, /rounded-full \$\{LEVEL_COLORS/);
+});
+
+test('toast matches the main graphite surface language', async () => {
+  const app = await source('src/App.tsx');
+
+  assert.match(app, /role=\{toast\.type === 'error' \? "alert" : "status"\}/);
+  assert.match(app, /bg-\[#2D2D2D\]\/95/);
+  assert.match(app, /rounded-2xl/);
+  assert.match(app, /shadow-\[0_18px_48px_rgba\(0,0,0,0\.28\)\]/);
+  assert.doesNotMatch(app, /shadow-2xl/);
+  assert.doesNotMatch(app, /shadow-\[0_0_8px_currentColor\]/);
 });
 
 test('sidebar collapse clips fixed content instead of reflowing labels', async () => {

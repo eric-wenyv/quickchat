@@ -1235,11 +1235,52 @@ export default function App() {
     <ErrorBoundary>
       {/* Toast */}
       {toast && (
-        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-[9999] bg-linear-bg-elevated/95 backdrop-blur-xl border border-linear-border shadow-2xl px-6 py-4 rounded-xl animate-in fade-in slide-in-from-top-4 flex items-start gap-3">
-          <div className={`mt-0.5 w-2 h-2 rounded-full flex-shrink-0 shadow-[0_0_8px_currentColor] ${toast.type === 'error' ? 'text-red-400 bg-red-400' : 'text-emerald-400 bg-emerald-400'}`} />
-          <div className="flex flex-col gap-1">
-            <h3 className="text-sm font-bold text-linear-text-primary">{toast.title}</h3>
-            {toast.desc && <p className="text-xs text-linear-text-tertiary break-words max-w-sm">{toast.desc}</p>}
+        <div
+          className="fixed top-4 left-1/2 z-[9999] min-w-[168px] max-w-[calc(100vw-2rem)] -translate-x-1/2 animate-in fade-in slide-in-from-top-3"
+          role={toast.type === 'error' ? "alert" : "status"}
+          aria-live={toast.type === 'error' ? "assertive" : "polite"}
+        >
+          <div className="relative overflow-hidden rounded-2xl border border-[rgba(255,255,255,0.12)] bg-[#2D2D2D]/95 px-4 py-3 shadow-[0_18px_48px_rgba(0,0,0,0.28)] backdrop-blur-xl">
+            <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-white/10" />
+            <div className="flex items-start gap-3">
+              <div className={`mt-0.5 flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full border ${
+                toast.type === 'error'
+                  ? 'border-red-400/25 bg-red-500/10 text-red-300'
+                  : 'border-emerald-400/25 bg-emerald-500/10 text-emerald-300'
+              }`}>
+                {toast.type === 'error' ? (
+                  <svg
+                    className="h-3.5 w-3.5"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2.5"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  >
+                    <path d="M12 8v5" />
+                    <path d="M12 17h.01" />
+                    <path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0Z" />
+                  </svg>
+                ) : (
+                  <svg
+                    className="h-3.5 w-3.5 translate-x-[0.5px] translate-y-[0.5px]"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2.5"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  >
+                    <path d="M20 6 9 17l-5-5" />
+                  </svg>
+                )}
+              </div>
+              <div className="min-w-[96px] max-w-[18rem]">
+                <h3 className="text-[13px] font-semibold leading-5 text-linear-text-primary">{toast.title}</h3>
+                {toast.desc && <p className="mt-0.5 break-words text-xs leading-5 text-linear-text-secondary">{toast.desc}</p>}
+              </div>
+            </div>
           </div>
         </div>
       )}

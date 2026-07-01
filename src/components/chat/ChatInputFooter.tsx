@@ -182,7 +182,7 @@ export const ChatInputFooter: React.FC<ChatInputFooterProps> = ({
       <div className="absolute top-0 left-0 right-0 h-[1px] bg-gradient-to-r from-transparent via-linear-border to-transparent opacity-35" />
       <div className="mx-auto w-full max-w-[920px]">
         <div
-          className="relative group overflow-visible bg-[#2D2D2D] border border-[rgba(255,255,255,0.12)] shadow-[0_18px_48px_rgba(0,0,0,0.28)] rounded-[18px] hover:border-[rgba(255,255,255,0.18)] focus-within:border-[rgba(255,255,255,0.22)] focus-within:shadow-[0_0_0_1px_rgba(255,255,255,0.06),0_18px_54px_rgba(0,0,0,0.34)]"
+          className="relative group overflow-visible bg-[#2D2D2D] border border-[rgba(255,255,255,0.12)] shadow-[0_18px_48px_rgba(0,0,0,0.28)] rounded-2xl hover:border-[rgba(255,255,255,0.18)] focus-within:border-[rgba(255,255,255,0.22)] focus-within:shadow-[0_0_0_1px_rgba(255,255,255,0.06),0_18px_54px_rgba(0,0,0,0.34)]"
           style={{ transition: 'border-color 0.14s var(--ease-snappy), box-shadow 0.14s var(--ease-snappy)' }}
         >
           {/* 图片预览区 */}

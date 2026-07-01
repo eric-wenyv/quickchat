@@ -21,7 +21,7 @@ import {
   saveSystemPrompt,
   deleteSystemPrompt,
 } from "./services/db";
-import { chatCompletion, WEB_SEARCH_TOOL, generateConversationTitle } from "./services/ai";
+import { appendCitationList, chatCompletion, generateConversationTitle, getWebSearchOptions, WEB_SEARCH_TOOL } from "./services/ai";
 import type { ChatMessage, ChatContentPart } from "./services/ai";
 import { parseAttachments, getLanguageFromFilename } from "./utils/file";
 import { searchWeb, formatSearchResults } from "./services/search";
@@ -738,7 +738,8 @@ export default function App() {
 
     // 构建对话历史
     let chatHistory = buildChatHistory(threadConversation, [...previousThreadMessages, userMsg]);
-    const tools = [WEB_SEARCH_TOOL];
+    const webSearch = getWebSearchOptions(activeModel);
+    const tools = webSearch.enabled && webSearch.mode === 'legacy_tavily' ? [WEB_SEARCH_TOOL] : undefined;
     const abortController = new AbortController();
     abortControllersRef.current[convId] = abortController;
     const clearPendingAssistantUpdate = () => {
@@ -751,59 +752,76 @@ export default function App() {
     };
 
     try {
-      // 第一轮：可能触发 tool call
-      let result = await chatCompletion({ model: activeModel, messages: chatHistory, tools, signal: abortController.signal });
-
-      // 处理 Tool Calling 循环
-      let toolLoopCount = 0;
-      while (result.type === 'tool_calls' && toolLoopCount < 3) {
-        toolLoopCount++;
-
-        // 显示"正在搜索..."
-        const toolNames = result.toolCalls.map(tc => tc.function.name).join(', ');
+      if (webSearch.enabled && webSearch.mode === 'official') {
         updateThreadMessages(convId, prev => prev.map(msg =>
           msg.id === aiMsgId
-            ? { ...msg, content: `正在调用工具: ${toolNames}...`, status: 'streaming' as const }
+            ? { ...msg, content: '正在使用 OpenRouter Web Search 获取实时信息...', status: 'streaming' as const }
             : msg
         ));
+      }
 
-        // 将 assistant 的 tool call 追加到历史
-        chatHistory.push({
-          role: 'assistant',
-          content: result.assistantMessage || '',
-          tool_calls: result.toolCalls,
-          reasoning_content: result.reasoningContent,
-        });
+      let result = await chatCompletion({
+        model: activeModel,
+        messages: chatHistory,
+        tools,
+        webSearch,
+        signal: abortController.signal,
+      });
 
-        // 执行每个 tool call
-        for (const call of result.toolCalls) {
-          let toolResult = '';
-          if (call.function.name === 'web_search') {
-            try {
-              const args = JSON.parse(call.function.arguments || '{}');
-              const query = args.query || content;
-              const searchResults = await searchWeb(query);
-              toolResult = formatSearchResults(query, searchResults);
-            } catch (e: any) {
-              toolResult = `搜索失败: ${e.message}`;
-            }
-          } else {
-            toolResult = `未知工具: ${call.function.name}`;
-          }
+      if (webSearch.enabled && webSearch.mode === 'legacy_tavily') {
+        let toolLoopCount = 0;
+        while (result.type === 'tool_calls' && toolLoopCount < 3) {
+          toolLoopCount++;
+
+          const toolNames = result.toolCalls.map(tc => tc.function.name).join(', ');
+          updateThreadMessages(convId, prev => prev.map(msg =>
+            msg.id === aiMsgId
+              ? { ...msg, content: `正在调用工具: ${toolNames}...`, status: 'streaming' as const }
+              : msg
+          ));
 
           chatHistory.push({
-            role: 'tool',
-            content: toolResult,
-            tool_call_id: call.id,
+            role: 'assistant',
+            content: result.assistantMessage || '',
+            tool_calls: result.toolCalls,
+            reasoning_content: result.reasoningContent,
+          });
+
+          for (const call of result.toolCalls) {
+            let toolResult = '';
+            if (call.function.name === 'web_search') {
+              try {
+                const args = JSON.parse(call.function.arguments || '{}');
+                const query = args.query || content;
+                const searchResults = await searchWeb(query);
+                toolResult = formatSearchResults(query, searchResults);
+              } catch (e: any) {
+                toolResult = `搜索失败: ${e.message}`;
+              }
+            } else {
+              toolResult = `未知工具: ${call.function.name}`;
+            }
+
+            chatHistory.push({
+              role: 'tool',
+              content: toolResult,
+              tool_call_id: call.id,
+            });
+          }
+
+          result = await chatCompletion({
+            model: activeModel,
+            messages: chatHistory,
+            webSearch,
+            signal: abortController.signal,
           });
         }
-
-        // 再次请求（不带 tools，避免无限循环）
-        result = await chatCompletion({ model: activeModel, messages: chatHistory, signal: abortController.signal });
       }
 
       if (result.type === 'tool_calls') {
-        throw new Error('模型连续触发工具调用超过限制，请重试。');
+        throw new Error(webSearch.mode === 'legacy_tavily'
+          ? '模型连续触发工具调用超过限制，请重试。'
+          : '当前模型返回了本地工具调用，但此路径不执行本地工具。');
       }
 
       // 流式显示最终文本回复
@@ -848,9 +866,10 @@ export default function App() {
       const tokenCount = lastUsage?.total_tokens ?? result.usage?.total_tokens ?? null;
       const inputTokens = lastUsage?.prompt_tokens ?? result.usage?.prompt_tokens ?? null;
       const outputTokens = lastUsage?.completion_tokens ?? result.usage?.completion_tokens ?? null;
+      const finalContent = appendCitationList(accumulated, result.citations);
       const finalMsg: Message = {
         ...aiMsg,
-        content: accumulated,
+        content: finalContent,
         reasoning_content: result.reasoningContent,
         status: 'completed',
         token_count: tokenCount,
@@ -860,7 +879,7 @@ export default function App() {
       };
       updateThreadMessages(convId, prev => prev.map(msg => msg.id === aiMsgId ? finalMsg : msg));
       await updateMessage(aiMsgId, {
-        content: accumulated,
+        content: finalContent,
         reasoning_content: result.reasoningContent,
         status: 'completed',
         token_count: tokenCount,
@@ -871,7 +890,7 @@ export default function App() {
       // 更新会话列表
       setConversations(prev => sortConversations(prev.map(c =>
         c.id === convId
-          ? { ...c, last_message_preview: accumulated.slice(0, 120), last_message_at: Date.now(), message_count: c.message_count + 1 }
+          ? { ...c, last_message_preview: finalContent.slice(0, 120), last_message_at: Date.now(), message_count: c.message_count + 1 }
           : c
       )));
 

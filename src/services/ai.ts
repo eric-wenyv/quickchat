@@ -14,6 +14,7 @@ const DEFAULT_ENDPOINTS: Record<string, string> = {
   openai_compatible: '',
 };
 
+
 // ---------------------------------------------------------------------------
 // 类型
 // ---------------------------------------------------------------------------
@@ -21,6 +22,7 @@ const DEFAULT_ENDPOINTS: Record<string, string> = {
 export interface StreamChunk {
   delta: string;
   accumulated: string;
+  citations?: UrlCitation[];
   usage?: {
     prompt_tokens: number;
     completion_tokens: number;
@@ -28,14 +30,29 @@ export interface StreamChunk {
   };
 }
 
-export interface ToolDefinition {
+export type FunctionToolDefinition = {
   type: 'function';
   function: {
     name: string;
     description: string;
     parameters: Record<string, unknown>;
   };
-}
+};
+
+export type OpenRouterWebSearchTool = {
+  type: 'openrouter:web_search';
+  parameters?: {
+    engine?: 'auto' | 'native' | 'exa' | 'firecrawl' | 'parallel' | 'perplexity';
+    max_results?: number;
+    max_total_results?: number;
+    search_context_size?: 'low' | 'medium' | 'high';
+    allowed_domains?: string[];
+    excluded_domains?: string[];
+    max_characters?: number;
+  };
+};
+
+export type ToolDefinition = FunctionToolDefinition | OpenRouterWebSearchTool;
 
 export interface ToolCall {
   id: string;
@@ -64,6 +81,7 @@ export interface ChatCompletionParams {
   model: ModelConfig;
   messages: ChatMessage[];
   tools?: ToolDefinition[];
+  webSearch?: WebSearchOptions;
   signal?: AbortSignal;
 }
 
@@ -73,8 +91,21 @@ export interface TokenUsage {
   total_tokens: number;
 }
 
+export interface WebSearchOptions {
+  enabled: boolean;
+  mode: 'official' | 'legacy_tavily' | 'disabled';
+}
+
+export interface UrlCitation {
+  url: string;
+  title?: string;
+  content?: string;
+  start_index?: number;
+  end_index?: number;
+}
+
 export type ChatCompletionResult =
-  | { type: 'text'; stream: AsyncGenerator<StreamChunk, void, unknown>; reasoningContent: string; usage: TokenUsage | null }
+  | { type: 'text'; stream: AsyncGenerator<StreamChunk, void, unknown>; reasoningContent: string; usage: TokenUsage | null; citations?: UrlCitation[] }
   | { type: 'tool_calls'; toolCalls: ToolCall[]; assistantMessage: string; reasoningContent: string; usage: TokenUsage | null };
 
 // ---------------------------------------------------------------------------
@@ -127,10 +158,59 @@ function buildHeaders(model: ModelConfig): Record<string, string> {
   return headers;
 }
 
+export function getWebSearchOptions(model: ModelConfig): WebSearchOptions {
+  if (model.provider === 'openrouter') {
+    return { enabled: true, mode: 'official' };
+  }
+  if (model.provider === 'google_gemini' || model.provider === 'openai_compatible') {
+    return { enabled: true, mode: 'legacy_tavily' };
+  }
+  return { enabled: false, mode: 'disabled' };
+}
+
+export function buildOpenRouterWebSearchTool(): OpenRouterWebSearchTool {
+  return {
+    type: 'openrouter:web_search',
+    parameters: {
+      engine: 'auto',
+      max_results: 5,
+      max_total_results: 10,
+      search_context_size: 'medium',
+    },
+  };
+}
+
+export function dedupeCitations(citations?: UrlCitation[]): UrlCitation[] {
+  if (!citations?.length) return [];
+
+  const seen = new Set<string>();
+  const unique: UrlCitation[] = [];
+  for (const citation of citations) {
+    const url = citation.url.trim();
+    if (!url || seen.has(url)) continue;
+    seen.add(url);
+    unique.push({ ...citation, url });
+  }
+  return unique;
+}
+
+export function appendCitationList(content: string, citations?: UrlCitation[]): string {
+  const unique = dedupeCitations(citations);
+  if (unique.length === 0) return content;
+
+  const sources = unique.map((citation, index) => {
+    const label = citation.title?.trim() || citation.url;
+    return `${index + 1}. [${label}](${citation.url})`;
+  });
+
+  return `${content.trimEnd()}\n\n来源：\n${sources.join('\n')}`;
+}
+
 function buildRequestBody(
   model: ModelConfig,
   messages: ChatMessage[],
-  tools?: ToolDefinition[]
+  tools?: ToolDefinition[],
+  webSearch?: WebSearchOptions
 ): unknown {
   const body: Record<string, unknown> = {
     model: model.model_id,
@@ -142,7 +222,10 @@ function buildRequestBody(
     stream_options: { include_usage: true },
   };
 
-  if (tools && tools.length > 0) {
+  if (model.provider === 'openrouter' && webSearch?.enabled && webSearch.mode === 'official') {
+    body.tools = [buildOpenRouterWebSearchTool()];
+    body.tool_choice = 'auto';
+  } else if (tools && tools.length > 0) {
     body.tools = tools;
     body.tool_choice = 'auto';
   }
@@ -170,10 +253,11 @@ interface SSEAccumulator {
   toolCalls: Map<number, AccumulatedToolCall>;
   finishReason: string | null;
   usage: TokenUsage | null;
+  citations: UrlCitation[];
 }
 
 function createAccumulator(): SSEAccumulator {
-  return { text: '', reasoningContent: '', toolCalls: new Map(), finishReason: null, usage: null };
+  return { text: '', reasoningContent: '', toolCalls: new Map(), finishReason: null, usage: null, citations: [] };
 }
 
 interface SSEReaderState {
@@ -198,6 +282,50 @@ function parseUsage(usage: any): TokenUsage {
     completion_tokens: usage.completion_tokens ?? usage.output_tokens ?? 0,
     total_tokens: usage.total_tokens ?? 0,
   };
+}
+
+function normalizeUrlCitation(annotation: any): UrlCitation | null {
+  if (!annotation || typeof annotation !== 'object') return null;
+  const source = annotation.url_citation && typeof annotation.url_citation === 'object'
+    ? annotation.url_citation
+    : annotation;
+  const url = typeof source.url === 'string' ? source.url : '';
+  if (!url) return null;
+
+  return {
+    url,
+    ...(typeof source.title === 'string' ? { title: source.title } : {}),
+    ...(typeof source.content === 'string' ? { content: source.content } : {}),
+    ...(typeof source.start_index === 'number' ? { start_index: source.start_index } : {}),
+    ...(typeof source.end_index === 'number' ? { end_index: source.end_index } : {}),
+    ...(typeof source.startIndex === 'number' ? { start_index: source.startIndex } : {}),
+    ...(typeof source.endIndex === 'number' ? { end_index: source.endIndex } : {}),
+  };
+}
+
+function mergeCitationAnnotations(acc: SSEAccumulator, annotations: unknown): void {
+  if (!Array.isArray(annotations)) return;
+
+  const next = annotations
+    .filter((annotation) => {
+      if (!annotation || typeof annotation !== 'object') return false;
+      const type = (annotation as { type?: unknown }).type;
+      return type === undefined || type === 'url_citation';
+    })
+    .map(normalizeUrlCitation)
+    .filter((citation): citation is UrlCitation => citation !== null);
+
+  if (next.length > 0) {
+    acc.citations = dedupeCitations([...acc.citations, ...next]);
+  }
+}
+
+function collectCitationsFromParsed(acc: SSEAccumulator, parsed: any): void {
+  const choice = parsed.choices?.[0];
+  mergeCitationAnnotations(acc, choice?.delta?.annotations);
+  mergeCitationAnnotations(acc, choice?.message?.annotations);
+  mergeCitationAnnotations(acc, choice?.annotations);
+  mergeCitationAnnotations(acc, parsed.annotations);
 }
 
 function mergeDelta(acc: SSEAccumulator, delta: any): void {
@@ -233,6 +361,7 @@ function mergeDelta(acc: SSEAccumulator, delta: any): void {
 }
 
 function applyParsedEvent(acc: SSEAccumulator, parsed: any): void {
+  collectCitationsFromParsed(acc, parsed);
   const delta = parsed.choices?.[0]?.delta;
   const finishReason = parsed.choices?.[0]?.finish_reason;
   if (finishReason) acc.finishReason = finishReason;
@@ -429,18 +558,24 @@ async function* continueTextStream(
       applyParsedEvent(acc, parsed);
       result.reasoningContent = acc.reasoningContent;
       result.usage = acc.usage;
+      result.citations = acc.citations;
 
       const delta = textDeltaFromParsed(parsed);
       if (delta !== null) {
         yield { delta, accumulated: acc.text };
       }
       if (parsed.usage) {
-        yield { delta: '', accumulated: acc.text, usage: acc.usage ?? undefined };
+        const chunk: StreamChunk = { delta: '', accumulated: acc.text, usage: acc.usage ?? undefined };
+        if (acc.citations.length > 0) {
+          chunk.citations = acc.citations;
+        }
+        yield chunk;
       }
     }
   } finally {
     result.reasoningContent = acc.reasoningContent;
     result.usage = acc.usage;
+    result.citations = acc.citations;
     state.reader.releaseLock();
   }
 }
@@ -450,12 +585,12 @@ async function* continueTextStream(
 // ---------------------------------------------------------------------------
 
 export async function chatCompletion(params: ChatCompletionParams): Promise<ChatCompletionResult> {
-  const { model, messages, tools, signal } = params;
+  const { model, messages, tools, webSearch, signal } = params;
 
   const endpoint = getApiEndpoint(model);
   const url = `${endpoint.replace(/\/$/, '')}/chat/completions`;
   const headers = buildHeaders(model);
-  const body = buildRequestBody(model, messages, tools);
+  const body = buildRequestBody(model, messages, tools, webSearch);
 
   const response = await fetch(url, {
     method: 'POST',
@@ -496,6 +631,7 @@ export async function chatCompletion(params: ChatCompletionParams): Promise<Chat
           })(),
           reasoningContent: acc.reasoningContent,
           usage: acc.usage,
+          citations: acc.citations,
         };
       }
 
@@ -524,6 +660,7 @@ export async function chatCompletion(params: ChatCompletionParams): Promise<Chat
           stream: undefined as unknown as AsyncGenerator<StreamChunk, void, unknown>,
           reasoningContent: acc.reasoningContent,
           usage: acc.usage,
+          citations: acc.citations,
         };
         result.stream = continueTextStream(state, acc, result, firstDelta);
         return result;

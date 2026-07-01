@@ -50,6 +50,10 @@ export interface Conversation {
   model_id: string;
   /** 系统提示词（可选） */
   system_prompt: string | null;
+  /** 思考模式级别 (Gemini 3.x: LOW/MEDIUM/HIGH)，per-conversation 独立保存 */
+  thinking_level: 'LOW' | 'MEDIUM' | 'HIGH' | null;
+  /** 上次查看的消息 ID（用于切换会话时恢复滚动位置） */
+  last_viewed_message_id: UUID | null;
   created_at: EpochMillis;
   updated_at: EpochMillis;
   /** 关联的 Agent 地址（若存在则点击会进入 Agent 浏览器） */
@@ -180,6 +184,8 @@ export interface UpdateConversationPayload {
   title?: string;
   model_id?: string;
   system_prompt?: string | null;
+  thinking_level?: 'LOW' | 'MEDIUM' | 'HIGH' | null;
+  last_viewed_message_id?: UUID | null;
 }
 
 export interface GetConversationsPayload {

@@ -4,7 +4,9 @@ import type { ModelConfig, UUID } from '@/types/types';
 interface ThinkingLevelSelectorProps {
   models: ModelConfig[];
   activeModelId: UUID;
-  onUpdateThinkingLevel: (id: UUID, level: 'LOW' | 'MEDIUM' | 'HIGH' | null) => void;
+  /** 当前会话的 thinking_level（per-conversation） */
+  thinkingLevel: 'LOW' | 'MEDIUM' | 'HIGH' | null;
+  onUpdateThinkingLevel: (level: 'LOW' | 'MEDIUM' | 'HIGH' | null) => void;
 }
 
 const LEVEL_LABELS: Record<string, string> = {
@@ -20,6 +22,7 @@ const LEVEL_LABELS: Record<string, string> = {
 const ThinkingLevelSelector: React.FC<ThinkingLevelSelectorProps> = ({
   models,
   activeModelId,
+  thinkingLevel,
   onUpdateThinkingLevel,
 }) => {
   const [isOpen, setIsOpen] = useState(false);
@@ -45,7 +48,8 @@ const ThinkingLevelSelector: React.FC<ThinkingLevelSelectorProps> = ({
 
   if (!isSupported || !activeModel) return null;
 
-  const currentLevel = activeModel.thinking_level || 'MEDIUM';
+  // 使用 per-conversation 的 thinking_level，fallback 到 MEDIUM
+  const currentLevel = thinkingLevel || 'MEDIUM';
 
   return (
     <div className="relative" ref={dropdownRef}>
@@ -81,7 +85,7 @@ const ThinkingLevelSelector: React.FC<ThinkingLevelSelectorProps> = ({
             <button
               key={level}
               onClick={() => {
-                onUpdateThinkingLevel(activeModel.id, level);
+                onUpdateThinkingLevel(level);
                 setIsOpen(false);
               }}
               role="menuitemradio"

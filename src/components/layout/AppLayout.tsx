@@ -66,8 +66,14 @@ interface AppLayoutProps {
   onModelSelect: (id: UUID) => void;
   /** 更新系统提示词 */
   onUpdateSystemPrompt: (prompt: string | null) => void;
-  /** 更新模型 thinking level */
-  onUpdateModelThinkingLevel: (id: UUID, level: 'LOW' | 'MEDIUM' | 'HIGH' | null) => void;
+  /** 当前会话的 thinking_level（per-conversation） */
+  activeThinkingLevel: 'LOW' | 'MEDIUM' | 'HIGH' | null;
+  /** 更新思考程度（per-conversation） */
+  onUpdateThinkingLevel: (level: 'LOW' | 'MEDIUM' | 'HIGH' | null) => void;
+  /** 切换会话后需要恢复滚动到的消息 ID */
+  scrollRestoreMessageId: UUID | null;
+  /** 活跃消息 ID 变化回调（用于保存滚动位置） */
+  onActiveMessageIdChange?: (messageId: UUID | null) => void;
   onOpenSettings?: () => void;
   /** 已保存的系统提示词预设列表 */
   systemPrompts: SystemPrompt[];
@@ -228,7 +234,10 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
   onLoadMoreMessages,
   onModelSelect,
   onUpdateSystemPrompt,
-  onUpdateModelThinkingLevel,
+  activeThinkingLevel,
+  onUpdateThinkingLevel,
+  scrollRestoreMessageId,
+  onActiveMessageIdChange,
   onOpenSettings,
   systemPrompts,
   onSaveSystemPromptPreset,
@@ -431,7 +440,10 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
               isSending={isSending}
               onRenameConversation={onRenameConversation}
               onUpdateSystemPrompt={onUpdateSystemPrompt}
-              onUpdateModelThinkingLevel={onUpdateModelThinkingLevel}
+              thinkingLevel={activeThinkingLevel}
+              onUpdateThinkingLevel={onUpdateThinkingLevel}
+              scrollRestoreMessageId={scrollRestoreMessageId}
+              onActiveMessageIdChange={onActiveMessageIdChange}
               systemPrompts={systemPrompts}
               onSaveSystemPromptPreset={onSaveSystemPromptPreset}
               onDeleteSystemPromptPreset={onDeleteSystemPromptPreset}

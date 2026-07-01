@@ -14,6 +14,8 @@ import type { Message } from '@/types/types';
 
 interface UseChatScrollOptions {
   messages: Message[];
+  /** 会话标识，变化时重置内部状态（避免跨会话误触发"新消息"滚动） */
+  conversationKey?: string | null;
 }
 
 interface UseChatScrollReturn {
@@ -27,11 +29,12 @@ interface UseChatScrollReturn {
 
 const BOTTOM_THRESHOLD = 100; // px
 
-export function useChatScroll({ messages }: UseChatScrollOptions): UseChatScrollReturn {
+export function useChatScroll({ messages, conversationKey }: UseChatScrollOptions): UseChatScrollReturn {
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const [isAutoScrollEnabled, setIsAutoScrollEnabled] = useState(false);
   const [isNearBottom, setIsNearBottom] = useState(true);
   const prevMessagesRef = useRef<Message[]>([]);
+  const prevConversationKeyRef = useRef<string | null>(null);
 
   const scrollToBottom = useCallback(() => {
     const el = scrollRef.current;
@@ -77,9 +80,15 @@ export function useChatScroll({ messages }: UseChatScrollOptions): UseChatScroll
   useEffect(() => {
     const prev = prevMessagesRef.current;
     const curr = messages;
+    const convKey = conversationKey ?? null;
+    const conversationChanged = prevConversationKeyRef.current !== convKey;
     prevMessagesRef.current = curr;
+    prevConversationKeyRef.current = convKey;
 
     if (curr.length === 0) return;
+
+    // 会话切换时，跳过"新消息"滚动逻辑（由外部 restoreScrollMessageId 处理恢复）
+    if (conversationChanged) return;
 
     // 场景 1：检测新增的用户消息，滚动到该消息
     if (curr.length > prev.length) {
@@ -108,7 +117,7 @@ export function useChatScroll({ messages }: UseChatScrollOptions): UseChatScroll
     ) {
       scrollToBottom();
     }
-  }, [messages, isAutoScrollEnabled, scrollToBottom, scrollToMessage]);
+  }, [messages, isAutoScrollEnabled, scrollToBottom, scrollToMessage, conversationKey]);
 
   return {
     scrollRef,

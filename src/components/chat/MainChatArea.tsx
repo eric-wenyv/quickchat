@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useRef, useCallback } from 'react';
+import React, { useState, useMemo, useRef, useCallback, useEffect } from 'react';
 import type { Conversation, Message, ModelConfig, SystemPrompt, UUID } from '@/types/types';
 import { MessageHeader } from './MessageHeader';
 
@@ -32,8 +32,14 @@ interface MainChatAreaProps {
   onRenameConversation: (id: UUID, newTitle: string) => void;
   /** 更新系统提示词回调 */
   onUpdateSystemPrompt: (prompt: string | null) => void;
-  /** 更新模型 thinking level 回调 */
-  onUpdateModelThinkingLevel: (id: UUID, level: 'LOW' | 'MEDIUM' | 'HIGH' | null) => void;
+  /** 当前会话的 thinking_level（per-conversation） */
+  thinkingLevel: 'LOW' | 'MEDIUM' | 'HIGH' | null;
+  /** 更新思考程度回调（per-conversation） */
+  onUpdateThinkingLevel: (level: 'LOW' | 'MEDIUM' | 'HIGH' | null) => void;
+  /** 切换会话后需要恢复滚动到的消息 ID */
+  scrollRestoreMessageId: UUID | null;
+  /** 活跃消息 ID 变化回调（用于保存滚动位置） */
+  onActiveMessageIdChange?: (messageId: UUID | null) => void;
   /** 已保存的系统提示词预设列表 */
   systemPrompts: SystemPrompt[];
   /** 保存系统提示词预设 */
@@ -85,7 +91,10 @@ export const MainChatArea: React.FC<MainChatAreaProps> = ({
   isSending,
   onRenameConversation,
   onUpdateSystemPrompt,
-  onUpdateModelThinkingLevel,
+  thinkingLevel,
+  onUpdateThinkingLevel,
+  scrollRestoreMessageId,
+  onActiveMessageIdChange,
   systemPrompts,
   onSaveSystemPromptPreset,
   onDeleteSystemPromptPreset,
@@ -170,6 +179,12 @@ export const MainChatArea: React.FC<MainChatAreaProps> = ({
 
   const showNavPanel = userMessages.length >= 2;
 
+  // ── 上报活跃消息 ID（用于切换会话时保存滚动位置）──
+  useEffect(() => {
+    const msg = messages[activeMessageIndex];
+    onActiveMessageIdChange?.(msg?.id ?? null);
+  }, [activeMessageIndex, messages, onActiveMessageIdChange]);
+
   // ── 当前对话累计 Token 统计 ──
   const tokenStats: TokenStats = useMemo(() => {
     let totalTokens = 0;
@@ -239,7 +254,8 @@ export const MainChatArea: React.FC<MainChatAreaProps> = ({
                     models={models}
                     activeModelId={activeModelId}
                     onModelSelect={onModelSelect}
-                    onUpdateModelThinkingLevel={onUpdateModelThinkingLevel}
+                    thinkingLevel={thinkingLevel}
+                    onUpdateThinkingLevel={onUpdateThinkingLevel}
                     droppedFiles={droppedFiles}
                     dropVersion={dropVersion}
                     isSending={isSending}
@@ -349,6 +365,7 @@ export const MainChatArea: React.FC<MainChatAreaProps> = ({
                     onDeleteMessage={onDeleteMessage}
                     onActiveIndexChange={setActiveMessageIndex}
                     onScrollStateChange={setScrollState}
+                    restoreScrollMessageId={scrollRestoreMessageId}
                   />
 
                   {/* 固定跳转至底部按钮（不随消息列表滚动） */}
@@ -381,7 +398,8 @@ export const MainChatArea: React.FC<MainChatAreaProps> = ({
                   models={models}
                   activeModelId={activeModelId}
                   onModelSelect={onModelSelect}
-                  onUpdateModelThinkingLevel={onUpdateModelThinkingLevel}
+                  thinkingLevel={thinkingLevel}
+                  onUpdateThinkingLevel={onUpdateThinkingLevel}
                   droppedFiles={droppedFiles}
                   dropVersion={dropVersion}
                   isSending={isSending}

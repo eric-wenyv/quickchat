@@ -17,6 +17,7 @@ import {
   getModelConfigs,
   saveModelConfig,
   deleteModelConfig,
+  updateModelConfig,
   getSystemPrompts,
   saveSystemPrompt,
   deleteSystemPrompt,
@@ -132,6 +133,14 @@ export default function App() {
   const messagesByConversationRef = useRef<Record<UUID, Message[]>>({});
   const selectRequestIdRef = useRef(0);
 
+  // ── per-conversation 状态：思考程度 + 滚动位置 ──
+  const [activeThinkingLevel, setActiveThinkingLevel] = useState<'LOW' | 'MEDIUM' | 'HIGH' | null>(null);
+  const [scrollRestoreMessageId, setScrollRestoreMessageId] = useState<UUID | null>(null);
+  // 每个会话上次查看的消息 ID（内存缓存，切换时快速恢复）
+  const conversationScrollMessageIdRef = useRef<Record<UUID, UUID | null>>({});
+  // 当前活跃消息 ID（由 MainChatArea 持续上报，切换会话时保存到 ref）
+  const activeMessageIdRef = useRef<UUID | null>(null);
+
   const isSending = isThreadSending(sendingByConversationId, activeConversation?.id);
 
   useEffect(() => {
@@ -174,13 +183,18 @@ export default function App() {
         finalUrl = 'http://' + finalUrl;
       }
 
-      // 创建带 agent_url 的新会话并选中
+      // 创建带 agent_url 的新会话并选中（使用默认模型）
+      const defaultModel = models.find(m => m.is_default) || models[0];
+      const modelId = defaultModel?.id ?? activeModelId;
+      const thinkingLevel = defaultModel?.thinking_level ?? null;
       const now = Date.now();
       const newConv: Conversation = {
         id: crypto.randomUUID(),
         title: finalUrl,
-        model_id: activeModelId,
+        model_id: modelId,
         system_prompt: null,
+        thinking_level: thinkingLevel,
+        last_viewed_message_id: null,
         created_at: now,
         updated_at: now,
         agent_url: finalUrl,
@@ -379,6 +393,14 @@ export default function App() {
 
   // --- 会话操作 ---
   const handleSelectConversation = async (id: UUID) => {
+    // 保存即将离开的会话的滚动位置（内存 + DB 持久化）
+    const oldConvId = activeConversationIdRef.current;
+    if (oldConvId && oldConvId !== id) {
+      const lastMsgId = activeMessageIdRef.current;
+      conversationScrollMessageIdRef.current[oldConvId] = lastMsgId;
+      dbUpdateConversation(oldConvId, { last_viewed_message_id: lastMsgId }).catch(() => {});
+    }
+
     localStorage.setItem("quick_chat_last_active_conv", id);
 
     const requestId = ++selectRequestIdRef.current;
@@ -400,6 +422,8 @@ export default function App() {
         title: summary.title,
         model_id: activeModelId,
         system_prompt: null,
+        thinking_level: null,
+        last_viewed_message_id: null,
         created_at: summary.created_at,
         updated_at: summary.last_message_at,
         agent_url: summary.agent_url ?? null,
@@ -424,6 +448,16 @@ export default function App() {
       if (convDetail) {
         activeConversationIdRef.current = convDetail.id;
         setActiveConversation(convDetail);
+        // 恢复会话绑定的模型（若模型已被删除则 fallback 到默认模型）
+        const convModel = models.find(m => m.id === convDetail.model_id);
+        const fallbackModel = models.find(m => m.is_default) || models[0];
+        const effectiveModelId = convModel ? convDetail.model_id : (fallbackModel?.id ?? '');
+        if (effectiveModelId) setActiveModelId(effectiveModelId);
+        // 恢复会话的 thinking_level
+        setActiveThinkingLevel(convDetail.thinking_level);
+        // 恢复滚动位置：内存缓存优先，fallback 到 DB 持久化值
+        const restoreId = conversationScrollMessageIdRef.current[id] ?? convDetail.last_viewed_message_id ?? null;
+        setScrollRestoreMessageId(restoreId);
         // 若会话绑定了 Agent 地址，自动进入 Agent 模式
         if (convDetail.agent_url) {
           setAgentUrl(convDetail.agent_url);
@@ -445,11 +479,14 @@ export default function App() {
             title: s.title,
             model_id: activeModelId,
             system_prompt: null,
+            thinking_level: null,
+            last_viewed_message_id: null,
             created_at: s.created_at,
             updated_at: s.last_message_at,
             agent_url: s.agent_url ?? null,
             pinned: s.pinned ?? 0,
           });
+          setScrollRestoreMessageId(conversationScrollMessageIdRef.current[id] ?? null);
           if (s.agent_url) {
             setAgentUrl(s.agent_url);
             setAgentMode(true);
@@ -480,17 +517,15 @@ export default function App() {
   };
 
   const handleCreateConversation = useCallback(async () => {
-    let modelId = activeModelId;
-    // 如果 activeModelId 为空但已有模型配置，自动 fallback 到第一个可用模型
-    if (!modelId && models.length > 0) {
-      const fallback = models.find(m => m.is_default) || models[0];
-      modelId = fallback.id;
-      setActiveModelId(modelId);
-    }
-    if (!modelId) {
+    // 新对话使用默认模型（不是当前活跃模型），fallback 到第一个可用模型
+    const defaultModel = models.find(m => m.is_default) || models[0];
+    if (!defaultModel) {
       showToast('无法创建', '请先配置 AI 模型');
       return;
     }
+    const modelId = defaultModel.id;
+    // 新对话继承默认模型上一次使用的思考程度（若有思考选择的话）
+    const thinkingLevel = defaultModel.thinking_level ?? null;
     // 如果当前已经有一个存在于列表中的空活跃会话，避免重复创建
     const hasEmptyActiveInList =
       activeConversation &&
@@ -505,6 +540,8 @@ export default function App() {
       title: "New Chat",
       model_id: modelId,
       system_prompt: null,
+      thinking_level: thinkingLevel,
+      last_viewed_message_id: null,
       created_at: now,
       updated_at: now,
       agent_url: null,
@@ -513,10 +550,13 @@ export default function App() {
     setSelectedConversationId(newConv.id);
     activeConversationIdRef.current = newConv.id;
     setActiveConversation(newConv);
+    setActiveModelId(modelId);
+    setActiveThinkingLevel(thinkingLevel);
     setMessages([]);
     messagesByConversationRef.current[newConv.id] = [];
+    setScrollRestoreMessageId(null);
     setAgentMode(false);
-  }, [activeModelId, models, activeConversation, messages, agentMode, conversations]);
+  }, [models, activeConversation, messages, agentMode, conversations]);
 
   const handleDeleteConversation = async (id: UUID) => {
     try {
@@ -524,6 +564,7 @@ export default function App() {
       abortControllersRef.current[id]?.abort();
       delete abortControllersRef.current[id];
       delete messagesByConversationRef.current[id];
+      delete conversationScrollMessageIdRef.current[id];
       const convs = await getConversations(100, 0);
       setConversations(convs);
       if (activeConversation?.id === id) {
@@ -631,10 +672,53 @@ export default function App() {
     }
   };
 
-  const handleUpdateModelThinkingLevel = async (id: UUID, level: 'LOW' | 'MEDIUM' | 'HIGH' | null) => {
-    setModels(prev => prev.map(m => m.id === id ? { ...m, thinking_level: level } : m));
-    // thinking_level 不在数据库 schema 中，仅内存维护（或后续扩展 schema）
+  // --- 切换模型：保存到会话 + 更新 thinking_level ---
+  const handleModelSelect = async (modelId: UUID) => {
+    setActiveModelId(modelId);
+    const newModel = models.find(m => m.id === modelId);
+    // 切换模型后，thinking_level 跟随新模型的上次使用值（若支持思考）
+    const newThinkingLevel = newModel?.thinking_level ?? null;
+    setActiveThinkingLevel(newThinkingLevel);
+
+    if (activeConversation) {
+      try {
+        await dbUpdateConversation(activeConversation.id, {
+          model_id: modelId,
+          thinking_level: newThinkingLevel,
+        });
+        setActiveConversation(prev => prev ? { ...prev, model_id: modelId, thinking_level: newThinkingLevel } : prev);
+      } catch (e) {
+        console.error('保存模型选择失败:', e);
+      }
+    }
   };
+
+  // --- 更新思考程度：per-conversation 持久化 + 更新模型的"上次使用"值 ---
+  const handleUpdateThinkingLevel = async (level: 'LOW' | 'MEDIUM' | 'HIGH' | null) => {
+    setActiveThinkingLevel(level);
+    if (activeConversation) {
+      try {
+        await dbUpdateConversation(activeConversation.id, { thinking_level: level });
+        setActiveConversation(prev => prev ? { ...prev, thinking_level: level } : prev);
+      } catch (e) {
+        console.error('保存思考程度失败:', e);
+      }
+    }
+    // 同步更新模型的"上次使用 thinking_level"（供新对话继承）
+    if (activeModelId) {
+      setModels(prev => prev.map(m => m.id === activeModelId ? { ...m, thinking_level: level } : m));
+      try {
+        await updateModelConfig(activeModelId, { thinking_level: level });
+      } catch (e) {
+        console.error('保存模型 thinking_level 失败:', e);
+      }
+    }
+  };
+
+  // --- 滚动位置上报：MainChatArea 持续更新当前活跃消息 ID ---
+  const handleActiveMessageIdChange = useCallback((messageId: UUID | null) => {
+    activeMessageIdRef.current = messageId;
+  }, []);
 
   // --- 将 Message[] 转换为 ChatMessage[] ---
   const IMAGE_MARKDOWN_REGEX = /!\[[^\]]*\]\((data:image\/[^;)]+;base64,[A-Za-z0-9+/=]+)\)/g;
@@ -1131,9 +1215,12 @@ export default function App() {
         searchQuery={searchQuery}
         onSendMessage={handleSendMessage}
         onLoadMoreMessages={handleLoadMoreMessages}
-        onModelSelect={setActiveModelId}
+        onModelSelect={handleModelSelect}
         onUpdateSystemPrompt={handleUpdateSystemPrompt}
-        onUpdateModelThinkingLevel={handleUpdateModelThinkingLevel}
+        activeThinkingLevel={activeThinkingLevel}
+        onUpdateThinkingLevel={handleUpdateThinkingLevel}
+        scrollRestoreMessageId={scrollRestoreMessageId}
+        onActiveMessageIdChange={handleActiveMessageIdChange}
         onOpenSettings={() => setShowSettings(true)}
         systemPrompts={systemPrompts}
         onSaveSystemPromptPreset={handleSaveSystemPromptPreset}

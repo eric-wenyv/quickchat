@@ -1,5 +1,5 @@
 import { useRef, useEffect, useState, useCallback, forwardRef, useImperativeHandle } from 'react';
-import type { Message } from '@/types/types';
+import type { Message, UUID } from '@/types/types';
 import { useChatScroll } from '@/hooks/useChatScroll';
 import MessageBubble from './MessageBubble';
 
@@ -11,6 +11,8 @@ interface MessageListProps {
   onDeleteMessage?: (id: string) => void;
   onActiveIndexChange?: (index: number) => void;
   onScrollStateChange?: (state: { isNearBottom: boolean; isAutoScrollEnabled: boolean }) => void;
+  /** 切换会话后需要恢复滚动到的消息 ID */
+  restoreScrollMessageId?: UUID | null;
 }
 
 export interface MessageListHandle {
@@ -24,18 +26,19 @@ export interface MessageListHandle {
  * 职责：负责渲染消息流主体、管理消息到达时的自动滚动、以及向上滚动的流式分页加载。
  */
 const MessageList = forwardRef<MessageListHandle, MessageListProps>(
-  ({ messages, onLoadMore, hasMore, isLoadingMore, onDeleteMessage, onActiveIndexChange, onScrollStateChange }, ref) => {
+  ({ messages, onLoadMore, hasMore, isLoadingMore, onDeleteMessage, onActiveIndexChange, onScrollStateChange, restoreScrollMessageId }, ref) => {
     const {
       scrollRef,
       isAutoScrollEnabled,
       isNearBottom,
       enableAutoScroll,
       scrollToMessage,
-    } = useChatScroll({ messages });
+    } = useChatScroll({ messages, conversationKey: messages[0]?.conversation_id ?? null });
     const loadMoreRef = useRef<HTMLDivElement>(null);
     const messageRefs = useRef<(HTMLDivElement | null)[]>([]);
     const [activeIndex, setActiveIndex] = useState(0);
     const rafRef = useRef<number | null>(null);
+    const restoredScrollForRef = useRef<string | null>(null);
 
     // 暴露 scrollToMessage 和 enableAutoScroll 给父组件
     useImperativeHandle(ref, () => ({
@@ -56,6 +59,28 @@ const MessageList = forwardRef<MessageListHandle, MessageListProps>(
     useEffect(() => {
       onActiveIndexChange?.(activeIndex);
     }, [activeIndex, onActiveIndexChange]);
+
+    // 切换会话后恢复滚动位置
+    useEffect(() => {
+      if (!restoreScrollMessageId) {
+        restoredScrollForRef.current = null;
+        return;
+      }
+      const convKey = messages[0]?.conversation_id ?? '';
+      const restoreKey = `${convKey}:${restoreScrollMessageId}`;
+      if (restoredScrollForRef.current === restoreKey) return;
+
+      const index = messages.findIndex(m => m.id === restoreScrollMessageId);
+      if (index === -1) return; // 消息还未加载，等下次 effect
+
+      restoredScrollForRef.current = restoreKey;
+      // 双 rAF 确保 DOM 已完成渲染后再滚动
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          scrollToMessage(index);
+        });
+      });
+    }, [restoreScrollMessageId, messages, scrollToMessage]);
 
     // 计算当前视口中心最接近的消息索引
     const updateActiveIndex = useCallback(() => {

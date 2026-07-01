@@ -69,6 +69,7 @@ export async function initDatabase(): Promise<void> {
   `);
   await ensureMessageColumns(db);
   await ensureConversationColumns(db);
+  await ensureModelColumns(db);
   await db.execute(`
     CREATE INDEX IF NOT EXISTS idx_messages_conversation_time
       ON messages(conversation_id, created_at ASC);
@@ -187,8 +188,35 @@ async function ensureConversationColumns(db: Database): Promise<void> {
       await db.execute('ALTER TABLE conversations ADD COLUMN pinned INTEGER DEFAULT 0;');
       console.log('[DB] Added column: pinned');
     }
+    if (!colNames.has('thinking_level')) {
+      await db.execute("ALTER TABLE conversations ADD COLUMN thinking_level TEXT DEFAULT NULL;");
+      console.log('[DB] Added column: thinking_level');
+    }
+    if (!colNames.has('last_viewed_message_id')) {
+      await db.execute('ALTER TABLE conversations ADD COLUMN last_viewed_message_id TEXT DEFAULT NULL;');
+      console.log('[DB] Added column: last_viewed_message_id');
+    }
   } catch (e) {
     console.error('[DB] ensureConversationColumns failed:', e);
+  }
+}
+
+async function ensureModelColumns(db: Database): Promise<void> {
+  try {
+    const columns = await db.select<{ name: string }[]>('PRAGMA table_info(model_configs);');
+    const colNames = new Set(columns.map((c: any) => c.name));
+    console.log('[DB] model_configs table columns:', Array.from(colNames));
+
+    if (!colNames.has('thinking_level')) {
+      await db.execute("ALTER TABLE model_configs ADD COLUMN thinking_level TEXT DEFAULT NULL;");
+      console.log('[DB] Added column: model_configs.thinking_level');
+      // 为已存在的 Gemini 3.x 模型初始化默认 thinking_level
+      await db.execute(
+        "UPDATE model_configs SET thinking_level = 'MEDIUM' WHERE thinking_level IS NULL AND model_id LIKE '%gemini-3%';"
+      );
+    }
+  } catch (e) {
+    console.error('[DB] ensureModelColumns failed:', e);
   }
 }
 
@@ -251,26 +279,37 @@ export async function getModelConfigs(): Promise<ModelConfig[]> {
     temperature: number;
     max_tokens: number;
     top_p: number;
+    thinking_level: string | null;
     is_default: number;
     created_at: number;
     updated_at: number;
   }[]>('SELECT * FROM model_configs ORDER BY created_at ASC');
 
-  return rows.map(r => ({
-    id: r.id,
-    provider: r.provider as ModelConfig['provider'],
-    model_id: r.model_id,
-    display_name: r.display_name,
-    api_key: r.api_key,
-    api_endpoint: r.api_endpoint,
-    temperature: r.temperature,
-    max_tokens: r.max_tokens,
-    top_p: r.top_p,
-    thinking_level: r.model_id.includes('gemini-3') ? 'MEDIUM' as const : null,
-    is_default: Boolean(r.is_default),
-    created_at: r.created_at,
-    updated_at: r.updated_at,
-  }));
+  return rows.map(r => {
+    const isGemini3 = r.model_id.includes('gemini-3');
+    // 从 DB 读取 thinking_level；旧数据 fallback 到 Gemini 3.x 默认 MEDIUM
+    let thinkingLevel: 'LOW' | 'MEDIUM' | 'HIGH' | null = null;
+    if (r.thinking_level === 'LOW' || r.thinking_level === 'MEDIUM' || r.thinking_level === 'HIGH') {
+      thinkingLevel = r.thinking_level;
+    } else if (isGemini3) {
+      thinkingLevel = 'MEDIUM';
+    }
+    return {
+      id: r.id,
+      provider: r.provider as ModelConfig['provider'],
+      model_id: r.model_id,
+      display_name: r.display_name,
+      api_key: r.api_key,
+      api_endpoint: r.api_endpoint,
+      temperature: r.temperature,
+      max_tokens: r.max_tokens,
+      top_p: r.top_p,
+      thinking_level: thinkingLevel,
+      is_default: Boolean(r.is_default),
+      created_at: r.created_at,
+      updated_at: r.updated_at,
+    };
+  });
 }
 
 export async function saveModelConfig(config: ModelConfig): Promise<void> {
@@ -279,8 +318,8 @@ export async function saveModelConfig(config: ModelConfig): Promise<void> {
     await db.execute('UPDATE model_configs SET is_default = 0');
   }
   await db.execute(
-    `INSERT INTO model_configs (id, provider, model_id, display_name, api_key, api_endpoint, temperature, max_tokens, top_p, is_default, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `INSERT INTO model_configs (id, provider, model_id, display_name, api_key, api_endpoint, temperature, max_tokens, top_p, thinking_level, is_default, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
      ON CONFLICT(id) DO UPDATE SET
        provider = excluded.provider,
        model_id = excluded.model_id,
@@ -290,6 +329,7 @@ export async function saveModelConfig(config: ModelConfig): Promise<void> {
        temperature = excluded.temperature,
        max_tokens = excluded.max_tokens,
        top_p = excluded.top_p,
+       thinking_level = excluded.thinking_level,
        is_default = excluded.is_default,
        updated_at = excluded.updated_at`,
     [
@@ -302,6 +342,7 @@ export async function saveModelConfig(config: ModelConfig): Promise<void> {
       config.temperature,
       config.max_tokens,
       config.top_p,
+      config.thinking_level,
       config.is_default ? 1 : 0,
       config.created_at,
       config.updated_at,
@@ -325,6 +366,7 @@ export async function updateModelConfig(
   if (updates.temperature !== undefined) { sets.push('temperature = ?'); vals.push(updates.temperature); }
   if (updates.max_tokens !== undefined) { sets.push('max_tokens = ?'); vals.push(updates.max_tokens); }
   if (updates.top_p !== undefined) { sets.push('top_p = ?'); vals.push(updates.top_p); }
+  if (updates.thinking_level !== undefined) { sets.push('thinking_level = ?'); vals.push(updates.thinking_level); }
   if (updates.is_default !== undefined) {
     if (updates.is_default) {
       await db.execute('UPDATE model_configs SET is_default = 0');
@@ -351,20 +393,51 @@ export async function deleteModelConfig(id: UUID): Promise<void> {
 export async function createConversation(conv: Conversation): Promise<void> {
   const db = await getDb();
   await db.execute(
-    'INSERT INTO conversations (id, title, model_id, system_prompt, agent_url, pinned, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-    [conv.id, conv.title, conv.model_id, conv.system_prompt, conv.agent_url ?? null, conv.pinned ?? 0, conv.created_at, conv.updated_at]
+    'INSERT INTO conversations (id, title, model_id, system_prompt, agent_url, pinned, thinking_level, last_viewed_message_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+    [conv.id, conv.title, conv.model_id, conv.system_prompt, conv.agent_url ?? null, conv.pinned ?? 0, conv.thinking_level ?? null, conv.last_viewed_message_id ?? null, conv.created_at, conv.updated_at]
   );
 }
 
 export async function getConversation(id: UUID): Promise<Conversation | null> {
   const db = await getDb();
-  const rows = await db.select<Conversation[]>('SELECT * FROM conversations WHERE id = ?', [id]);
-  return rows[0] ?? null;
+  const rows = await db.select<{
+    id: string;
+    title: string;
+    model_id: string;
+    system_prompt: string | null;
+    thinking_level: string | null;
+    last_viewed_message_id: string | null;
+    created_at: number;
+    updated_at: number;
+    agent_url: string | null;
+    pinned: number | null;
+  }[]>('SELECT * FROM conversations WHERE id = ?', [id]);
+
+  if (!rows[0]) return null;
+  const r = rows[0];
+  // 验证 thinking_level 值，只接受合法枚举
+  const validLevels = ['LOW', 'MEDIUM', 'HIGH'] as const;
+  const thinkingLevel = r.thinking_level && (validLevels as readonly string[]).includes(r.thinking_level)
+    ? (r.thinking_level as 'LOW' | 'MEDIUM' | 'HIGH')
+    : null;
+
+  return {
+    id: r.id,
+    title: r.title,
+    model_id: r.model_id,
+    system_prompt: r.system_prompt,
+    thinking_level: thinkingLevel,
+    last_viewed_message_id: r.last_viewed_message_id,
+    created_at: r.created_at,
+    updated_at: r.updated_at,
+    agent_url: r.agent_url,
+    pinned: r.pinned,
+  };
 }
 
 export async function updateConversation(
   id: UUID,
-  updates: Partial<Pick<Conversation, 'title' | 'model_id' | 'system_prompt' | 'agent_url' | 'pinned' | 'updated_at'>>
+  updates: Partial<Pick<Conversation, 'title' | 'model_id' | 'system_prompt' | 'agent_url' | 'pinned' | 'thinking_level' | 'last_viewed_message_id' | 'updated_at'>>
 ): Promise<void> {
   const db = await getDb();
   const sets: string[] = [];
@@ -375,6 +448,8 @@ export async function updateConversation(
   if (updates.system_prompt !== undefined) { sets.push('system_prompt = ?'); vals.push(updates.system_prompt); }
   if (updates.agent_url !== undefined) { sets.push('agent_url = ?'); vals.push(updates.agent_url); }
   if (updates.pinned !== undefined) { sets.push('pinned = ?'); vals.push(updates.pinned); }
+  if (updates.thinking_level !== undefined) { sets.push('thinking_level = ?'); vals.push(updates.thinking_level); }
+  if (updates.last_viewed_message_id !== undefined) { sets.push('last_viewed_message_id = ?'); vals.push(updates.last_viewed_message_id); }
   sets.push('updated_at = ?');
   vals.push(updates.updated_at ?? Date.now());
   vals.push(id);

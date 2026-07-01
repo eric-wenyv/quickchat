@@ -25,6 +25,13 @@ const DEFAULT_ENDPOINTS: Record<AIProvider, string> = {
   openai_compatible: '',
 };
 
+// Gemini 和 OpenRouter 支持配置一次 API Key 后，新增模型自动复用已保存的 Key。
+// OpenAI 兼容不在其中（每个服务端点可能需要不同的 Key）。
+const PROVIDER_KEY_STORAGE: Partial<Record<AIProvider, string>> = {
+  google_gemini: 'quick_chat_provider_key_google_gemini',
+  openrouter: 'quick_chat_provider_key_openrouter',
+};
+
 export const ModelForm: React.FC<ModelFormProps> = ({ initial, onSave, onCancel }) => {
   const [provider, setProvider] = useState<AIProvider>(initial?.provider || 'openrouter');
   const [modelId, setModelId] = useState(initial?.model_id || '');
@@ -41,6 +48,9 @@ export const ModelForm: React.FC<ModelFormProps> = ({ initial, onSave, onCancel 
   useEffect(() => {
     if (!initial && provider) {
       setApiEndpoint(DEFAULT_ENDPOINTS[provider]);
+      // 新增模型时自动填充已保存的 Provider API Key（仅 Gemini / OpenRouter）
+      const storageKey = PROVIDER_KEY_STORAGE[provider];
+      setApiKey(storageKey ? (localStorage.getItem(storageKey) || '') : '');
     }
   }, [provider, initial]);
 
@@ -77,6 +87,13 @@ export const ModelForm: React.FC<ModelFormProps> = ({ initial, onSave, onCancel 
       created_at: initial?.created_at ?? now,
       updated_at: now,
     };
+
+    // 保存 Provider 级别的 API Key，供后续新增同 Provider 模型时自动复用
+    const storageKey = PROVIDER_KEY_STORAGE[provider];
+    if (storageKey) {
+      localStorage.setItem(storageKey, apiKey.trim());
+    }
+
     onSave(config);
   };
 

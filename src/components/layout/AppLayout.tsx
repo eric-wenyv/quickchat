@@ -34,6 +34,8 @@ interface AppLayoutProps {
   // --- 状态标志 ---
   /** 列表是否正在加载 */
   isLoadingConversations: boolean;
+  /** 会话搜索是否正在执行 */
+  isSearchingConversations?: boolean;
   /** 消息是否正在初次加载 */
   isLoadingMessages: boolean;
   /** 是否正在加载更早历史消息 */
@@ -221,6 +223,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
   models,
   activeModelId,
   isLoadingConversations,
+  isSearchingConversations = false,
   isLoadingMessages,
   isLoadingMoreMessages,
   isSending,
@@ -391,6 +394,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
               onPinConversation={onPinConversation}
               onSearchChange={onSearchConversations}
               isLoading={isLoadingConversations}
+              isSearching={isSearchingConversations}
               searchQuery={searchQuery}
               onOpenSettings={onOpenSettings}
               onOpenAgentBrowser={onOpenAgentBrowser}

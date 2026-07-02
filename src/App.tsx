@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useMemo, useCallback } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import AppLayout from "./components/layout/AppLayout";
 import { useTheme } from "./hooks/useTheme";
 import ModelSettings from "./components/settings/ModelSettings";
@@ -6,6 +6,7 @@ import {
   initDatabase,
   migrateFromLocalStorage,
   getConversations,
+  searchConversations,
   getConversation,
   getMessages,
   createConversation,
@@ -121,6 +122,8 @@ export default function App() {
   const [systemPrompts, setSystemPrompts] = useState<SystemPrompt[]>([]);
 
   const [isLoadingConversations, setIsLoadingConversations] = useState(false);
+  const [isSearchingConversations, setIsSearchingConversations] = useState(false);
+  const [searchResults, setSearchResults] = useState<ConversationSummary[]>([]);
   const [isLoadingMessages, setIsLoadingMessages] = useState(false);
   const [isLoadingMoreMessages, setIsLoadingMoreMessages] = useState(false);
   const [hasMoreMessages, setHasMoreMessages] = useState(false);
@@ -141,6 +144,7 @@ export default function App() {
   const messagesRef = useRef<Message[]>([]);
   const messagesByConversationRef = useRef<Record<UUID, Message[]>>({});
   const selectRequestIdRef = useRef(0);
+  const searchRequestIdRef = useRef(0);
 
   // ── per-conversation 状态：思考程度 + 滚动位置 ──
   const [activeThinkingLevel, setActiveThinkingLevel] = useState<'LOW' | 'MEDIUM' | 'HIGH' | null>(null);
@@ -394,16 +398,38 @@ export default function App() {
     }
   };
 
-  // --- 搜索过滤 ---
-  const filteredConversations = useMemo(() => {
-    if (!searchQuery) return conversations;
-    const lower = searchQuery.toLowerCase();
-    return conversations.filter(c => {
-      if (c.title?.toLowerCase().includes(lower)) return true;
-      if (c.last_message_preview?.toLowerCase().includes(lower)) return true;
-      return false;
-    });
-  }, [conversations, searchQuery]);
+  // --- 会话全文搜索 ---
+  const normalizedSearchQuery = searchQuery.trim();
+  const displayedConversations = normalizedSearchQuery ? searchResults : conversations;
+
+  useEffect(() => {
+    if (!dbReady) return;
+
+    const requestId = ++searchRequestIdRef.current;
+    if (!normalizedSearchQuery) {
+      setSearchResults([]);
+      setIsSearchingConversations(false);
+      return;
+    }
+
+    setIsSearchingConversations(true);
+    searchConversations(normalizedSearchQuery, CONVERSATION_LIST_LIMIT, 0)
+      .then((results) => {
+        if (searchRequestIdRef.current !== requestId) return;
+        setSearchResults(results);
+      })
+      .catch((e) => {
+        if (searchRequestIdRef.current !== requestId) return;
+        console.error('搜索会话失败:', e);
+        setSearchResults([]);
+        showToast('搜索失败', String(e));
+      })
+      .finally(() => {
+        if (searchRequestIdRef.current === requestId) {
+          setIsSearchingConversations(false);
+        }
+      });
+  }, [dbReady, normalizedSearchQuery, conversations]);
 
   // --- 会话操作 ---
   const handleSelectConversation = async (id: UUID) => {
@@ -1356,13 +1382,14 @@ export default function App() {
       <AppLayout
         theme={theme}
         onToggleTheme={toggleTheme}
-        conversations={filteredConversations}
+        conversations={displayedConversations}
         activeConversation={activeConversation}
         selectedConversationId={selectedConversationId}
         messages={messages}
         models={models}
         activeModelId={activeModelId}
-        isLoadingConversations={isLoadingConversations}
+        isLoadingConversations={isLoadingConversations || isSearchingConversations}
+        isSearchingConversations={isSearchingConversations}
         isLoadingMessages={isLoadingMessages}
         isLoadingMoreMessages={isLoadingMoreMessages}
         isSending={isSending}

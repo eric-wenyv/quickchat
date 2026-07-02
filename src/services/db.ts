@@ -16,11 +16,34 @@ import type {
 } from '@/types/types';
 
 let dbInstance: Database | null = null;
+let hasTrigramMessageSearchIndex: boolean | null = null;
 
 export async function getDb(): Promise<Database> {
   if (dbInstance) return dbInstance;
   dbInstance = await Database.load('sqlite:quick_chat.db');
   return dbInstance;
+}
+
+export function buildFtsPhraseQuery(query: string): string {
+  const trimmed = query.trim().replace(/\s+/g, ' ');
+  return `"${trimmed.replace(/"/g, '""')}"`;
+}
+
+export function buildFtsTokenQuery(query: string): string {
+  return query
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((word) => `"${word.replace(/"/g, '""')}"`)
+    .join(' ');
+}
+
+function escapeLikeQuery(query: string): string {
+  return query.replace(/[\\%_]/g, (char) => `\\${char}`);
+}
+
+function buildLikeQuery(query: string): string {
+  return `%${escapeLikeQuery(query.trim().toLowerCase())}%`;
 }
 
 // ---------------------------------------------------------------------------
@@ -112,6 +135,8 @@ export async function initDatabase(): Promise<void> {
       INSERT INTO messages_fts(messages_fts, rowid, content) VALUES ('delete', OLD.rowid, OLD.content);
     END;
   `);
+  await ensureFtsIndexSynced(db, 'messages_fts');
+  await ensureTrigramMessageSearchIndex(db);
 
   // 系统提示词预设表
   await db.execute(`
@@ -149,6 +174,63 @@ export async function initDatabase(): Promise<void> {
     CREATE UNIQUE INDEX IF NOT EXISTS idx_model_configs_provider_model
       ON model_configs(provider, model_id);
   `);
+}
+
+async function ensureFtsIndexSynced(db: Database, tableName: 'messages_fts' | 'messages_search_fts'): Promise<void> {
+  try {
+    const rows = await db.select<{ message_count: number; index_count: number }[]>(`
+      SELECT
+        (SELECT COUNT(*) FROM messages) AS message_count,
+        (SELECT COUNT(*) FROM ${tableName}) AS index_count
+    `);
+    const counts = rows[0];
+    if (counts && counts.message_count !== counts.index_count) {
+      await db.execute(`INSERT INTO ${tableName}(${tableName}) VALUES ('rebuild');`);
+      console.log(`[DB] Rebuilt ${tableName} (${counts.index_count} -> ${counts.message_count})`);
+    }
+  } catch (e) {
+    console.warn(`[DB] Failed to sync ${tableName}:`, e);
+  }
+}
+
+async function ensureTrigramMessageSearchIndex(db: Database): Promise<void> {
+  try {
+    await db.execute(`
+      CREATE VIRTUAL TABLE IF NOT EXISTS messages_search_fts USING fts5(
+        content,
+        content='messages',
+        content_rowid='rowid',
+        tokenize='trigram'
+      );
+    `);
+    await db.execute(`
+      CREATE TRIGGER IF NOT EXISTS trg_messages_search_fts_insert
+        AFTER INSERT ON messages
+      BEGIN
+        INSERT INTO messages_search_fts(rowid, content) VALUES (NEW.rowid, NEW.content);
+      END;
+    `);
+    await db.execute(`
+      CREATE TRIGGER IF NOT EXISTS trg_messages_search_fts_update
+        AFTER UPDATE OF content ON messages
+      BEGIN
+        INSERT INTO messages_search_fts(messages_search_fts, rowid, content) VALUES ('delete', OLD.rowid, OLD.content);
+        INSERT INTO messages_search_fts(rowid, content) VALUES (NEW.rowid, NEW.content);
+      END;
+    `);
+    await db.execute(`
+      CREATE TRIGGER IF NOT EXISTS trg_messages_search_fts_delete
+        AFTER DELETE ON messages
+      BEGIN
+        INSERT INTO messages_search_fts(messages_search_fts, rowid, content) VALUES ('delete', OLD.rowid, OLD.content);
+      END;
+    `);
+    await ensureFtsIndexSynced(db, 'messages_search_fts');
+    hasTrigramMessageSearchIndex = true;
+  } catch (e) {
+    hasTrigramMessageSearchIndex = false;
+    console.warn('[DB] Trigram message search index is unavailable; falling back to unicode FTS:', e);
+  }
 }
 
 async function ensureMessageColumns(db: Database): Promise<void> {
@@ -522,6 +604,156 @@ export async function getConversations(limit = 100, offset = 0): Promise<Convers
   }));
 }
 
+type MessageFtsTable = 'messages_fts' | 'messages_search_fts';
+
+type ConversationSearchRow = {
+  id: string;
+  title: string;
+  created_at: number;
+  last_message_at: number | null;
+  last_message_preview: string | null;
+  message_count: number;
+  agent_url: string | null;
+  pinned: number | null;
+};
+
+function mapConversationRows(rows: ConversationSearchRow[]): ConversationSummary[] {
+  return rows.map((r) => ({
+    id: r.id,
+    title: r.title,
+    created_at: r.created_at,
+    last_message_at: r.last_message_at ?? r.created_at,
+    last_message_preview: r.last_message_preview ?? '',
+    message_count: r.message_count,
+    agent_url: r.agent_url,
+    pinned: r.pinned,
+  }));
+}
+
+async function searchConversationsWithFtsTable(
+  db: Database,
+  ftsTable: MessageFtsTable,
+  ftsQuery: string,
+  likeQuery: string,
+  limit: number,
+  offset: number
+): Promise<ConversationSummary[]> {
+  const rows = await db.select<ConversationSearchRow[]>(
+    `WITH message_matches AS (
+      SELECT
+        m.conversation_id,
+        MIN(rank) AS search_rank,
+        MAX(m.created_at) AS matched_message_at
+      FROM ${ftsTable}
+      JOIN messages m ON m.rowid = ${ftsTable}.rowid
+      WHERE ${ftsTable} MATCH ?
+      GROUP BY m.conversation_id
+    ),
+    last_msg AS (
+      SELECT conversation_id, content, created_at,
+             ROW_NUMBER() OVER (PARTITION BY conversation_id ORDER BY created_at DESC) AS rn
+      FROM messages
+    ),
+    msg_count AS (
+      SELECT conversation_id, COUNT(*) AS cnt FROM messages GROUP BY conversation_id
+    )
+    SELECT
+      c.id,
+      c.title,
+      c.created_at,
+      c.agent_url,
+      c.pinned,
+      COALESCE(last_msg.created_at, c.created_at) AS last_message_at,
+      COALESCE(SUBSTR(last_msg.content, 1, 120), '') AS last_message_preview,
+      COALESCE(msg_count.cnt, 0) AS message_count
+    FROM conversations c
+    LEFT JOIN message_matches ON message_matches.conversation_id = c.id
+    LEFT JOIN last_msg ON last_msg.conversation_id = c.id AND last_msg.rn = 1
+    LEFT JOIN msg_count ON msg_count.conversation_id = c.id
+    WHERE LOWER(c.title) LIKE ? ESCAPE '\\' OR message_matches.conversation_id IS NOT NULL
+    ORDER BY
+      c.pinned DESC,
+      CASE WHEN LOWER(c.title) LIKE ? ESCAPE '\\' THEN 0 ELSE 1 END,
+      COALESCE(message_matches.search_rank, 999999.0),
+      COALESCE(message_matches.matched_message_at, last_message_at) DESC,
+      last_message_at DESC
+    LIMIT ? OFFSET ?`,
+    [ftsQuery, likeQuery, likeQuery, limit, offset]
+  );
+
+  return mapConversationRows(rows);
+}
+
+async function searchConversationsByTitle(
+  db: Database,
+  likeQuery: string,
+  limit: number,
+  offset: number
+): Promise<ConversationSummary[]> {
+  const rows = await db.select<ConversationSearchRow[]>(
+    `SELECT
+      c.id,
+      c.title,
+      c.created_at,
+      c.agent_url,
+      c.pinned,
+      COALESCE(last_msg.created_at, c.created_at) AS last_message_at,
+      COALESCE(SUBSTR(last_msg.content, 1, 120), '') AS last_message_preview,
+      COALESCE(msg_count.cnt, 0) AS message_count
+    FROM conversations c
+    LEFT JOIN (
+      SELECT conversation_id, content, created_at,
+             ROW_NUMBER() OVER (PARTITION BY conversation_id ORDER BY created_at DESC) AS rn
+      FROM messages
+    ) last_msg ON last_msg.conversation_id = c.id AND last_msg.rn = 1
+    LEFT JOIN (
+      SELECT conversation_id, COUNT(*) AS cnt FROM messages GROUP BY conversation_id
+    ) msg_count ON msg_count.conversation_id = c.id
+    WHERE LOWER(c.title) LIKE ? ESCAPE '\\'
+    ORDER BY c.pinned DESC, last_message_at DESC
+    LIMIT ? OFFSET ?`,
+    [likeQuery, limit, offset]
+  );
+
+  return mapConversationRows(rows);
+}
+
+export async function searchConversations(query: string, limit = 100, offset = 0): Promise<ConversationSummary[]> {
+  const trimmed = query.trim();
+  if (!trimmed) return [];
+
+  const db = await getDb();
+  const likeQuery = buildLikeQuery(trimmed);
+  const compactLength = Array.from(trimmed.replace(/\s+/g, '')).length;
+
+  if (compactLength >= 3 && hasTrigramMessageSearchIndex !== false) {
+    try {
+      return await searchConversationsWithFtsTable(
+        db,
+        'messages_search_fts',
+        buildFtsPhraseQuery(trimmed),
+        likeQuery,
+        limit,
+        offset
+      );
+    } catch (e) {
+      hasTrigramMessageSearchIndex = false;
+      console.warn('[DB] Trigram conversation search failed; falling back to unicode FTS:', e);
+    }
+  }
+
+  const tokenQuery = buildFtsTokenQuery(trimmed);
+  if (tokenQuery) {
+    try {
+      return await searchConversationsWithFtsTable(db, 'messages_fts', tokenQuery, likeQuery, limit, offset);
+    } catch (e) {
+      console.warn('[DB] Unicode FTS conversation search failed; falling back to title search:', e);
+    }
+  }
+
+  return searchConversationsByTitle(db, likeQuery, limit, offset);
+}
+
 // ---------------------------------------------------------------------------
 // 消息 (Message)
 // ---------------------------------------------------------------------------
@@ -628,11 +860,8 @@ export async function searchMessages(
   offset = 0
 ): Promise<Array<{ message: Message; conversation_title: string; snippet: string; rank: number }>> {
   const db = await getDb();
-  const likeQuery = query
-    .trim()
-    .split(/\s+/)
-    .map(w => `"${w.replace(/"/g, '""')}"`)
-    .join(' ');
+  const likeQuery = buildFtsTokenQuery(query);
+  if (!likeQuery) return [];
 
   if (conversationId) {
     return db.select(

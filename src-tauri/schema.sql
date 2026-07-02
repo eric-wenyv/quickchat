@@ -107,6 +107,36 @@ INSERT INTO messages_fts(messages_fts, rowid, content)
 VALUES ('delete', OLD.rowid, OLD.content);
 END;
 -- =============================================================================
+-- 3b. 会话搜索加速索引 (messages_search_fts) — 基于 FTS5 trigram
+-- =============================================================================
+-- 用于侧边栏跨会话历史消息搜索。trigram 分词器支持子串匹配，适合大量消息的快速检索。
+-- 若运行环境 SQLite 不支持 trigram，应用会自动退回 messages_fts。
+CREATE VIRTUAL TABLE IF NOT EXISTS messages_search_fts USING fts5(
+    content,
+    content = 'messages',
+    content_rowid = 'rowid',
+    tokenize = 'trigram'
+);
+CREATE TRIGGER IF NOT EXISTS trg_messages_search_fts_insert
+AFTER
+INSERT ON messages BEGIN
+INSERT INTO messages_search_fts(rowid, content)
+VALUES (NEW.rowid, NEW.content);
+END;
+CREATE TRIGGER IF NOT EXISTS trg_messages_search_fts_update
+AFTER
+UPDATE OF content ON messages BEGIN
+INSERT INTO messages_search_fts(messages_search_fts, rowid, content)
+VALUES ('delete', OLD.rowid, OLD.content);
+INSERT INTO messages_search_fts(rowid, content)
+VALUES (NEW.rowid, NEW.content);
+END;
+CREATE TRIGGER IF NOT EXISTS trg_messages_search_fts_delete
+AFTER DELETE ON messages BEGIN
+INSERT INTO messages_search_fts(messages_search_fts, rowid, content)
+VALUES ('delete', OLD.rowid, OLD.content);
+END;
+-- =============================================================================
 -- 4. 模型配置表 (model_configs)
 -- =============================================================================
 CREATE TABLE IF NOT EXISTS model_configs (

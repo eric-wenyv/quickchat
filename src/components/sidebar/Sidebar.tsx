@@ -13,6 +13,8 @@ interface SidebarProps {
   onPinConversation?: (id: UUID) => void;
   onSearchChange: (query: string) => void;
   isLoading: boolean;
+  /** 会话搜索是否正在执行 */
+  isSearching?: boolean;
   /** 当前搜索关键词 */
   searchQuery: string;
   /** 打开模型设置 */
@@ -43,6 +45,7 @@ const Sidebar: React.FC<SidebarProps> = ({
   onPinConversation,
   onSearchChange,
   isLoading,
+  isSearching = false,
   searchQuery,
   onOpenSettings,
   onOpenAgentBrowser,
@@ -62,16 +65,18 @@ const Sidebar: React.FC<SidebarProps> = ({
 
         {/* B-3: 搜索框 */}
         <div style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
-          <SearchBar onSearch={onSearchChange} />
+          <SearchBar onSearch={onSearchChange} query={searchQuery} />
         </div>
 
         {/* 搜索结果统计 */}
         {searchQuery.trim() && (
           <div className="flex items-center justify-between px-2 py-1.5 mb-1" style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
             <span className="text-[11px] text-linear-text-tertiary font-medium">
-              {conversations.length > 0
-                ? `找到 ${conversations.length} 个结果`
-                : '无匹配结果'}
+              {isSearching
+                ? '搜索中...'
+                : conversations.length > 0
+                  ? `找到 ${conversations.length} 个结果`
+                  : '无匹配结果'}
             </span>
             <button
               onClick={() => onSearchChange('')}

@@ -4,20 +4,29 @@ import { useDebounce } from '@/hooks/useDebounce';
 interface SearchBarProps {
   onSearch: (query: string) => void;
   placeholder?: string;
+  query?: string;
 }
 
 /**
  * B-3: SearchBar (Linear-style)
  * 隐形搜索栏：仅保留图标和文字，Hover 时才显示极淡背景框。
  */
-const SearchBar: React.FC<SearchBarProps> = ({ onSearch, placeholder = '搜索' }) => {
+const SearchBar: React.FC<SearchBarProps> = ({ onSearch, placeholder = '搜索', query: externalQuery }) => {
   const [query, setQuery] = useState('');
   const [isFocused, setIsFocused] = useState(false);
   const debouncedQuery = useDebounce(query, 300);
   const inputRef = useRef<HTMLInputElement>(null);
+  const externalQueryRef = useRef(externalQuery);
 
   const onSearchRef = useRef(onSearch);
   onSearchRef.current = onSearch;
+
+  useEffect(() => {
+    if (externalQueryRef.current !== externalQuery && externalQuery === '') {
+      setQuery('');
+    }
+    externalQueryRef.current = externalQuery;
+  }, [externalQuery]);
 
   useEffect(() => {
     onSearchRef.current(debouncedQuery);

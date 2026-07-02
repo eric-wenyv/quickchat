@@ -90,8 +90,14 @@ export function useChatScroll({ messages, conversationKey }: UseChatScrollOption
     // 会话切换时，跳过"新消息"滚动逻辑（由外部 restoreScrollMessageId 处理恢复）
     if (conversationChanged) return;
 
-    // 场景 1：检测新增的用户消息，滚动到该消息
-    if (curr.length > prev.length) {
+    const didPrependHistory =
+      prev.length > 0 &&
+      curr.length > prev.length &&
+      curr[0]?.id !== prev[0]?.id &&
+      curr[curr.length - 1]?.id === prev[prev.length - 1]?.id;
+
+    // 场景 1：检测新增的用户消息，滚动到该消息；向上分页 prepend 历史时跳过。
+    if (curr.length > prev.length && !didPrependHistory) {
       const newMessages = curr.slice(prev.length);
       for (let i = 0; i < newMessages.length; i++) {
         if (newMessages[i].role === 'user') {

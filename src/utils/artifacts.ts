@@ -268,7 +268,8 @@ body :where(.qc-artifact-stat) {
   background: rgba(255, 255, 255, 0.035) !important;
   padding: 8px 10px !important;
 }
-body :where(.qc-artifact-log, .log, .logs, .execution-log, .console-log, [data-role="log"], [data-qc-policy-hidden="true"]) {
+body :where(.qc-artifact-log),
+body :where(.log, .logs, .execution-log, .console-log, [data-role="log"], [data-qc-policy-hidden="true"]) {
   display: none !important;
 }
 body :where(.qc-artifact[data-allow-logs="true"] .qc-artifact-log, .qc-artifact[data-allow-logs="true"] .log, .qc-artifact[data-allow-logs="true"] .logs, .qc-artifact[data-allow-logs="true"] .execution-log, .qc-artifact[data-allow-logs="true"] .console-log, .qc-artifact[data-allow-logs="true"] [data-role="log"]) {

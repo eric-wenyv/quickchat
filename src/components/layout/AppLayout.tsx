@@ -36,6 +36,8 @@ interface AppLayoutProps {
   isLoadingConversations: boolean;
   /** 消息是否正在初次加载 */
   isLoadingMessages: boolean;
+  /** 是否正在加载更早历史消息 */
+  isLoadingMoreMessages: boolean;
   /** 是否正在发送消息 (禁用输入框) */
   isSending: boolean;
   /** 是否有更多历史消息 */
@@ -220,6 +222,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
   activeModelId,
   isLoadingConversations,
   isLoadingMessages,
+  isLoadingMoreMessages,
   isSending,
   hasMoreMessages,
   onSelectConversation,
@@ -431,6 +434,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
               conversation={activeConversation}
               messages={messages}
               isLoadingMessages={isLoadingMessages}
+              isLoadingMore={isLoadingMoreMessages}
               onSendMessage={onSendMessage}
               onLoadMore={onLoadMoreMessages}
               hasMore={hasMoreMessages}

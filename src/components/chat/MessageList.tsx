@@ -1,4 +1,4 @@
-import { useRef, useEffect, useState, useCallback, forwardRef, useImperativeHandle } from 'react';
+import { useRef, useEffect, useState, useCallback, useLayoutEffect, forwardRef, useImperativeHandle } from 'react';
 import type { Message, UUID } from '@/types/types';
 import { useChatScroll } from '@/hooks/useChatScroll';
 import MessageBubble from './MessageBubble';
@@ -33,9 +33,11 @@ const MessageList = forwardRef<MessageListHandle, MessageListProps>(
       isNearBottom,
       enableAutoScroll,
       scrollToMessage,
+      scrollToBottom,
     } = useChatScroll({ messages, conversationKey: messages[0]?.conversation_id ?? null });
     const loadMoreRef = useRef<HTMLDivElement>(null);
     const messageRefs = useRef<(HTMLDivElement | null)[]>([]);
+    const pendingPrependScrollRef = useRef<{ firstMessageId: UUID; scrollHeight: number; scrollTop: number } | null>(null);
     const [activeIndex, setActiveIndex] = useState(0);
     const rafRef = useRef<number | null>(null);
     const restoredScrollForRef = useRef<string | null>(null);
@@ -60,15 +62,25 @@ const MessageList = forwardRef<MessageListHandle, MessageListProps>(
       onActiveIndexChange?.(activeIndex);
     }, [activeIndex, onActiveIndexChange]);
 
-    // 切换会话后恢复滚动位置
+    // 切换会话后恢复滚动位置；没有保存位置时落到当前最新页底部。
     useEffect(() => {
-      if (!restoreScrollMessageId) {
+      if (messages.length === 0) {
         restoredScrollForRef.current = null;
         return;
       }
+
       const convKey = messages[0]?.conversation_id ?? '';
-      const restoreKey = `${convKey}:${restoreScrollMessageId}`;
+      const restoreTarget = restoreScrollMessageId ?? '__bottom__';
+      const restoreKey = `${convKey}:${restoreTarget}`;
       if (restoredScrollForRef.current === restoreKey) return;
+
+      if (!restoreScrollMessageId) {
+        restoredScrollForRef.current = restoreKey;
+        requestAnimationFrame(() => {
+          requestAnimationFrame(scrollToBottom);
+        });
+        return;
+      }
 
       const index = messages.findIndex(m => m.id === restoreScrollMessageId);
       if (index === -1) return; // 消息还未加载，等下次 effect
@@ -80,7 +92,7 @@ const MessageList = forwardRef<MessageListHandle, MessageListProps>(
           scrollToMessage(index);
         });
       });
-    }, [restoreScrollMessageId, messages, scrollToMessage]);
+    }, [restoreScrollMessageId, messages, scrollToMessage, scrollToBottom]);
 
     // 计算当前视口中心最接近的消息索引
     const updateActiveIndex = useCallback(() => {
@@ -100,6 +112,27 @@ const MessageList = forwardRef<MessageListHandle, MessageListProps>(
       });
       setActiveIndex(closestIdx);
     }, [messages.length]);
+
+    useLayoutEffect(() => {
+      const pending = pendingPrependScrollRef.current;
+      const container = scrollRef.current;
+      if (!pending || !container) return;
+
+      const stillContainsAnchor = messages.some(m => m.id === pending.firstMessageId);
+      const didPrependHistory = stillContainsAnchor && messages[0]?.id !== pending.firstMessageId;
+      if (!didPrependHistory) return;
+
+      const heightDelta = container.scrollHeight - pending.scrollHeight;
+      container.scrollTop = pending.scrollTop + heightDelta;
+      pendingPrependScrollRef.current = null;
+      requestAnimationFrame(updateActiveIndex);
+    }, [messages, scrollRef, updateActiveIndex]);
+
+    useEffect(() => {
+      if (!isLoadingMore && pendingPrependScrollRef.current?.firstMessageId === messages[0]?.id) {
+        pendingPrependScrollRef.current = null;
+      }
+    }, [isLoadingMore, messages]);
 
     useEffect(() => {
       const container = scrollRef.current;
@@ -132,6 +165,15 @@ const MessageList = forwardRef<MessageListHandle, MessageListProps>(
       const observer = new IntersectionObserver(
         (entries) => {
           if (entries[0].isIntersecting) {
+            const container = scrollRef.current;
+            const firstMessage = messages[0];
+            if (container && firstMessage) {
+              pendingPrependScrollRef.current = {
+                firstMessageId: firstMessage.id,
+                scrollHeight: container.scrollHeight,
+                scrollTop: container.scrollTop,
+              };
+            }
             onLoadMore();
           }
         },
@@ -147,7 +189,7 @@ const MessageList = forwardRef<MessageListHandle, MessageListProps>(
       }
 
       return () => observer.disconnect();
-    }, [hasMore, isLoadingMore, onLoadMore, scrollRef]);
+    }, [hasMore, isLoadingMore, onLoadMore, scrollRef, messages]);
 
     return (
       <div

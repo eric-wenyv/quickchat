@@ -596,12 +596,22 @@ export async function getMessages(
   const db = await getDb();
   if (beforeTimestamp) {
     return db.select<Message[]>(
-      'SELECT * FROM messages WHERE conversation_id = ? AND created_at < ? ORDER BY created_at ASC LIMIT ?',
+      `SELECT * FROM (
+        SELECT * FROM messages
+        WHERE conversation_id = ? AND created_at < ?
+        ORDER BY created_at DESC
+        LIMIT ?
+      ) ORDER BY created_at ASC`,
       [conversationId, beforeTimestamp, limit]
     );
   }
   return db.select<Message[]>(
-    'SELECT * FROM messages WHERE conversation_id = ? ORDER BY created_at ASC LIMIT ?',
+    `SELECT * FROM (
+      SELECT * FROM messages
+      WHERE conversation_id = ?
+      ORDER BY created_at DESC
+      LIMIT ?
+    ) ORDER BY created_at ASC`,
     [conversationId, limit]
   );
 }

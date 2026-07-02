@@ -65,6 +65,9 @@ const BUILT_IN_ARTIFACT_PROMPT = [
   'Use the user\'s language for all surrounding explanation and visible artifact text. Only create an artifact when it adds value; otherwise answer normally.',
 ].join('\n');
 
+const CONVERSATION_LIST_LIMIT = 100;
+const MESSAGE_PAGE_SIZE = 120;
+
 // -----------------------------------------------------------------------------
 // 全局 Error Boundary
 // -----------------------------------------------------------------------------
@@ -119,6 +122,8 @@ export default function App() {
 
   const [isLoadingConversations, setIsLoadingConversations] = useState(false);
   const [isLoadingMessages, setIsLoadingMessages] = useState(false);
+  const [isLoadingMoreMessages, setIsLoadingMoreMessages] = useState(false);
+  const [hasMoreMessages, setHasMoreMessages] = useState(false);
   const [sendingByConversationId, setSendingByConversationId] = useState<ThreadSendingState>({});
 
   const [searchQuery, setSearchQuery] = useState("");
@@ -178,6 +183,9 @@ export default function App() {
       return b.last_message_at - a.last_message_at;
     });
 
+  const limitConversationList = (convs: ConversationSummary[]) =>
+    sortConversations(convs).slice(0, CONVERSATION_LIST_LIMIT);
+
   // --- Agent 浏览器操作 ---
   const handleOpenAgentBrowser = () => {
     const url = window.prompt('请输入 Agent 服务地址：', 'http://127.0.0.1:5494');
@@ -206,7 +214,7 @@ export default function App() {
 
       createConversation(newConv)
         .then(() => {
-          setConversations(prev => sortConversations([{
+          setConversations(prev => limitConversationList([{
             id: newConv.id,
             title: newConv.title,
             created_at: newConv.created_at,
@@ -231,9 +239,9 @@ export default function App() {
       try {
         await dbUpdateConversation(activeConversation.id, { agent_url: newUrl });
         setActiveConversation(prev => prev ? { ...prev, agent_url: newUrl } : prev);
-        setConversations(prev => prev.map(c =>
+        setConversations(prev => limitConversationList(prev.map(c =>
           c.id === activeConversation.id ? { ...c, agent_url: newUrl } : c
-        ));
+        )));
       } catch (e) {
         console.error('更新 Agent URL 失败:', e);
       }
@@ -286,11 +294,11 @@ export default function App() {
     setIsLoadingConversations(true);
     try {
       const [convs, mods, prompts] = await Promise.all([
-        getConversations(100, 0),
+        getConversations(CONVERSATION_LIST_LIMIT, 0),
         getModelConfigs(),
         getSystemPrompts(),
       ]);
-      setConversations(convs);
+      setConversations(limitConversationList(convs));
       setModels(mods);
       setSystemPrompts(prompts);
 
@@ -419,7 +427,11 @@ export default function App() {
 
     setSelectedConversationId(id);
     setIsLoadingMessages(true);
+    setIsLoadingMoreMessages(false);
+    setHasMoreMessages(false);
+    setScrollRestoreMessageId(null);
     setMessages(canUseCachedMessages ? cachedMessages : []);
+    setHasMoreMessages(canUseCachedMessages ? (summary?.message_count ?? 0) > cachedMessages.length : false);
 
     if (summary) {
       activeConversationIdRef.current = id;
@@ -446,7 +458,7 @@ export default function App() {
     try {
       const [convDetail, convMessages] = await Promise.all([
         getConversation(id),
-        getMessages(id, 200),
+        getMessages(id, MESSAGE_PAGE_SIZE),
       ]);
 
       if (selectRequestIdRef.current !== requestId) return;
@@ -473,10 +485,10 @@ export default function App() {
         }
       } else {
         // 会话可能不存在，从列表找摘要信息
-        const convs = await getConversations(100, 0);
+        const convs = await getConversations(CONVERSATION_LIST_LIMIT, 0);
         if (selectRequestIdRef.current !== requestId) return;
 
-        setConversations(convs);
+        setConversations(limitConversationList(convs));
         const s = convs.find(c => c.id === id);
         if (s) {
           activeConversationIdRef.current = id;
@@ -510,6 +522,8 @@ export default function App() {
       const nextMessages = canUseCachedMessages ? cachedMessages : convMessages;
       setMessages(nextMessages);
       messagesByConversationRef.current[id] = nextMessages;
+      const totalMessageCount = summary?.message_count ?? convMessages.length;
+      setHasMoreMessages(totalMessageCount > nextMessages.length || (!canUseCachedMessages && convMessages.length === MESSAGE_PAGE_SIZE));
     } catch (e) {
       if (selectRequestIdRef.current !== requestId) return;
       console.error('加载消息失败:', e);
@@ -560,6 +574,8 @@ export default function App() {
     setActiveThinkingLevel(thinkingLevel);
     setMessages([]);
     messagesByConversationRef.current[newConv.id] = [];
+    setHasMoreMessages(false);
+    setIsLoadingMoreMessages(false);
     setScrollRestoreMessageId(null);
     setAgentMode(false);
   }, [models, activeConversation, messages, agentMode, conversations]);
@@ -571,8 +587,8 @@ export default function App() {
       delete abortControllersRef.current[id];
       delete messagesByConversationRef.current[id];
       delete conversationScrollMessageIdRef.current[id];
-      const convs = await getConversations(100, 0);
-      setConversations(convs);
+      const convs = await getConversations(CONVERSATION_LIST_LIMIT, 0);
+      setConversations(limitConversationList(convs));
       if (activeConversation?.id === id) {
         if (convs.length > 0) {
           await handleSelectConversation(convs[0].id);
@@ -593,8 +609,8 @@ export default function App() {
       if (!conv) return;
       const newPinned = conv.pinned ? 0 : 1;
       await dbUpdateConversation(id, { pinned: newPinned });
-      const convs = await getConversations(100, 0);
-      setConversations(convs);
+      const convs = await getConversations(CONVERSATION_LIST_LIMIT, 0);
+      setConversations(limitConversationList(convs));
       showToast(newPinned ? '已固定' : '已取消固定', newPinned ? '对话已置顶' : '对话已取消置顶', 'success');
     } catch (e) {
       showToast('操作失败', String(e));
@@ -606,8 +622,8 @@ export default function App() {
       await dbDeleteMessage(msgId);
       setMessages(prev => prev.filter(m => m.id !== msgId));
       // 刷新会话列表（更新消息数和预览）
-      const convs = await getConversations(100, 0);
-      setConversations(convs);
+      const convs = await getConversations(CONVERSATION_LIST_LIMIT, 0);
+      setConversations(limitConversationList(convs));
       showToast('已删除', '消息已移除', 'success');
     } catch (e) {
       showToast('删除失败', String(e));
@@ -619,8 +635,8 @@ export default function App() {
     if (!trimmed) return;
     try {
       await dbUpdateConversation(id, { title: trimmed });
-      const convs = await getConversations(100, 0);
-      setConversations(convs);
+      const convs = await getConversations(CONVERSATION_LIST_LIMIT, 0);
+      setConversations(limitConversationList(convs));
       if (activeConversation?.id === id) {
         setActiveConversation(prev => prev ? { ...prev, title: trimmed } : prev);
       }
@@ -830,7 +846,7 @@ export default function App() {
     if (!isExisting) {
       try {
         await createConversation(threadConversation);
-        setConversations(prev => sortConversations([{
+        setConversations(prev => limitConversationList([{
           id: threadConversation.id,
           title: threadConversation.title,
           created_at: threadConversation.created_at,
@@ -908,7 +924,7 @@ export default function App() {
           message_count: 1,
           pinned: 0,
         }, ...prev];
-      return sortConversations(updated);
+      return limitConversationList(updated);
     });
 
     // ── 图片描述：当前模型不支持 vision 时，用 vision 模型解析图片 ──
@@ -1104,7 +1120,7 @@ export default function App() {
       });
 
       // 更新会话列表
-      setConversations(prev => sortConversations(prev.map(c =>
+      setConversations(prev => limitConversationList(prev.map(c =>
         c.id === convId
           ? { ...c, last_message_preview: finalContent.slice(0, 120), last_message_at: Date.now(), message_count: c.message_count + 1 }
           : c
@@ -1124,9 +1140,9 @@ export default function App() {
           const newTitle = await generateConversationTitle(titleMessages, openrouterModel);
           if (newTitle && newTitle !== threadConversation.title) {
             await dbUpdateConversation(convId, { title: newTitle });
-            setConversations(prev => prev.map(c =>
+            setConversations(prev => limitConversationList(prev.map(c =>
               c.id === convId ? { ...c, title: newTitle } : c
-            ));
+            )));
             if (activeConversationIdRef.current === convId) {
               setActiveConversation(prev => prev ? { ...prev, title: newTitle } : prev);
             }
@@ -1164,7 +1180,43 @@ export default function App() {
   };
 
   const handleLoadMoreMessages = async () => {
-    // 分页暂未实现，一次性加载
+    const convId = activeConversationIdRef.current;
+    if (!convId || isLoadingMoreMessages || !hasMoreMessages) return;
+
+    const currentMessages = messagesByConversationRef.current[convId] ?? messagesRef.current;
+    const firstMessage = currentMessages[0];
+    if (!firstMessage) {
+      setHasMoreMessages(false);
+      return;
+    }
+
+    setIsLoadingMoreMessages(true);
+    try {
+      const olderMessages = await getMessages(convId, MESSAGE_PAGE_SIZE, firstMessage.created_at);
+      if (activeConversationIdRef.current !== convId) return;
+
+      if (olderMessages.length === 0) {
+        setHasMoreMessages(false);
+        return;
+      }
+
+      setMessages(prev => {
+        if (activeConversationIdRef.current !== convId) return prev;
+        const existingIds = new Set(prev.map(m => m.id));
+        const uniqueOlder = olderMessages.filter(m => !existingIds.has(m.id));
+        const next = [...uniqueOlder, ...prev];
+        messagesByConversationRef.current[convId] = next;
+        return next;
+      });
+      setHasMoreMessages(olderMessages.length === MESSAGE_PAGE_SIZE);
+    } catch (e) {
+      console.error('加载更多历史失败:', e);
+      showToast('加载更多历史失败', String(e));
+    } finally {
+      if (activeConversationIdRef.current === convId) {
+        setIsLoadingMoreMessages(false);
+      }
+    }
   };
 
   // --- 模型设置 ---
@@ -1312,8 +1364,9 @@ export default function App() {
         activeModelId={activeModelId}
         isLoadingConversations={isLoadingConversations}
         isLoadingMessages={isLoadingMessages}
+        isLoadingMoreMessages={isLoadingMoreMessages}
         isSending={isSending}
-        hasMoreMessages={false}
+        hasMoreMessages={hasMoreMessages}
         onSelectConversation={handleSelectConversation}
         onCreateConversation={handleCreateConversation}
         onDeleteConversation={handleDeleteConversation}

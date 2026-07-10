@@ -66,13 +66,17 @@ body {
 }
 body {
   line-height: 1.5 !important;
+  max-width: 100% !important;
 }
 body > :first-child {
   width: 100% !important;
+  max-width: 100% !important;
+  min-width: 0 !important;
   margin-top: 0 !important;
 }
 body > :where(.app, #app, .container, .wrapper, .page, main, section, article) {
   max-width: 100% !important;
+  min-width: 0 !important;
   margin-left: auto !important;
   margin-right: auto !important;
   background: transparent !important;
@@ -89,9 +93,12 @@ body > :where(.card, .panel, .canvas, .demo, .visualization, .visualizer):only-c
 }
 body :where(.app, .container, .wrapper, .page, main, section, article) {
   max-width: 100% !important;
+  min-width: 0 !important;
 }
 body :where(.qc-artifact) {
   width: 100% !important;
+  max-width: 100% !important;
+  min-width: 0 !important;
   min-height: 0;
   display: flex;
   flex-direction: column;
@@ -208,7 +215,8 @@ body :where(.qc-step-demo th, .qc-step-demo td) {
   padding: 4px 8px !important;
 }
 body :where(.qc-artifact-layout) {
-  min-width: 0;
+  max-width: 100% !important;
+  min-width: 0 !important;
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(260px, 360px);
   gap: clamp(14px, 2vw, 24px);
@@ -219,7 +227,8 @@ body :where(.qc-artifact-layout[data-layout="single"]) {
   grid-template-columns: minmax(0, 1fr);
 }
 body :where(.qc-artifact-canvas) {
-  min-width: 0;
+  max-width: 100% !important;
+  min-width: 0 !important;
   min-height: 0;
   position: relative;
   display: flex;
@@ -227,7 +236,7 @@ body :where(.qc-artifact-canvas) {
   align-items: center;
   justify-content: center;
   gap: var(--qc-gap);
-  overflow: visible;
+  overflow: hidden;
   background: transparent !important;
 }
 body :where(.qc-artifact-canvas > svg, .qc-artifact-canvas > canvas) {
@@ -235,7 +244,8 @@ body :where(.qc-artifact-canvas > svg, .qc-artifact-canvas > canvas) {
   max-height: min(420px, 58vh);
 }
 body :where(.qc-artifact-side) {
-  min-width: 0;
+  max-width: 100% !important;
+  min-width: 0 !important;
   display: flex;
   flex-direction: column;
   gap: 12px;
@@ -281,7 +291,8 @@ body :where(.qc-artifact[data-allow-logs="true"] .qc-artifact-log, .qc-artifact[
   background: rgba(255, 255, 255, 0.04) !important;
 }
 body :where(.stage, .canvas, .visualization, .visualizer, .diagram, .graph, .viewport) {
-  max-width: 100%;
+  max-width: 100% !important;
+  min-width: 0 !important;
   margin-left: auto;
   margin-right: auto;
 }
@@ -297,7 +308,7 @@ body :where(a) {
   color: var(--qc-accent);
 }
 body :where(svg, canvas, img, video) {
-  max-width: 100%;
+  max-width: 100% !important;
 }
 body :where(button, input, select, textarea) {
   font: inherit !important;

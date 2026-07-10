@@ -22,8 +22,9 @@ import {
   getSystemPrompts,
   saveSystemPrompt,
   deleteSystemPrompt,
+  runDatabaseMaintenance,
 } from "./services/db";
-import { appendCitationList, chatCompletion, describeImage, generateConversationTitle, getWebSearchOptions, WEB_SEARCH_TOOL } from "./services/ai";
+import { appendCitationList, chatCompletion, describeImage, generateConversationTitle, generateFallbackConversationTitle, getWebSearchOptions, isPlaceholderConversationTitle, WEB_SEARCH_TOOL } from "./services/ai";
 import type { ChatMessage, ChatContentPart } from "./services/ai";
 import { parseAttachments, getLanguageFromFilename } from "./utils/file";
 import { parseImageDescriptions, serializeImageDescriptions, type ImageDescription } from "./utils/image-description";
@@ -145,6 +146,9 @@ export default function App() {
   const messagesByConversationRef = useRef<Record<UUID, Message[]>>({});
   const selectRequestIdRef = useRef(0);
   const searchRequestIdRef = useRef(0);
+  const initPromiseRef = useRef<Promise<void> | null>(null);
+  const initialLoadPromiseRef = useRef<Promise<void> | null>(null);
+  const databaseMaintenanceStartedRef = useRef(false);
 
   // ── per-conversation 状态：思考程度 + 滚动位置 ──
   const [activeThinkingLevel, setActiveThinkingLevel] = useState<'LOW' | 'MEDIUM' | 'HIGH' | null>(null);
@@ -274,24 +278,53 @@ export default function App() {
   // --- 初始化数据库 & 数据迁移 ---
   useEffect(() => {
     let cancelled = false;
-    (async () => {
-      try {
+    if (!initPromiseRef.current) {
+      initPromiseRef.current = (async () => {
         await initDatabase();
         await migrateFromLocalStorage();
+      })();
+    }
+
+    initPromiseRef.current
+      .then(() => {
         if (cancelled) return;
         setDbReady(true);
-      } catch (e) {
+      })
+      .catch((e) => {
+        if (cancelled) return;
         console.error('数据库初始化失败:', e);
         showToast('数据库初始化失败', String(e));
-      }
-    })();
+      });
+
     return () => { cancelled = true; };
   }, []);
 
   // --- 数据库就绪后加载数据 ---
   useEffect(() => {
     if (!dbReady) return;
-    loadAll();
+
+    let cancelled = false;
+    let maintenanceTimer: number | null = null;
+    if (!initialLoadPromiseRef.current) {
+      initialLoadPromiseRef.current = loadAll();
+    }
+
+    initialLoadPromiseRef.current.finally(() => {
+      if (cancelled || databaseMaintenanceStartedRef.current) return;
+      databaseMaintenanceStartedRef.current = true;
+      maintenanceTimer = window.setTimeout(() => {
+        runDatabaseMaintenance().catch((e) => {
+          console.warn('数据库后台维护失败:', e);
+        });
+      }, 1200);
+    });
+
+    return () => {
+      cancelled = true;
+      if (maintenanceTimer !== null) {
+        window.clearTimeout(maintenanceTimer);
+      }
+    };
   }, [dbReady]);
 
   const loadAll = async () => {
@@ -302,7 +335,8 @@ export default function App() {
         getModelConfigs(),
         getSystemPrompts(),
       ]);
-      setConversations(limitConversationList(convs));
+      const limitedConversations = limitConversationList(convs);
+      setConversations(limitedConversations);
       setModels(mods);
       setSystemPrompts(prompts);
 
@@ -317,17 +351,11 @@ export default function App() {
       // 恢复上次活跃会话，失效时 fallback 到最新会话
       let hasSelectedConversation = false;
       const lastActiveId = localStorage.getItem("quick_chat_last_active_conv");
-      if (lastActiveId) {
-        const target = convs.find(c => c.id === lastActiveId);
-        if (target) {
-          await handleSelectConversation(target.id);
-          hasSelectedConversation = true;
-        } else if (convs.length > 0) {
-          await handleSelectConversation(convs[0].id);
-          hasSelectedConversation = true;
-        }
-      } else if (convs.length > 0) {
-        await handleSelectConversation(convs[0].id);
+      const targetConversation =
+        (lastActiveId ? limitedConversations.find(c => c.id === lastActiveId) : undefined) ??
+        limitedConversations[0];
+      if (targetConversation) {
+        await handleSelectConversation(targetConversation.id, targetConversation);
         hasSelectedConversation = true;
       }
 
@@ -432,7 +460,7 @@ export default function App() {
   }, [dbReady, normalizedSearchQuery, conversations]);
 
   // --- 会话操作 ---
-  const handleSelectConversation = async (id: UUID) => {
+  const handleSelectConversation = async (id: UUID, summaryOverride?: ConversationSummary) => {
     // 保存即将离开的会话的滚动位置（内存 + DB 持久化）
     const oldConvId = activeConversationIdRef.current;
     if (oldConvId && oldConvId !== id) {
@@ -445,7 +473,7 @@ export default function App() {
 
     const requestId = ++selectRequestIdRef.current;
     const cachedMessages = messagesByConversationRef.current[id];
-    const summary = conversations.find(c => c.id === id);
+    const summary = summaryOverride ?? conversations.find(c => c.id === id);
     const canUseCachedMessages = cachedMessages !== undefined && (
       cachedMessages.length > 0 ||
       (summary?.message_count ?? 0) === 0
@@ -1152,18 +1180,25 @@ export default function App() {
           : c
       )));
 
-      // 静默生成/更新对话标题（后台执行，失败不提示）
+      // 静默生成/更新对话标题（后台执行，模型失败时使用本地兜底）
       (async () => {
         try {
-          const openrouterModel = models.find(m => m.provider === 'openrouter');
-          if (!openrouterModel?.api_key) return;
-
           const titleMessages = [...previousThreadMessages, userMsg, finalMsg].map(m => ({
             role: m.role,
             content: m.content,
           }));
 
-          const newTitle = await generateConversationTitle(titleMessages, openrouterModel);
+          let newTitle: string | null = null;
+          try {
+            newTitle = await generateConversationTitle(titleMessages, activeModel);
+          } catch (e) {
+            console.warn('标题生成失败，使用本地兜底:', e);
+          }
+
+          if (!newTitle && isPlaceholderConversationTitle(threadConversation.title)) {
+            newTitle = generateFallbackConversationTitle(titleMessages);
+          }
+
           if (newTitle && newTitle !== threadConversation.title) {
             await dbUpdateConversation(convId, { title: newTitle });
             setConversations(prev => limitConversationList(prev.map(c =>
@@ -1173,8 +1208,8 @@ export default function App() {
               setActiveConversation(prev => prev ? { ...prev, title: newTitle } : prev);
             }
           }
-        } catch {
-          // 标题生成失败，静默忽略
+        } catch (e) {
+          console.warn('更新会话标题失败:', e);
         }
       })();
 

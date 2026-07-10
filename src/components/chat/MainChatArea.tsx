@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useRef, useCallback, useEffect } from 'react';
+import React, { Suspense, lazy, useState, useMemo, useRef, useCallback, useEffect } from 'react';
 import type { Conversation, Message, ModelConfig, SystemPrompt, UUID } from '@/types/types';
 import { MessageHeader } from './MessageHeader';
 import { useAutoFocusChatInput } from '@/hooks/useAutoFocusChatInput';
@@ -8,10 +8,12 @@ interface TokenStats {
   totalInput: number;
   totalOutput: number;
 }
-import MessageList, { type MessageListHandle } from './MessageList';
+import type { MessageListHandle } from './MessageList';
 import { EmptyState } from './EmptyState';
 import { ChatInputFooter } from './ChatInputFooter';
 import { parseAttachments } from '@/utils/file';
+
+const MessageList = lazy(() => import('./MessageList'));
 
 interface MainChatAreaProps {
   conversation: Conversation | null;
@@ -104,6 +106,7 @@ export const MainChatArea: React.FC<MainChatAreaProps> = ({
   onStopGeneration,
 }) => {
   const showNoMessages = conversation && messages.length === 0 && !isLoadingMessages;
+  const showLoadingMessages = conversation && messages.length === 0 && isLoadingMessages;
 
   // 全局键盘自动聚焦：用户按下任意可打印字符时自动聚焦聊天输入框，
   // 但若当前焦点在其他文本输入（搜索框、设置里的 input 等）或模态遮罩打开时不抢占。
@@ -250,9 +253,16 @@ export const MainChatArea: React.FC<MainChatAreaProps> = ({
 
       {/* 消息展示核心区 */}
       <main className="flex-1 relative overflow-hidden flex flex-col min-h-0">
-            {showNoMessages ? (
+            {showNoMessages || showLoadingMessages ? (
               <div className="flex-1 flex flex-col items-center justify-center px-4 pb-12">
-                <EmptyState conversationId={conversation.id} />
+                {showLoadingMessages ? (
+                  <div className="flex flex-col items-center gap-3 text-linear-text-tertiary">
+                    <div className="w-8 h-8 border-2 border-linear-border border-t-linear-accent rounded-full animate-spin" />
+                    <span className="text-sm">正在加载消息...</span>
+                  </div>
+                ) : (
+                  <EmptyState conversationId={conversation.id} />
+                )}
                 <div className="w-full max-w-2xl mt-8">
                   <ChatInputFooter
                     onSend={onSendMessage}
@@ -367,17 +377,25 @@ export const MainChatArea: React.FC<MainChatAreaProps> = ({
                     </div>
                   )}
 
-                  <MessageList
-                    ref={messageListRef}
-                    messages={messages}
-                    onLoadMore={onLoadMore}
-                    hasMore={hasMore}
-                    isLoadingMore={isLoadingMore}
-                    onDeleteMessage={onDeleteMessage}
-                    onActiveIndexChange={setActiveMessageIndex}
-                    onScrollStateChange={setScrollState}
-                    restoreScrollMessageId={scrollRestoreMessageId}
-                  />
+                  <Suspense
+                    fallback={
+                      <div className="flex-1 flex items-center justify-center text-linear-text-tertiary">
+                        <div className="w-7 h-7 border-2 border-linear-border border-t-linear-accent rounded-full animate-spin" />
+                      </div>
+                    }
+                  >
+                    <MessageList
+                      ref={messageListRef}
+                      messages={messages}
+                      onLoadMore={onLoadMore}
+                      hasMore={hasMore}
+                      isLoadingMore={isLoadingMore}
+                      onDeleteMessage={onDeleteMessage}
+                      onActiveIndexChange={setActiveMessageIndex}
+                      onScrollStateChange={setScrollState}
+                      restoreScrollMessageId={scrollRestoreMessageId}
+                    />
+                  </Suspense>
 
                   {/* 固定跳转至底部按钮（不随消息列表滚动） */}
                   {!scrollState.isNearBottom && (

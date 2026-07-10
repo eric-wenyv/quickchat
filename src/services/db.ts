@@ -46,6 +46,145 @@ function buildLikeQuery(query: string): string {
   return `%${escapeLikeQuery(query.trim().toLowerCase())}%`;
 }
 
+const SQLITE_CORRUPTION_ERROR_PATTERNS = [
+  'database disk image is malformed',
+  'sqlite_corrupt',
+  'code: 11',
+  'code: 267',
+];
+
+function stringifyDbError(error: unknown): string {
+  if (typeof error === 'string') return error;
+  if (error instanceof Error) {
+    return `${error.name} ${error.message} ${error.stack ?? ''}`;
+  }
+  try {
+    return JSON.stringify(error);
+  } catch {
+    return String(error);
+  }
+}
+
+export function isSqliteCorruptionError(error: unknown): boolean {
+  const text = stringifyDbError(error).toLowerCase();
+  return SQLITE_CORRUPTION_ERROR_PATTERNS.some((pattern) => text.includes(pattern));
+}
+
+async function createMessageFtsIndex(db: Database): Promise<void> {
+  await db.execute(`
+    CREATE VIRTUAL TABLE IF NOT EXISTS messages_fts USING fts5(
+      content,
+      content='messages',
+      content_rowid='rowid',
+      tokenize='unicode61 remove_diacritics 2'
+    );
+  `);
+  await db.execute(`
+    CREATE TRIGGER IF NOT EXISTS trg_messages_fts_insert
+      AFTER INSERT ON messages
+    BEGIN
+      INSERT INTO messages_fts(rowid, content) VALUES (NEW.rowid, NEW.content);
+    END;
+  `);
+  await db.execute(`
+    CREATE TRIGGER IF NOT EXISTS trg_messages_fts_update
+      AFTER UPDATE OF content ON messages
+    BEGIN
+      INSERT INTO messages_fts(messages_fts, rowid, content) VALUES ('delete', OLD.rowid, OLD.content);
+      INSERT INTO messages_fts(rowid, content) VALUES (NEW.rowid, NEW.content);
+    END;
+  `);
+  await db.execute(`
+    CREATE TRIGGER IF NOT EXISTS trg_messages_fts_delete
+      AFTER DELETE ON messages
+    BEGIN
+      INSERT INTO messages_fts(messages_fts, rowid, content) VALUES ('delete', OLD.rowid, OLD.content);
+    END;
+  `);
+}
+
+async function createTrigramMessageSearchIndex(db: Database): Promise<void> {
+  await db.execute(`
+    CREATE VIRTUAL TABLE IF NOT EXISTS messages_search_fts USING fts5(
+      content,
+      content='messages',
+      content_rowid='rowid',
+      tokenize='trigram'
+    );
+  `);
+  await db.execute(`
+    CREATE TRIGGER IF NOT EXISTS trg_messages_search_fts_insert
+      AFTER INSERT ON messages
+    BEGIN
+      INSERT INTO messages_search_fts(rowid, content) VALUES (NEW.rowid, NEW.content);
+    END;
+  `);
+  await db.execute(`
+    CREATE TRIGGER IF NOT EXISTS trg_messages_search_fts_update
+      AFTER UPDATE OF content ON messages
+    BEGIN
+      INSERT INTO messages_search_fts(messages_search_fts, rowid, content) VALUES ('delete', OLD.rowid, OLD.content);
+      INSERT INTO messages_search_fts(rowid, content) VALUES (NEW.rowid, NEW.content);
+    END;
+  `);
+  await db.execute(`
+    CREATE TRIGGER IF NOT EXISTS trg_messages_search_fts_delete
+      AFTER DELETE ON messages
+    BEGIN
+      INSERT INTO messages_search_fts(messages_search_fts, rowid, content) VALUES ('delete', OLD.rowid, OLD.content);
+    END;
+  `);
+}
+
+async function dropMessageSearchIndexObjects(db: Database): Promise<void> {
+  const statements = [
+    'DROP TRIGGER IF EXISTS trg_messages_fts_insert;',
+    'DROP TRIGGER IF EXISTS trg_messages_fts_update;',
+    'DROP TRIGGER IF EXISTS trg_messages_fts_delete;',
+    'DROP TRIGGER IF EXISTS trg_messages_search_fts_insert;',
+    'DROP TRIGGER IF EXISTS trg_messages_search_fts_update;',
+    'DROP TRIGGER IF EXISTS trg_messages_search_fts_delete;',
+    'DROP TABLE IF EXISTS messages_fts;',
+    'DROP TABLE IF EXISTS messages_search_fts;',
+  ];
+
+  for (const statement of statements) {
+    await db.execute(statement);
+  }
+}
+
+async function rebuildMessageSearchIndexes(db: Database): Promise<void> {
+  await dropMessageSearchIndexObjects(db);
+
+  await createMessageFtsIndex(db);
+  await db.execute(`INSERT INTO messages_fts(messages_fts) VALUES ('rebuild');`);
+
+  try {
+    await createTrigramMessageSearchIndex(db);
+    await db.execute(`INSERT INTO messages_search_fts(messages_search_fts) VALUES ('rebuild');`);
+    hasTrigramMessageSearchIndex = true;
+  } catch (e) {
+    hasTrigramMessageSearchIndex = false;
+    console.warn('[DB] Failed to rebuild trigram message search index; unicode FTS remains available:', e);
+  }
+}
+
+async function executeWithMessageSearchIndexRepair<T>(
+  db: Database,
+  operation: () => Promise<T>,
+  operationName: string
+): Promise<T> {
+  try {
+    return await operation();
+  } catch (e) {
+    if (!isSqliteCorruptionError(e)) throw e;
+
+    console.warn(`[DB] ${operationName} failed with SQLite corruption; rebuilding message search indexes and retrying:`, e);
+    await rebuildMessageSearchIndexes(db);
+    return operation();
+  }
+}
+
 // ---------------------------------------------------------------------------
 // 初始化
 // ---------------------------------------------------------------------------
@@ -92,7 +231,6 @@ export async function initDatabase(): Promise<void> {
   `);
   await ensureMessageColumns(db);
   await ensureConversationColumns(db);
-  await ensureModelColumns(db);
   await db.execute(`
     CREATE INDEX IF NOT EXISTS idx_messages_conversation_time
       ON messages(conversation_id, created_at ASC);
@@ -102,41 +240,15 @@ export async function initDatabase(): Promise<void> {
       ON messages(status) WHERE status IN ('pending', 'streaming');
   `);
 
-  // FTS5 全文检索
-  await db.execute(`
-    CREATE VIRTUAL TABLE IF NOT EXISTS messages_fts USING fts5(
-      content,
-      content='messages',
-      content_rowid='rowid',
-      tokenize='unicode61 remove_diacritics 2'
-    );
-  `);
-
-  // FTS 同步触发器
-  await db.execute(`
-    CREATE TRIGGER IF NOT EXISTS trg_messages_fts_insert
-      AFTER INSERT ON messages
-    BEGIN
-      INSERT INTO messages_fts(rowid, content) VALUES (NEW.rowid, NEW.content);
-    END;
-  `);
-  await db.execute(`
-    CREATE TRIGGER IF NOT EXISTS trg_messages_fts_update
-      AFTER UPDATE OF content ON messages
-    BEGIN
-      INSERT INTO messages_fts(messages_fts, rowid, content) VALUES ('delete', OLD.rowid, OLD.content);
-      INSERT INTO messages_fts(rowid, content) VALUES (NEW.rowid, NEW.content);
-    END;
-  `);
-  await db.execute(`
-    CREATE TRIGGER IF NOT EXISTS trg_messages_fts_delete
-      AFTER DELETE ON messages
-    BEGIN
-      INSERT INTO messages_fts(messages_fts, rowid, content) VALUES ('delete', OLD.rowid, OLD.content);
-    END;
-  `);
-  await ensureFtsIndexSynced(db, 'messages_fts');
-  await ensureTrigramMessageSearchIndex(db);
+  // FTS5 全文检索。只创建结构，耗时的同步/重建放到首屏之后后台执行。
+  await createMessageFtsIndex(db);
+  try {
+    await createTrigramMessageSearchIndex(db);
+    hasTrigramMessageSearchIndex = true;
+  } catch (e) {
+    hasTrigramMessageSearchIndex = false;
+    console.warn('[DB] Trigram message search index is unavailable; falling back to unicode FTS:', e);
+  }
 
   // 系统提示词预设表
   await db.execute(`
@@ -165,6 +277,8 @@ export async function initDatabase(): Promise<void> {
       temperature   REAL    NOT NULL DEFAULT 1.0 CHECK (temperature >= 0.0 AND temperature <= 2.0),
       max_tokens    INTEGER NOT NULL DEFAULT 4096 CHECK (max_tokens > 0),
       top_p         REAL    NOT NULL DEFAULT 0.95 CHECK (top_p >= 0.0 AND top_p <= 1.0),
+      thinking_level TEXT    DEFAULT NULL,
+      supports_vision INTEGER NOT NULL DEFAULT 0 CHECK (supports_vision IN (0, 1)),
       is_default    INTEGER NOT NULL DEFAULT 0 CHECK (is_default IN (0, 1)),
       created_at    INTEGER NOT NULL,
       updated_at    INTEGER NOT NULL
@@ -174,6 +288,13 @@ export async function initDatabase(): Promise<void> {
     CREATE UNIQUE INDEX IF NOT EXISTS idx_model_configs_provider_model
       ON model_configs(provider, model_id);
   `);
+  await ensureModelColumns(db);
+}
+
+export async function runDatabaseMaintenance(): Promise<void> {
+  const db = await getDb();
+  await ensureFtsIndexSynced(db, 'messages_fts');
+  await ensureTrigramMessageSearchIndex(db);
 }
 
 async function ensureFtsIndexSynced(db: Database, tableName: 'messages_fts' | 'messages_search_fts'): Promise<void> {
@@ -189,42 +310,23 @@ async function ensureFtsIndexSynced(db: Database, tableName: 'messages_fts' | 'm
       console.log(`[DB] Rebuilt ${tableName} (${counts.index_count} -> ${counts.message_count})`);
     }
   } catch (e) {
+    if (isSqliteCorruptionError(e)) {
+      console.warn(`[DB] ${tableName} appears corrupt; rebuilding message search indexes:`, e);
+      try {
+        await rebuildMessageSearchIndexes(db);
+      } catch (repairError) {
+        console.warn(`[DB] Failed to rebuild message search indexes after ${tableName} corruption:`, repairError);
+      }
+      return;
+    }
+
     console.warn(`[DB] Failed to sync ${tableName}:`, e);
   }
 }
 
 async function ensureTrigramMessageSearchIndex(db: Database): Promise<void> {
   try {
-    await db.execute(`
-      CREATE VIRTUAL TABLE IF NOT EXISTS messages_search_fts USING fts5(
-        content,
-        content='messages',
-        content_rowid='rowid',
-        tokenize='trigram'
-      );
-    `);
-    await db.execute(`
-      CREATE TRIGGER IF NOT EXISTS trg_messages_search_fts_insert
-        AFTER INSERT ON messages
-      BEGIN
-        INSERT INTO messages_search_fts(rowid, content) VALUES (NEW.rowid, NEW.content);
-      END;
-    `);
-    await db.execute(`
-      CREATE TRIGGER IF NOT EXISTS trg_messages_search_fts_update
-        AFTER UPDATE OF content ON messages
-      BEGIN
-        INSERT INTO messages_search_fts(messages_search_fts, rowid, content) VALUES ('delete', OLD.rowid, OLD.content);
-        INSERT INTO messages_search_fts(rowid, content) VALUES (NEW.rowid, NEW.content);
-      END;
-    `);
-    await db.execute(`
-      CREATE TRIGGER IF NOT EXISTS trg_messages_search_fts_delete
-        AFTER DELETE ON messages
-      BEGIN
-        INSERT INTO messages_search_fts(messages_search_fts, rowid, content) VALUES ('delete', OLD.rowid, OLD.content);
-      END;
-    `);
+    await createTrigramMessageSearchIndex(db);
     await ensureFtsIndexSynced(db, 'messages_search_fts');
     hasTrigramMessageSearchIndex = true;
   } catch (e) {
@@ -554,7 +656,11 @@ export async function updateConversation(
 
 export async function deleteConversation(id: UUID): Promise<void> {
   const db = await getDb();
-  await db.execute('DELETE FROM conversations WHERE id = ?', [id]);
+  await executeWithMessageSearchIndexRepair(
+    db,
+    () => db.execute('DELETE FROM conversations WHERE id = ?', [id]),
+    'deleteConversation'
+  );
 }
 
 export async function getConversations(limit = 100, offset = 0): Promise<ConversationSummary[]> {
@@ -569,26 +675,40 @@ export async function getConversations(limit = 100, offset = 0): Promise<Convers
     agent_url: string | null;
     pinned: number | null;
   }[]>(
-    `SELECT
-      c.id,
-      c.title,
-      c.created_at,
-      c.agent_url,
-      c.pinned,
-      COALESCE(last_msg.created_at, c.created_at) AS last_message_at,
-      COALESCE(SUBSTR(last_msg.content, 1, 120), '') AS last_message_preview,
-      COALESCE(msg_count.cnt, 0) AS message_count
-    FROM conversations c
-    LEFT JOIN (
-      SELECT conversation_id, content, created_at,
-             ROW_NUMBER() OVER (PARTITION BY conversation_id ORDER BY created_at DESC) AS rn
-      FROM messages
-    ) last_msg ON last_msg.conversation_id = c.id AND last_msg.rn = 1
-    LEFT JOIN (
-      SELECT conversation_id, COUNT(*) AS cnt FROM messages GROUP BY conversation_id
-    ) msg_count ON msg_count.conversation_id = c.id
-    ORDER BY c.pinned DESC, last_message_at DESC
-    LIMIT ? OFFSET ?`,
+    `WITH ranked_conversations AS (
+      SELECT
+        c.id,
+        c.title,
+        c.created_at,
+        c.agent_url,
+        COALESCE(c.pinned, 0) AS pinned,
+        COALESCE((
+          SELECT m.created_at
+          FROM messages m
+          WHERE m.conversation_id = c.id
+          ORDER BY m.created_at DESC
+          LIMIT 1
+        ), c.created_at) AS last_message_at,
+        COALESCE((
+          SELECT SUBSTR(m.content, 1, 120)
+          FROM messages m
+          WHERE m.conversation_id = c.id
+          ORDER BY m.created_at DESC
+          LIMIT 1
+        ), '') AS last_message_preview
+      FROM conversations c
+      ORDER BY pinned DESC, last_message_at DESC
+      LIMIT ? OFFSET ?
+    )
+    SELECT
+      rc.*,
+      COALESCE((
+        SELECT COUNT(*)
+        FROM messages m
+        WHERE m.conversation_id = rc.id
+      ), 0) AS message_count
+    FROM ranked_conversations rc
+    ORDER BY rc.pinned DESC, rc.last_message_at DESC`,
     [limit, offset]
   );
 
@@ -850,7 +970,11 @@ export async function getMessages(
 
 export async function deleteMessage(id: UUID): Promise<void> {
   const db = await getDb();
-  await db.execute('DELETE FROM messages WHERE id = ?', [id]);
+  await executeWithMessageSearchIndexRepair(
+    db,
+    () => db.execute('DELETE FROM messages WHERE id = ?', [id]),
+    'deleteMessage'
+  );
 }
 
 export async function searchMessages(

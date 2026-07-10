@@ -83,6 +83,41 @@ test('toast matches the main graphite surface language', async () => {
   assert.doesNotMatch(app, /shadow-\[0_0_8px_currentColor\]/);
 });
 
+test('artifact fullscreen surfaces share window shell and mermaid pan zoom', async () => {
+  const messageContent = await source('src/components/chat/MessageContent.tsx');
+  const htmlArtifact = await source('src/components/chat/HtmlArtifact.tsx');
+  const appCss = await source('src/App.css');
+
+  assert.match(messageContent, /ArtifactFullscreenShell/);
+  assert.match(htmlArtifact, /ArtifactFullscreenShell/);
+  assert.doesNotMatch(messageContent, /qc-mermaid-fullscreen-viewport/);
+  assert.doesNotMatch(appCss, /qc-mermaid-fullscreen-viewport/);
+  assert.match(messageContent, /event\.ctrlKey/);
+  assert.match(messageContent, /parseMermaidSvgSize/);
+  assert.match(messageContent, /viewBox=\["'\]\(\[\^"'\]\+\)\["'\]/);
+  assert.match(messageContent, /width: svgSize\.width/);
+  assert.match(messageContent, /height: svgSize\.height/);
+  assert.match(messageContent, /onPointerDown=\{handlePointerDown\}/);
+  assert.match(messageContent, /onPointerMove=\{handlePointerMove\}/);
+  assert.match(messageContent, /setPointerCapture/);
+  assert.match(messageContent, /releasePointerCapture/);
+});
+
+test('rich output stays inside the app viewport instead of creating page scrollbars', async () => {
+  const messageContent = await source('src/components/chat/MessageContent.tsx');
+  const htmlArtifact = await source('src/components/chat/HtmlArtifact.tsx');
+  const appCss = await source('src/App.css');
+
+  assert.match(appCss, /html,\s*body,\s*#root \{[\s\S]*margin: 0;[\s\S]*overflow: hidden;/);
+  assert.match(appCss, /\.qc-markdown \{[\s\S]*max-width: 100%;/);
+  assert.match(appCss, /\.qc-mermaid \{[\s\S]*max-width: 100%;[\s\S]*overscroll-behavior: contain;/);
+  assert.match(messageContent, /w-full min-w-0 max-w-full/);
+  assert.match(messageContent, /qc-markdown prose prose-sm min-w-0 max-w-full/);
+  assert.match(htmlArtifact, /relative my-3 w-full max-w-full overflow-hidden/);
+  assert.doesNotMatch(htmlArtifact, /-mx-1/);
+  assert.doesNotMatch(htmlArtifact, /md:-mx-2/);
+});
+
 test('sidebar collapse clips fixed content instead of reflowing labels', async () => {
   const appLayout = await source('src/components/layout/AppLayout.tsx');
   const newChatButton = await source('src/components/sidebar/NewChatButton.tsx');

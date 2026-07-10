@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { buildArtifactSrcDoc } from '@/utils/artifacts';
+import ArtifactFullscreenShell from './ArtifactFullscreenShell';
 
 interface HtmlArtifactProps {
   code: string;
@@ -112,12 +113,17 @@ const ArtifactControls: React.FC<{
   onExpand?: () => void;
   onClose?: () => void;
   alwaysVisible?: boolean;
-}> = ({ view, copied, onViewChange, onCopy, onReload, onExpand, onClose, alwaysVisible = false }) => (
+  mode?: 'floating' | 'toolbar';
+}> = ({ view, copied, onViewChange, onCopy, onReload, onExpand, onClose, alwaysVisible = false, mode = 'floating' }) => (
   <div
-    className={`absolute right-2 top-2 z-20 flex items-center gap-1 rounded-xl bg-linear-bg/80 p-1 shadow-[0_8px_24px_rgba(0,0,0,0.28)] ring-1 ring-white/10 backdrop-blur-xl transition-opacity duration-150 ${alwaysVisible
-        ? 'opacity-100'
-        : 'opacity-0 group-hover:opacity-100 focus-within:opacity-100'
-      }`}
+    className={
+      mode === 'toolbar'
+        ? 'flex items-center gap-1'
+        : `absolute right-2 top-2 z-20 flex items-center gap-1 rounded-xl bg-linear-bg/80 p-1 shadow-[0_8px_24px_rgba(0,0,0,0.28)] ring-1 ring-white/10 backdrop-blur-xl transition-opacity duration-150 ${alwaysVisible
+          ? 'opacity-100'
+          : 'opacity-0 group-hover:opacity-100 focus-within:opacity-100'
+        }`
+    }
   >
     <ControlButton title="预览" active={view === 'preview'} onClick={() => onViewChange('preview')}>
       <PreviewIcon />
@@ -158,7 +164,7 @@ const ArtifactFrame: React.FC<{
   }, [srcDoc, reloadKey]);
 
   return (
-    <div className={`relative bg-transparent ${className}`}>
+    <div className={`relative min-w-0 max-w-full overflow-hidden bg-transparent ${className}`}>
       {loading && (
         <div className="absolute inset-0 z-10 flex items-center justify-center bg-linear-bg/55 backdrop-blur-[1px]">
           <div className="h-5 w-5 rounded-full border-2 border-linear-border border-t-linear-text-secondary animate-spin" />
@@ -168,7 +174,7 @@ const ArtifactFrame: React.FC<{
         key={reloadKey}
         title={title}
         srcDoc={srcDoc}
-        className="block h-full w-full border-0 bg-transparent"
+        className="block h-full w-full max-w-full border-0 bg-transparent"
         sandbox="allow-scripts allow-forms"
         scrolling="no"
         referrerPolicy="no-referrer"
@@ -178,8 +184,8 @@ const ArtifactFrame: React.FC<{
   );
 };
 
-const SourceView: React.FC<{ code: string }> = ({ code }) => (
-  <pre className="h-full overflow-auto custom-scrollbar bg-linear-bg/90 p-4 pt-12 text-xs leading-relaxed text-linear-text-secondary font-mono whitespace-pre">
+const SourceView: React.FC<{ code: string; topPadding?: boolean }> = ({ code, topPadding = true }) => (
+  <pre className={`h-full max-w-full overflow-auto custom-scrollbar bg-linear-bg/90 p-4 text-xs leading-relaxed text-linear-text-secondary font-mono whitespace-pre ${topPadding ? 'pt-12' : ''}`}>
     {code}
   </pre>
 );
@@ -196,23 +202,11 @@ const HtmlArtifactModal: React.FC<{
 }> = ({ code, srcDoc, title, view, reloadKey, onViewChange, onReload, onClose }) => {
   const { copied, copy } = useCopyText(code);
 
-  useEffect(() => {
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') onClose();
-    };
-    document.addEventListener('keydown', handleKeyDown);
-    return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [onClose]);
-
   return (
-    <div
-      className="fixed inset-0 z-[220] flex items-center justify-center bg-black/55 backdrop-blur-sm animate-in fade-in duration-150"
-      onClick={onClose}
-    >
-      <div
-        className="group relative h-[92vh] w-[94vw] max-w-7xl overflow-hidden bg-linear-bg shadow-2xl"
-        onClick={(event) => event.stopPropagation()}
-      >
+    <ArtifactFullscreenShell
+      title={title}
+      onClose={onClose}
+      actions={
         <ArtifactControls
           view={view}
           copied={copied}
@@ -220,15 +214,17 @@ const HtmlArtifactModal: React.FC<{
           onCopy={copy}
           onReload={onReload}
           onClose={onClose}
-          alwaysVisible
+          mode="toolbar"
         />
+      }
+      contentClassName="overflow-hidden"
+    >
         {view === 'preview' ? (
           <ArtifactFrame srcDoc={srcDoc} title={title} reloadKey={reloadKey} className="h-full" />
         ) : (
-          <SourceView code={code} />
+          <SourceView code={code} topPadding={false} />
         )}
-      </div>
-    </div>
+    </ArtifactFullscreenShell>
   );
 };
 
@@ -278,7 +274,7 @@ const HtmlArtifact: React.FC<HtmlArtifactProps> = ({ code }) => {
   return (
     <>
       <div
-        className="group relative -mx-1 my-3 overflow-hidden bg-transparent md:-mx-2"
+        className="group relative my-3 w-full max-w-full overflow-hidden bg-transparent"
         style={{ height: artifactHeight, minHeight: MIN_ARTIFACT_HEIGHT }}
       >
         <ArtifactControls

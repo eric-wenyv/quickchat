@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useEffect, useMemo } from 'react';
+import React, { useState, useCallback, useEffect, useMemo, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -11,6 +11,7 @@ import { parseAttachments, formatFileSize, getFileIcon } from '@/utils/file';
 import { parseImageDescriptions } from '@/utils/image-description';
 import { normalizeStreamingMarkdown } from '@/utils/markdown';
 import { isRenderableHtmlArtifact, splitRenderableHtmlArtifacts } from '@/utils/artifacts';
+import ArtifactFullscreenShell from './ArtifactFullscreenShell';
 import HtmlArtifact from './HtmlArtifact';
 
 interface MessageContentProps {
@@ -180,33 +181,138 @@ const useCopy = (text: string) => {
   return { copied, copy };
 };
 
+const MERMAID_MIN_SCALE = 0.25;
+const MERMAID_MAX_SCALE = 4;
+const MERMAID_ZOOM_FACTOR = 1.12;
+const DEFAULT_MERMAID_SVG_SIZE = { width: 960, height: 640 };
+
+const clampMermaidScale = (scale: number): number =>
+  Math.min(MERMAID_MAX_SCALE, Math.max(MERMAID_MIN_SCALE, scale));
+
+const parseMermaidSvgSize = (svg: string): { width: number; height: number } => {
+  const viewBox = /viewBox=["']([^"']+)["']/i.exec(svg)?.[1];
+  const viewBoxParts = viewBox
+    ?.trim()
+    .split(/[\s,]+/)
+    .map((part) => Number.parseFloat(part));
+
+  if (
+    viewBoxParts?.length === 4 &&
+    Number.isFinite(viewBoxParts[2]) &&
+    Number.isFinite(viewBoxParts[3]) &&
+    viewBoxParts[2] > 0 &&
+    viewBoxParts[3] > 0
+  ) {
+    return { width: viewBoxParts[2], height: viewBoxParts[3] };
+  }
+
+  const width = Number.parseFloat(/width=["'](\d+(?:\.\d+)?)(?:px)?["']/i.exec(svg)?.[1] ?? '');
+  const height = Number.parseFloat(/height=["'](\d+(?:\.\d+)?)(?:px)?["']/i.exec(svg)?.[1] ?? '');
+
+  if (Number.isFinite(width) && Number.isFinite(height) && width > 0 && height > 0) {
+    return { width, height };
+  }
+
+  return DEFAULT_MERMAID_SVG_SIZE;
+};
+
 const MermaidFullscreenModal: React.FC<{
   svg: string;
   copied: boolean;
   onCopy: () => void;
   onClose: () => void;
 }> = ({ svg, copied, onCopy, onClose }) => {
+  const diagramRef = useRef<HTMLDivElement>(null);
+  const dragRef = useRef<{
+    pointerId: number;
+    startX: number;
+    startY: number;
+    originX: number;
+    originY: number;
+  } | null>(null);
+  const [scale, setScale] = useState(1);
+  const [offset, setOffset] = useState({ x: 0, y: 0 });
+  const [isDragging, setIsDragging] = useState(false);
+  const svgSize = useMemo(() => parseMermaidSvgSize(svg), [svg]);
+
   useEffect(() => {
-    const handleEsc = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
+    dragRef.current = null;
+    setScale(1);
+    setOffset({ x: 0, y: 0 });
+    setIsDragging(false);
+  }, [svg]);
+
+  const handleWheel = useCallback((event: React.WheelEvent<HTMLDivElement>) => {
+    if (!event.ctrlKey) return;
+
+    event.preventDefault();
+    event.stopPropagation();
+
+    const nextScale = clampMermaidScale(
+      scale * (event.deltaY < 0 ? MERMAID_ZOOM_FACTOR : 1 / MERMAID_ZOOM_FACTOR)
+    );
+    if (nextScale === scale) return;
+
+    const diagram = diagramRef.current;
+    if (!diagram) {
+      setScale(nextScale);
+      return;
+    }
+
+    const rect = diagram.getBoundingClientRect();
+    const localX = (event.clientX - rect.left) / scale;
+    const localY = (event.clientY - rect.top) / scale;
+
+    setOffset({
+      x: offset.x - localX * (nextScale - scale),
+      y: offset.y - localY * (nextScale - scale),
+    });
+    setScale(nextScale);
+  }, [offset, scale]);
+
+  const handlePointerDown = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
+    if (event.button !== 0) return;
+
+    event.preventDefault();
+    event.currentTarget.setPointerCapture(event.pointerId);
+    dragRef.current = {
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startY: event.clientY,
+      originX: offset.x,
+      originY: offset.y,
     };
-    document.addEventListener('keydown', handleEsc);
-    return () => document.removeEventListener('keydown', handleEsc);
-  }, [onClose]);
+    setIsDragging(true);
+  }, [offset]);
+
+  const handlePointerMove = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
+    const drag = dragRef.current;
+    if (!drag || drag.pointerId !== event.pointerId) return;
+
+    event.preventDefault();
+    setOffset({
+      x: drag.originX + event.clientX - drag.startX,
+      y: drag.originY + event.clientY - drag.startY,
+    });
+  }, []);
+
+  const stopDragging = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
+    const drag = dragRef.current;
+    if (!drag || drag.pointerId !== event.pointerId) return;
+
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+    dragRef.current = null;
+    setIsDragging(false);
+  }, []);
 
   return createPortal(
-    <div
-      className="fixed inset-0 z-[220] flex flex-col bg-[#181818]/95 backdrop-blur-md animate-in fade-in duration-150"
-      onClick={onClose}
-    >
-      <div
-        className="flex h-12 flex-shrink-0 items-center justify-between border-b border-linear-border bg-[#202020] px-4"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <span className="text-xs font-medium uppercase tracking-wider text-linear-text-tertiary">
-          mermaid diagram
-        </span>
-        <div className="flex items-center gap-1">
+    <ArtifactFullscreenShell
+      title="mermaid diagram"
+      onClose={onClose}
+      actions={
+        <>
           <button
             onClick={onCopy}
             className="flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-medium text-linear-text-tertiary transition-colors hover:bg-[rgba(255,255,255,0.08)] hover:text-linear-text-secondary"
@@ -237,14 +343,37 @@ const MermaidFullscreenModal: React.FC<{
               <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
             </svg>
           </button>
+        </>
+      }
+      contentClassName="overflow-hidden"
+    >
+      <div
+        className={`qc-mermaid-pan-viewport custom-scrollbar h-full ${isDragging ? 'is-dragging' : ''}`}
+        onWheel={handleWheel}
+        onPointerDown={handlePointerDown}
+        onPointerMove={handlePointerMove}
+        onPointerUp={stopDragging}
+        onPointerCancel={stopDragging}
+      >
+        <div className="qc-mermaid-pan-stage">
+          <div
+            className="qc-mermaid-pan-layer"
+            style={{ transform: `translate(${offset.x}px, ${offset.y}px)` }}
+          >
+            <div
+              ref={diagramRef}
+              className="qc-mermaid-pan-content"
+              style={{
+                width: svgSize.width,
+                height: svgSize.height,
+                transform: `scale(${scale})`,
+              }}
+              dangerouslySetInnerHTML={{ __html: svg }}
+            />
+          </div>
         </div>
       </div>
-      <div
-        className="qc-mermaid-fullscreen-viewport custom-scrollbar flex-1 p-6"
-        onClick={(e) => e.stopPropagation()}
-        dangerouslySetInnerHTML={{ __html: svg }}
-      />
-    </div>,
+    </ArtifactFullscreenShell>,
     document.body
   );
 };
@@ -332,7 +461,7 @@ const MermaidBlock: React.FC<{ code: string }> = React.memo(({ code }) => {
   }, [code, isDark, renderId]);
 
   return (
-    <div className="not-prose group relative rounded-lg overflow-hidden border border-[rgba(255,255,255,0.12)] bg-[#202020] shadow-linear-highlight my-4">
+    <div className="not-prose group relative my-4 max-w-full overflow-hidden rounded-lg border border-[rgba(255,255,255,0.12)] bg-[#202020] shadow-linear-highlight">
       <div className="flex items-center justify-between px-4 py-2 bg-[#343434] border-b border-[rgba(255,255,255,0.1)]">
         <div className="flex items-center gap-2">
           <span className="text-xs font-medium text-linear-text-tertiary uppercase tracking-wider">
@@ -384,7 +513,7 @@ const MermaidBlock: React.FC<{ code: string }> = React.memo(({ code }) => {
           <div className="rounded-md border border-red-400/20 bg-red-400/10 px-3 py-2 text-sm text-red-200">
             Mermaid 渲染失败，已显示源码。
           </div>
-          <pre className="text-linear-text-secondary whitespace-pre leading-relaxed text-sm font-mono overflow-x-auto">
+          <pre className="max-w-full overflow-x-auto text-linear-text-secondary whitespace-pre leading-relaxed text-sm font-mono">
             {code}
           </pre>
         </div>
@@ -456,7 +585,7 @@ const CodeBlock: React.FC<{ code: string; language: string }> = React.memo(
     const isTree = isTreeDiagram(code);
 
     return (
-      <div className="not-prose group relative rounded-lg overflow-hidden border border-[rgba(255,255,255,0.12)] bg-[#202020] shadow-linear-highlight my-4">
+      <div className="not-prose group relative my-4 max-w-full overflow-hidden rounded-lg border border-[rgba(255,255,255,0.12)] bg-[#202020] shadow-linear-highlight">
         {/* Header */}
         <div className="flex items-center justify-between px-4 py-2 bg-[#343434] border-b border-[rgba(255,255,255,0.1)]">
           <div className="flex items-center gap-2">
@@ -493,7 +622,7 @@ const CodeBlock: React.FC<{ code: string; language: string }> = React.memo(
         </div>
 
         {/* Code Body */}
-        <div className="overflow-x-auto">
+        <div className="max-w-full overflow-x-auto">
           {isTree ? (
             <pre className="p-4 bg-[#202020] text-linear-text-secondary whitespace-pre leading-relaxed text-sm font-mono">
               {code.split('\n').map((line, i) => (
@@ -707,7 +836,7 @@ const MessageContent: React.FC<MessageContentProps> = ({ content, status, activi
 
       table({ children }) {
         return (
-          <div className="overflow-x-auto my-4 rounded-lg border border-[rgba(255,255,255,0.12)] bg-[#202020]">
+          <div className="my-4 max-w-full overflow-x-auto rounded-lg border border-[rgba(255,255,255,0.12)] bg-[#202020]">
             <table className="w-full text-sm text-left border-collapse">
               {children}
             </table>
@@ -745,12 +874,12 @@ const MessageContent: React.FC<MessageContentProps> = ({ content, status, activi
   );
 
   return (
-    <div className="w-full text-linear-text-body selection:bg-linear-surface-hover selection:text-linear-text-primary">
-      <article className="w-full">
+    <div className="w-full min-w-0 max-w-full text-linear-text-body selection:bg-linear-surface-hover selection:text-linear-text-primary">
+      <article className="w-full min-w-0 max-w-full">
         {showActivityOnly && activityLabel ? (
           <ActivityPill label={activityLabel} />
         ) : (
-          <div className="qc-markdown prose prose-sm max-w-none dark:prose-invert leading-[1.6] prose-p:leading-[1.6] prose-p:my-2.5 prose-p:text-linear-text-body prose-headings:text-linear-text-primary prose-headings:font-semibold prose-headings:tracking-tight prose-headings:leading-tight prose-headings:mt-5 prose-headings:mb-2 prose-h1:text-[1.15em] prose-h2:text-[1.08em] prose-h3:text-[1.05em] prose-strong:text-linear-text-primary prose-strong:font-semibold prose-a:text-linear-text-secondary prose-a:underline prose-a:underline-offset-4 hover:prose-a:text-linear-text-primary prose-code:text-linear-text-primary prose-code:bg-linear-surface-hover prose-code:border prose-code:border-linear-border prose-code:px-1.5 prose-code:py-0.5 prose-code:rounded-[4px] prose-code:font-medium prose-code:before:content-none prose-code:after:content-none prose-pre:bg-transparent prose-pre:p-0 prose-blockquote:border-l-[rgba(255,255,255,0.16)] prose-blockquote:text-linear-text-tertiary prose-blockquote:bg-[#202020] prose-blockquote:pl-4 prose-blockquote:py-1 prose-blockquote:not-italic prose-ul:list-disc prose-ul:pl-5 prose-ol:list-decimal prose-ol:pl-5 prose-li:my-1 prose-li:text-linear-text-body prose-hr:border-[rgba(255,255,255,0.12)] prose-hr:my-5 prose-img:rounded-lg prose-img:shadow-none">
+          <div className="qc-markdown prose prose-sm min-w-0 max-w-full dark:prose-invert leading-[1.6] prose-p:leading-[1.6] prose-p:my-2.5 prose-p:text-linear-text-body prose-headings:text-linear-text-primary prose-headings:font-semibold prose-headings:tracking-tight prose-headings:leading-tight prose-headings:mt-5 prose-headings:mb-2 prose-h1:text-[1.15em] prose-h2:text-[1.08em] prose-h3:text-[1.05em] prose-strong:text-linear-text-primary prose-strong:font-semibold prose-a:text-linear-text-secondary prose-a:underline prose-a:underline-offset-4 hover:prose-a:text-linear-text-primary prose-code:text-linear-text-primary prose-code:bg-linear-surface-hover prose-code:border prose-code:border-linear-border prose-code:px-1.5 prose-code:py-0.5 prose-code:rounded-[4px] prose-code:font-medium prose-code:before:content-none prose-code:after:content-none prose-pre:bg-transparent prose-pre:p-0 prose-blockquote:border-l-[rgba(255,255,255,0.16)] prose-blockquote:text-linear-text-tertiary prose-blockquote:bg-[#202020] prose-blockquote:pl-4 prose-blockquote:py-1 prose-blockquote:not-italic prose-ul:list-disc prose-ul:pl-5 prose-ol:list-decimal prose-ol:pl-5 prose-li:my-1 prose-li:text-linear-text-body prose-hr:border-[rgba(255,255,255,0.12)] prose-hr:my-5 prose-img:rounded-lg prose-img:shadow-none">
             {contentSegments.map((segment, index) =>
               segment.type === 'artifact' ? (
                 <HtmlArtifact

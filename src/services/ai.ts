@@ -14,6 +14,9 @@ const DEFAULT_ENDPOINTS: Record<string, string> = {
   openai_compatible: '',
 };
 
+const TITLE_MAX_LENGTH = 20;
+const PLACEHOLDER_TITLES = new Set(['', 'new chat', 'untitled', '新对话']);
+
 
 // ---------------------------------------------------------------------------
 // 类型
@@ -204,6 +207,53 @@ export function appendCitationList(content: string, citations?: UrlCitation[]): 
   });
 
   return `${content.trimEnd()}\n\n来源：\n${sources.join('\n')}`;
+}
+
+export function isPlaceholderConversationTitle(title: string | null | undefined): boolean {
+  return PLACEHOLDER_TITLES.has((title ?? '').trim().toLowerCase());
+}
+
+function cleanTitleText(title: string): string | null {
+  const cleaned = title
+    .replace(/^(?:标题|题目)\s*[:：]\s*/i, '')
+    .replace(/^["'\u201c\u2018「『《]+|["'\u201d\u2019」』》]+$/g, '')
+    .replace(/\s+/g, ' ')
+    .replace(/[。.!！?？,，、;；:：\s]+$/g, '')
+    .trim();
+
+  if (!cleaned || isPlaceholderConversationTitle(cleaned)) return null;
+  return Array.from(cleaned).slice(0, TITLE_MAX_LENGTH).join('') || null;
+}
+
+function stripTitleNoise(content: string): string {
+  return content
+    .replace(/<!--\s*(?:attachments|image-descriptions):[\s\S]*?-->/g, ' ')
+    .replace(/!\[[^\]]*\]\([^)]+\)/g, ' ')
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
+    .replace(/```[\s\S]*?```/g, ' ')
+    .replace(/`([^`]+)`/g, '$1')
+    .replace(/^#{1,6}\s*/gm, '')
+    .replace(/^[\s>*-]+/gm, '')
+    .replace(/[*_~]+/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+export function generateFallbackConversationTitle(
+  messages: { role: string; content: string }[]
+): string | null {
+  const source =
+    messages.find((m) => m.role === 'user' && stripTitleNoise(m.content)) ??
+    messages.find((m) => stripTitleNoise(m.content));
+  if (!source) return null;
+
+  const cleaned = stripTitleNoise(source.content);
+  if (!cleaned) return null;
+
+  const topicPrefix = cleaned.match(/^(.{6,18})[：:]/u)?.[1];
+  const firstSentence = cleaned.split(/[。！？!?]/)[0] || cleaned;
+
+  return cleanTitleText(topicPrefix || firstSentence);
 }
 
 function buildRequestBody(
@@ -717,11 +767,11 @@ export async function streamTextCompletion(
 
 export async function generateConversationTitle(
   messages: { role: string; content: string }[],
-  openrouterModel: ModelConfig
+  titleModel: ModelConfig
 ): Promise<string | null> {
-  const endpoint = getApiEndpoint(openrouterModel);
+  const endpoint = getApiEndpoint(titleModel);
   const url = `${endpoint.replace(/\/$/, '')}/chat/completions`;
-  const headers = buildHeaders(openrouterModel);
+  const headers = buildHeaders(titleModel);
 
   const promptMessages: ChatMessage[] = [
     {
@@ -743,11 +793,12 @@ export async function generateConversationTitle(
   ];
 
   const body = {
-    model: 'openai/gpt-oss-120b:free',
+    model: titleModel.model_id,
     messages: promptMessages,
     stream: false,
-    temperature: 0.5,
-    max_tokens: 30,
+    temperature: Math.min(titleModel.temperature, 0.5),
+    max_tokens: 40,
+    top_p: titleModel.top_p,
   };
 
   const response = await fetch(url, {
@@ -774,15 +825,7 @@ export async function generateConversationTitle(
     data.choices?.[0]?.text?.trim() ||
     '';
 
-  if (!title) return null;
-
-  return (
-    title
-      .replace(/^["'\u201c\u2018]+|["'\u201d\u2019]+$/g, '')
-      .replace(/\n+/g, ' ')
-      .trim()
-      .slice(0, 20) || null
-  );
+  return cleanTitleText(title);
 }
 
 // ---------------------------------------------------------------------------

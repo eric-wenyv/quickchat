@@ -117,3 +117,14 @@ test('keeps artifact layout primitives overridable', async () => {
   assert.match(srcDoc, /body :where\(\.qc-artifact-canvas\) \{[\s\S]*display: flex;/);
   assert.match(srcDoc, /body :where\(\.qc-artifact-canvas\) \{[\s\S]*min-height: 0;/);
 });
+
+test('injects frame bounds that prevent fixed-width artifacts from leaking out', async () => {
+  const { buildArtifactSrcDoc } = await importArtifactUtils();
+  const srcDoc = buildArtifactSrcDoc('<main class="qc-artifact"><div class="qc-artifact-layout"><section class="qc-artifact-canvas"><svg width="2000"></svg></section></div></main>');
+
+  assert.match(srcDoc, /body > :first-child \{[\s\S]*max-width: 100% !important;[\s\S]*min-width: 0 !important;/);
+  assert.match(srcDoc, /body :where\(\.qc-artifact\) \{[\s\S]*max-width: 100% !important;[\s\S]*min-width: 0 !important;/);
+  assert.match(srcDoc, /body :where\(\.qc-artifact-layout\) \{[\s\S]*max-width: 100% !important;[\s\S]*min-width: 0 !important;/);
+  assert.match(srcDoc, /body :where\(\.qc-artifact-canvas\) \{[\s\S]*overflow: hidden;/);
+  assert.match(srcDoc, /body :where\(svg, canvas, img, video\) \{[\s\S]*max-width: 100% !important;/);
+});

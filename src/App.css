@@ -61,7 +61,8 @@ body,
 }
 
 .codex-glass-chrome {
-  background: rgba(19, 19, 19, 0.864);
+  /* Keep the title bar and sidebar identical even when their parent surfaces differ. */
+  background: var(--color-linear-sidebar);
 }
 
 /* ── Keyframes ── */
@@ -209,7 +210,6 @@ body,
   max-width: 100%;
   max-height: min(70vh, 520px);
   overflow: auto;
-  overscroll-behavior: contain;
 }
 
 .qc-mermaid svg {

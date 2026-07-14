@@ -83,6 +83,16 @@ test('toast matches the main graphite surface language', async () => {
   assert.doesNotMatch(app, /shadow-\[0_0_8px_currentColor\]/);
 });
 
+test('assistant instructions prohibit compact inline tree diagrams', async () => {
+  const app = await source('src/App.tsx');
+
+  assert.match(app, /Never use inline-code pseudo-diagrams/);
+  assert.match(app, /ASCII\/Unicode tree, branch, box, or connector characters/);
+  assert.match(app, /short bullets or a table for structured data/);
+  assert.match(app, /fenced Mermaid diagram/);
+  assert.match(app, /Never put an explanatory diagram or a long structured summary inside single backticks/);
+});
+
 test('artifact fullscreen surfaces share window shell and mermaid pan zoom', async () => {
   const messageContent = await source('src/components/chat/MessageContent.tsx');
   const htmlArtifact = await source('src/components/chat/HtmlArtifact.tsx');
@@ -110,7 +120,11 @@ test('rich output stays inside the app viewport instead of creating page scrollb
 
   assert.match(appCss, /html,\s*body,\s*#root \{[\s\S]*margin: 0;[\s\S]*overflow: hidden;/);
   assert.match(appCss, /\.qc-markdown \{[\s\S]*max-width: 100%;/);
-  assert.match(appCss, /\.qc-mermaid \{[\s\S]*max-width: 100%;[\s\S]*overscroll-behavior: contain;/);
+  const mermaidStyles = appCss.match(/\.qc-mermaid \{([^}]*)\}/)?.[1];
+  assert.ok(mermaidStyles);
+  assert.match(mermaidStyles, /max-width: 100%;/);
+  assert.match(mermaidStyles, /overflow: auto;/);
+  assert.doesNotMatch(mermaidStyles, /overscroll-behavior:/);
   assert.match(messageContent, /w-full min-w-0 max-w-full/);
   assert.match(messageContent, /qc-markdown prose prose-sm min-w-0 max-w-full/);
   assert.match(htmlArtifact, /relative my-3 w-full max-w-full overflow-hidden/);
@@ -127,7 +141,13 @@ test('sidebar collapse clips fixed content instead of reflowing labels', async (
 
   assert.match(appLayout, /style=\{\{ minWidth: MIN_SIDEBAR_WIDTH \}\}/);
   assert.match(appLayout, /overflow-hidden/);
-  assert.doesNotMatch(appLayout, /rounded-tl-xl border-l/);
+  assert.match(appLayout, /border-t border-linear-border border-l rounded-tl-xl/);
+  assert.match(appLayout, /border-l-linear-border-hover/);
+  assert.doesNotMatch(appLayout, /hover:bg-linear-surface-hover active:bg-linear-border-hover/);
+  assert.match(appLayout, /overflow-visible/);
+  assert.match(appLayout, /isSidebarOpen \? 'overflow-visible' : 'overflow-hidden'/);
+  assert.match(appLayout, /absolute left-full top-0 bottom-0 w-2/);
+  assert.doesNotMatch(appLayout, /absolute right-0 top-0 bottom-0 w-2/);
   assert.match(newChatButton, /whitespace-nowrap/);
   assert.match(searchBar, /whitespace-nowrap/);
   assert.match(messageHeader, /text-\[15px\]/);

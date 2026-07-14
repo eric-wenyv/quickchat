@@ -260,6 +260,8 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
 }) => {
   // 内部维护侧边栏开关状态，确保布局灵活性
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
+  const [isSidebarResizeHovered, setIsSidebarResizeHovered] = useState(false);
+  const [isSidebarResizing, setIsSidebarResizing] = useState(false);
 
   // 侧边栏宽度状态（支持拖拽调整）
   const [sidebarWidth, setSidebarWidth] = useState(() => {
@@ -277,6 +279,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
   // 直接操作 DOM 的拖拽实现，绕过 React 渲染周期以避免卡顿
   const startResize = useCallback((e: React.MouseEvent) => {
     e.preventDefault();
+    setIsSidebarResizing(true);
     const startX = e.clientX;
     const startWidth = asideRef.current?.offsetWidth ?? sidebarWidth;
     const aside = asideRef.current;
@@ -308,6 +311,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
 
       document.body.style.userSelect = '';
       document.body.style.cursor = '';
+      setIsSidebarResizing(false);
       window.removeEventListener('mousemove', handleMouseMove);
       window.removeEventListener('mouseup', handleMouseUp);
 
@@ -370,7 +374,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
         isSidebarOpen={isSidebarOpen}
         onToggleSidebar={() => setIsSidebarOpen(prev => !prev)}
       />
-      <div className="flex min-h-0 flex-1">
+      <div className="flex min-h-0 flex-1 bg-linear-sidebar">
 
         {/* 
         左侧边栏区域 (B-1): 负责导航与历史管理
@@ -379,12 +383,13 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
         <aside
           ref={asideRef}
           className={`
-          codex-glass-chrome relative flex-shrink-0 h-full transition-[width] duration-500 ease-out z-20 overflow-hidden
-          ${isSidebarOpen ? 'border-r border-linear-border' : 'w-0 min-w-0 pointer-events-none border-r-0'}
+          codex-glass-chrome relative flex-shrink-0 h-full transition-[width] duration-500 ease-out z-20
+          ${isSidebarOpen ? 'overflow-visible' : 'overflow-hidden'}
+          ${isSidebarOpen ? '' : 'w-0 min-w-0 pointer-events-none'}
         `}
           style={{ width: isSidebarOpen ? sidebarWidth : 0 }}
         >
-          <div className="h-full w-full shrink-0" style={{ minWidth: MIN_SIDEBAR_WIDTH }}>
+          <div className="h-full w-full shrink-0 overflow-hidden" style={{ minWidth: MIN_SIDEBAR_WIDTH }}>
             <Sidebar
               conversations={conversations}
               activeConversationId={selectedConversationId ?? activeConversation?.id ?? null}
@@ -403,11 +408,16 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
             />
           </div>
 
-          {/* 侧边栏宽度拖拽条 */}
+          {/*
+            侧边栏宽度拖拽条：放置在侧栏外侧，避免覆盖会话列表滚动条。
+            外层允许溢出，内容区域仍保持裁剪，确保折叠动画不受影响。
+          */}
           {isSidebarOpen && (
             <div
               onMouseDown={startResize}
-              className="absolute right-0 top-0 bottom-0 w-2 z-30 cursor-col-resize bg-transparent hover:bg-linear-surface-hover active:bg-linear-border-hover transition-colors"
+              onMouseEnter={() => setIsSidebarResizeHovered(true)}
+              onMouseLeave={() => setIsSidebarResizeHovered(false)}
+              className="absolute left-full top-0 bottom-0 w-2 z-30 cursor-col-resize bg-transparent"
               title="拖动调整宽度"
             />
           )}
@@ -417,7 +427,13 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
         右侧主对话区区域 (C-1): 应用核心交互平面
         利用 flex-1 中自适应剩余空间。
       */}
-        <main className="flex-1 min-w-0 h-full relative z-10 flex flex-col overflow-hidden bg-linear-bg">
+        <main
+          className={`flex-1 min-w-0 h-full relative z-10 flex flex-col overflow-hidden bg-linear-bg border-t border-linear-border border-l rounded-tl-xl transition-colors ${
+            isSidebarResizeHovered || isSidebarResizing
+              ? 'border-l-linear-border-hover'
+              : 'border-l-linear-border'
+          }`}
+        >
 
           {/* 
           集成主对话区容器 

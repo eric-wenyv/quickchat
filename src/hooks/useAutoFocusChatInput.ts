@@ -7,7 +7,7 @@ import { useEffect } from 'react';
  *
  * 约束：
  * - 不会夺走已聚焦文本输入（input/textarea/select/contenteditable）的焦点。
- *   这覆盖了搜索栏、Agent URL 输入框、模型设置弹窗内的各类输入控件等。
+ *   这覆盖了搜索栏、模型设置弹窗内的各类输入控件等。
  * - 当打开模态/对话框（role="dialog" 且 aria-modal="true"）时不抢占焦点。
  * - 当存在文本选区时（避免破坏用户的复制/选择意图）不抢占焦点。
  * - 仅在按下「单个字符」键且无 Ctrl/Meta/Alt 修饰时触发，避免与快捷键冲突。

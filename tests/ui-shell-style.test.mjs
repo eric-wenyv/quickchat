@@ -24,7 +24,7 @@ test('sidebar keeps real quick-chat actions without fake Codex sections', async 
   const conversationList = await source('src/components/sidebar/ConversationList.tsx');
 
   assert.match(sidebar, /SearchBar/);
-  assert.match(sidebar, /onOpenAgentBrowser/);
+  assert.doesNotMatch(sidebar, /Agent/);
   assert.doesNotMatch(sidebar, /插件/);
   assert.doesNotMatch(sidebar, /自动化/);
   assert.doesNotMatch(sidebar, /项目/);
@@ -132,22 +132,38 @@ test('rich output stays inside the app viewport instead of creating page scrollb
   assert.doesNotMatch(htmlArtifact, /md:-mx-2/);
 });
 
-test('sidebar collapse clips fixed content instead of reflowing labels', async () => {
+test('sidebar grid width and opacity transition together without reflowing labels', async () => {
   const appLayout = await source('src/components/layout/AppLayout.tsx');
   const newChatButton = await source('src/components/sidebar/NewChatButton.tsx');
   const searchBar = await source('src/components/sidebar/SearchBar.tsx');
   const messageHeader = await source('src/components/chat/MessageHeader.tsx');
   const emptyState = await source('src/components/chat/EmptyState.tsx');
 
-  assert.match(appLayout, /style=\{\{ minWidth: MIN_SIDEBAR_WIDTH \}\}/);
+  assert.match(appLayout, /transition-\[grid-template-columns\] duration-300/);
+  assert.match(appLayout, /gridTemplateColumns: isSidebarOpen \? `\$\{sidebarWidth\}px minmax\(0, 1fr\)` : '0px minmax\(0, 1fr\)'/);
+  assert.match(appLayout, /style=\{\{ width: sidebarWidth, minWidth: sidebarWidth \}\}/);
+  assert.match(appLayout, /contentLayout\.style\.gridTemplateColumns = `\$\{width\}px minmax\(0, 1fr\)`/);
+  assert.match(appLayout, /willChange: 'grid-template-columns'/);
+  assert.match(appLayout, /const sidebarContentRef = useRef<HTMLDivElement>\(null\)/);
+  assert.match(appLayout, /const sidebarResizeHandleRef = useRef<HTMLDivElement>\(null\)/);
+  assert.match(appLayout, /sidebarContent\.style\.width = `\$\{width\}px`/);
+  assert.match(appLayout, /sidebarResizeHandle\.style\.left = `\$\{width\}px`/);
+  assert.match(appLayout, /relative isolate grid min-h-0 flex-1 transition-\[grid-template-columns\]/);
+  assert.match(appLayout, /zIndex: 20/);
+  assert.match(appLayout, /relative z-0 flex flex-col/);
+  assert.doesNotMatch(appLayout, /isSidebarVisible/);
   assert.match(appLayout, /overflow-hidden/);
-  assert.match(appLayout, /border-t border-linear-border border-l rounded-tl-xl/);
+  assert.match(appLayout, /border-t border-linear-border border-l transition-colors/);
+  assert.match(appLayout, /isSidebarOpen \? 'rounded-tl-xl' : 'rounded-tl-none'/);
   assert.match(appLayout, /border-l-linear-border-hover/);
   assert.doesNotMatch(appLayout, /hover:bg-linear-surface-hover active:bg-linear-border-hover/);
-  assert.match(appLayout, /overflow-visible/);
-  assert.match(appLayout, /isSidebarOpen \? 'overflow-visible' : 'overflow-hidden'/);
-  assert.match(appLayout, /absolute left-full top-0 bottom-0 w-2/);
-  assert.doesNotMatch(appLayout, /absolute right-0 top-0 bottom-0 w-2/);
+  assert.doesNotMatch(appLayout, /overflow-visible/);
+  assert.match(appLayout, /codex-glass-chrome relative min-w-0 h-full overflow-hidden transition-opacity duration-300/);
+  assert.match(appLayout, /isSidebarOpen \? 'opacity-100' : 'opacity-0 pointer-events-none'/);
+  assert.match(appLayout, /transition-\[left,opacity\] duration-300/);
+  assert.match(appLayout, /style=\{\{ left: isSidebarOpen \? sidebarWidth : 0 \}\}/);
+  assert.ok(appLayout.indexOf('</aside>') < appLayout.indexOf('ref={sidebarResizeHandleRef}'));
+  assert.doesNotMatch(appLayout, /left-full/);
   assert.match(newChatButton, /whitespace-nowrap/);
   assert.match(searchBar, /whitespace-nowrap/);
   assert.match(messageHeader, /text-\[15px\]/);

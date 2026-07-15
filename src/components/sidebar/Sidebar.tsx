@@ -19,7 +19,6 @@ interface SidebarProps {
   searchQuery: string;
   /** 打开模型设置 */
   onOpenSettings?: () => void;
-  onOpenAgentBrowser?: () => void;
   theme?: string;
   onToggleTheme?: () => void;
 }
@@ -48,7 +47,6 @@ const Sidebar: React.FC<SidebarProps> = ({
   isSearching = false,
   searchQuery,
   onOpenSettings,
-  onOpenAgentBrowser,
 }) => {
   return (
     <aside className="relative flex flex-col h-full w-full overflow-hidden select-none">
@@ -102,19 +100,6 @@ const Sidebar: React.FC<SidebarProps> = ({
 
       {/* 4. 底部设置与主题切换 */}
       <div className="flex-shrink-0 px-3 py-3 border-t border-linear-border/70 flex items-center gap-2">
-        {onOpenAgentBrowser && (
-          <button
-            onClick={onOpenAgentBrowser}
-            className="flex-1 flex items-center gap-2 px-3 py-2 rounded-md text-xs font-semibold text-linear-text-secondary hover:text-linear-text-primary hover:bg-linear-surface transition-all cursor-pointer"
-          >
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <rect x="2" y="3" width="20" height="14" rx="2" ry="2" />
-              <line x1="8" y1="21" x2="16" y2="21" />
-              <line x1="12" y1="17" x2="12" y2="21" />
-            </svg>
-            Agent
-          </button>
-        )}
         {onOpenSettings && (
           <button
             onClick={onOpenSettings}

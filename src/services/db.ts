@@ -364,10 +364,6 @@ async function ensureConversationColumns(db: Database): Promise<void> {
     const colNames = new Set(columns.map((c: any) => c.name));
     console.log('[DB] conversations table columns:', Array.from(colNames));
 
-    if (!colNames.has('agent_url')) {
-      await db.execute('ALTER TABLE conversations ADD COLUMN agent_url TEXT DEFAULT NULL;');
-      console.log('[DB] Added column: agent_url');
-    }
     if (!colNames.has('pinned')) {
       await db.execute('ALTER TABLE conversations ADD COLUMN pinned INTEGER DEFAULT 0;');
       console.log('[DB] Added column: pinned');
@@ -590,8 +586,8 @@ export async function deleteModelConfig(id: UUID): Promise<void> {
 export async function createConversation(conv: Conversation): Promise<void> {
   const db = await getDb();
   await db.execute(
-    'INSERT INTO conversations (id, title, model_id, system_prompt, agent_url, pinned, thinking_level, last_viewed_message_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-    [conv.id, conv.title, conv.model_id, conv.system_prompt, conv.agent_url ?? null, conv.pinned ?? 0, conv.thinking_level ?? null, conv.last_viewed_message_id ?? null, conv.created_at, conv.updated_at]
+    'INSERT INTO conversations (id, title, model_id, system_prompt, pinned, thinking_level, last_viewed_message_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+    [conv.id, conv.title, conv.model_id, conv.system_prompt, conv.pinned ?? 0, conv.thinking_level ?? null, conv.last_viewed_message_id ?? null, conv.created_at, conv.updated_at]
   );
 }
 
@@ -606,7 +602,6 @@ export async function getConversation(id: UUID): Promise<Conversation | null> {
     last_viewed_message_id: string | null;
     created_at: number;
     updated_at: number;
-    agent_url: string | null;
     pinned: number | null;
   }[]>('SELECT * FROM conversations WHERE id = ?', [id]);
 
@@ -627,14 +622,13 @@ export async function getConversation(id: UUID): Promise<Conversation | null> {
     last_viewed_message_id: r.last_viewed_message_id,
     created_at: r.created_at,
     updated_at: r.updated_at,
-    agent_url: r.agent_url,
     pinned: r.pinned,
   };
 }
 
 export async function updateConversation(
   id: UUID,
-  updates: Partial<Pick<Conversation, 'title' | 'model_id' | 'system_prompt' | 'agent_url' | 'pinned' | 'thinking_level' | 'last_viewed_message_id' | 'updated_at'>>
+  updates: Partial<Pick<Conversation, 'title' | 'model_id' | 'system_prompt' | 'pinned' | 'thinking_level' | 'last_viewed_message_id' | 'updated_at'>>
 ): Promise<void> {
   const db = await getDb();
   const sets: string[] = [];
@@ -643,7 +637,6 @@ export async function updateConversation(
   if (updates.title !== undefined) { sets.push('title = ?'); vals.push(updates.title); }
   if (updates.model_id !== undefined) { sets.push('model_id = ?'); vals.push(updates.model_id); }
   if (updates.system_prompt !== undefined) { sets.push('system_prompt = ?'); vals.push(updates.system_prompt); }
-  if (updates.agent_url !== undefined) { sets.push('agent_url = ?'); vals.push(updates.agent_url); }
   if (updates.pinned !== undefined) { sets.push('pinned = ?'); vals.push(updates.pinned); }
   if (updates.thinking_level !== undefined) { sets.push('thinking_level = ?'); vals.push(updates.thinking_level); }
   if (updates.last_viewed_message_id !== undefined) { sets.push('last_viewed_message_id = ?'); vals.push(updates.last_viewed_message_id); }
@@ -672,7 +665,6 @@ export async function getConversations(limit = 100, offset = 0): Promise<Convers
     last_message_at: number | null;
     last_message_preview: string | null;
     message_count: number;
-    agent_url: string | null;
     pinned: number | null;
   }[]>(
     `WITH ranked_conversations AS (
@@ -680,7 +672,6 @@ export async function getConversations(limit = 100, offset = 0): Promise<Convers
         c.id,
         c.title,
         c.created_at,
-        c.agent_url,
         COALESCE(c.pinned, 0) AS pinned,
         COALESCE((
           SELECT m.created_at
@@ -719,7 +710,6 @@ export async function getConversations(limit = 100, offset = 0): Promise<Convers
     last_message_at: r.last_message_at ?? r.created_at,
     last_message_preview: r.last_message_preview ?? '',
     message_count: r.message_count,
-    agent_url: r.agent_url,
     pinned: r.pinned,
   }));
 }
@@ -733,7 +723,6 @@ type ConversationSearchRow = {
   last_message_at: number | null;
   last_message_preview: string | null;
   message_count: number;
-  agent_url: string | null;
   pinned: number | null;
 };
 
@@ -745,7 +734,6 @@ function mapConversationRows(rows: ConversationSearchRow[]): ConversationSummary
     last_message_at: r.last_message_at ?? r.created_at,
     last_message_preview: r.last_message_preview ?? '',
     message_count: r.message_count,
-    agent_url: r.agent_url,
     pinned: r.pinned,
   }));
 }
@@ -781,7 +769,6 @@ async function searchConversationsWithFtsTable(
       c.id,
       c.title,
       c.created_at,
-      c.agent_url,
       c.pinned,
       COALESCE(last_msg.created_at, c.created_at) AS last_message_at,
       COALESCE(SUBSTR(last_msg.content, 1, 120), '') AS last_message_preview,
@@ -815,7 +802,6 @@ async function searchConversationsByTitle(
       c.id,
       c.title,
       c.created_at,
-      c.agent_url,
       c.pinned,
       COALESCE(last_msg.created_at, c.created_at) AS last_message_at,
       COALESCE(SUBSTR(last_msg.content, 1, 120), '') AS last_message_preview,

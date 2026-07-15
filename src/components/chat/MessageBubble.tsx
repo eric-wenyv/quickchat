@@ -85,7 +85,7 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({ message, onDelete }) => {
           {/* 身份行 */}
           <div className="flex items-center gap-2 mb-2.5">
             <span className="text-[12px] font-medium text-linear-text-secondary">
-              {isUser ? 'You' : 'AI Agent'}
+              {isUser ? 'You' : 'Assistant'}
             </span>
             <MessageMeta
               createdAt={message.created_at}

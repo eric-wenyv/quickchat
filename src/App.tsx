@@ -135,10 +135,6 @@ export default function App() {
   const [searchQuery, setSearchQuery] = useState("");
   const [toast, setToast] = useState<{ id: number, title: string, desc?: string, type: "error" | "success" } | null>(null);
 
-  // --- Agent 浏览器状态 ---
-  const [agentUrl, setAgentUrl] = useState('');
-  const [agentMode, setAgentMode] = useState(false);
-
   const pendingUpdatesRef = useRef<Record<UUID, string>>({});
   const pendingUpdateThreadsRef = useRef<Record<UUID, UUID>>({});
   const rafRef = useRef<number | null>(null);
@@ -195,76 +191,6 @@ export default function App() {
 
   const limitConversationList = (convs: ConversationSummary[]) =>
     sortConversations(convs).slice(0, CONVERSATION_LIST_LIMIT);
-
-  // --- Agent 浏览器操作 ---
-  const handleOpenAgentBrowser = () => {
-    const url = window.prompt('请输入 Agent 服务地址：', 'http://127.0.0.1:5494');
-    if (url?.trim()) {
-      let finalUrl = url.trim();
-      if (!finalUrl.startsWith('http://') && !finalUrl.startsWith('https://')) {
-        finalUrl = 'http://' + finalUrl;
-      }
-
-      // 创建带 agent_url 的新会话并选中（使用默认模型）
-      const defaultModel = models.find(m => m.is_default) || models[0];
-      const modelId = defaultModel?.id ?? activeModelId;
-      const thinkingLevel = defaultModel?.thinking_level ?? null;
-      const now = Date.now();
-      const newConv: Conversation = {
-        id: crypto.randomUUID(),
-        title: finalUrl,
-        model_id: modelId,
-        system_prompt: null,
-        thinking_level: thinkingLevel,
-        last_viewed_message_id: null,
-        created_at: now,
-        updated_at: now,
-        agent_url: finalUrl,
-      };
-
-      createConversation(newConv)
-        .then(() => {
-          setConversations(prev => limitConversationList([{
-            id: newConv.id,
-            title: newConv.title,
-            created_at: newConv.created_at,
-            last_message_at: now,
-            last_message_preview: '',
-            message_count: 0,
-            agent_url: finalUrl,
-            pinned: 0,
-          }, ...prev]));
-          return handleSelectConversation(newConv.id);
-        })
-        .catch((e) => {
-          console.error('创建 Agent 会话失败:', e);
-          showToast('创建失败', String(e));
-        });
-    }
-  };
-
-  const handleAgentUrlChange = async (newUrl: string) => {
-    setAgentUrl(newUrl);
-    if (activeConversation) {
-      try {
-        await dbUpdateConversation(activeConversation.id, { agent_url: newUrl });
-        setActiveConversation(prev => prev ? { ...prev, agent_url: newUrl } : prev);
-        setConversations(prev => limitConversationList(prev.map(c =>
-          c.id === activeConversation.id ? { ...c, agent_url: newUrl } : c
-        )));
-      } catch (e) {
-        console.error('更新 Agent URL 失败:', e);
-      }
-    }
-  };
-
-  const handleAgentTitleChange = (_title: string) => {
-    // 标题变更由对话本身维护
-  };
-
-  const handleExitAgentMode = () => {
-    setAgentMode(false);
-  };
 
   // --- Toast 注册 ---
   useEffect(() => {
@@ -500,15 +426,8 @@ export default function App() {
         last_viewed_message_id: null,
         created_at: summary.created_at,
         updated_at: summary.last_message_at,
-        agent_url: summary.agent_url ?? null,
         pinned: summary.pinned ?? 0,
       });
-      if (summary.agent_url) {
-        setAgentUrl(summary.agent_url);
-        setAgentMode(true);
-      } else {
-        setAgentMode(false);
-      }
     }
 
     try {
@@ -532,13 +451,6 @@ export default function App() {
         // 恢复滚动位置：内存缓存优先，fallback 到 DB 持久化值
         const restoreId = conversationScrollMessageIdRef.current[id] ?? convDetail.last_viewed_message_id ?? null;
         setScrollRestoreMessageId(restoreId);
-        // 若会话绑定了 Agent 地址，自动进入 Agent 模式
-        if (convDetail.agent_url) {
-          setAgentUrl(convDetail.agent_url);
-          setAgentMode(true);
-        } else {
-          setAgentMode(false);
-        }
       } else {
         // 会话可能不存在，从列表找摘要信息
         const convs = await getConversations(CONVERSATION_LIST_LIMIT, 0);
@@ -557,21 +469,13 @@ export default function App() {
             last_viewed_message_id: null,
             created_at: s.created_at,
             updated_at: s.last_message_at,
-            agent_url: s.agent_url ?? null,
             pinned: s.pinned ?? 0,
           });
           setScrollRestoreMessageId(conversationScrollMessageIdRef.current[id] ?? null);
-          if (s.agent_url) {
-            setAgentUrl(s.agent_url);
-            setAgentMode(true);
-          } else {
-            setAgentMode(false);
-          }
         } else {
           activeConversationIdRef.current = null;
           setSelectedConversationId(null);
           setActiveConversation(null);
-          setAgentMode(false);
         }
       }
 
@@ -606,7 +510,6 @@ export default function App() {
     const hasEmptyActiveInList =
       activeConversation &&
       messages.length === 0 &&
-      !agentMode &&
       conversations.some(c => c.id === activeConversation.id);
     if (hasEmptyActiveInList) return;
 
@@ -620,7 +523,6 @@ export default function App() {
       last_viewed_message_id: null,
       created_at: now,
       updated_at: now,
-      agent_url: null,
     };
     selectRequestIdRef.current += 1;
     setSelectedConversationId(newConv.id);
@@ -633,8 +535,7 @@ export default function App() {
     setHasMoreMessages(false);
     setIsLoadingMoreMessages(false);
     setScrollRestoreMessageId(null);
-    setAgentMode(false);
-  }, [models, activeConversation, messages, agentMode, conversations]);
+  }, [models, activeConversation, messages, conversations]);
 
   const handleDeleteConversation = async (id: UUID) => {
     try {
@@ -1452,13 +1353,6 @@ export default function App() {
         onDeleteSystemPromptPreset={handleDeleteSystemPromptPreset}
         onDeleteMessage={handleDeleteMessage}
         onStopGeneration={handleStopGeneration}
-        // Agent 浏览器
-        agentMode={agentMode}
-        agentUrl={agentUrl}
-        onOpenAgentBrowser={handleOpenAgentBrowser}
-        onAgentUrlChange={handleAgentUrlChange}
-        onAgentTitleChange={handleAgentTitleChange}
-        onExitAgentMode={handleExitAgentMode}
       />
     </ErrorBoundary>
   );

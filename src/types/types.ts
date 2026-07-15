@@ -36,8 +36,6 @@ export interface ConversationSummary {
   last_message_preview: string;
   /** 会话内消息总数 */
   message_count: number;
-  /** 关联的 Agent 地址（若存在则点击会进入 Agent 浏览器） */
-  agent_url?: string | null;
   /** 是否固定置顶 */
   pinned?: number | null;
 }
@@ -56,8 +54,6 @@ export interface Conversation {
   last_viewed_message_id: UUID | null;
   created_at: EpochMillis;
   updated_at: EpochMillis;
-  /** 关联的 Agent 地址（若存在则点击会进入 Agent 浏览器） */
-  agent_url?: string | null;
   /** 是否固定置顶 */
   pinned?: number | null;
 }

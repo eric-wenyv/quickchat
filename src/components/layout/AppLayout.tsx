@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import Sidebar from '../sidebar/Sidebar';
 import { MainChatArea } from '../chat/MainChatArea';
-import AgentBrowser from '../agent/AgentBrowser';
 import { listen } from '@tauri-apps/api/event';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import type {
@@ -89,13 +88,6 @@ interface AppLayoutProps {
   onDeleteMessage: (id: UUID) => void;
   /** 中断 AI 生成 */
   onStopGeneration?: () => void;
-  // --- Agent 浏览器 ---
-  agentMode: boolean;
-  agentUrl: string;
-  onOpenAgentBrowser: () => void;
-  onAgentUrlChange: (newUrl: string) => void;
-  onAgentTitleChange: (title: string) => void;
-  onExitAgentMode: () => void;
 }
 
 const MIN_SIDEBAR_WIDTH = 180;
@@ -250,15 +242,9 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
   onDeleteSystemPromptPreset,
   onDeleteMessage,
   onStopGeneration,
-  // Agent 浏览器
-  agentMode,
-  agentUrl,
-  onOpenAgentBrowser,
-  onAgentUrlChange,
-  onAgentTitleChange,
-  onExitAgentMode,
 }) => {
-  // 内部维护侧边栏开关状态，确保布局灵活性
+  // 内部维护侧边栏开关状态，确保布局灵活性。
+  // 内容层维持完整宽度，外层宽度和透明度同步过渡，避免文字和控件被压缩重排。
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [isSidebarResizeHovered, setIsSidebarResizeHovered] = useState(false);
   const [isSidebarResizing, setIsSidebarResizing] = useState(false);
@@ -274,7 +260,14 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
     }
     return DEFAULT_SIDEBAR_WIDTH;
   });
+  const contentLayoutRef = useRef<HTMLDivElement>(null);
   const asideRef = useRef<HTMLElement>(null);
+  const sidebarContentRef = useRef<HTMLDivElement>(null);
+  const sidebarResizeHandleRef = useRef<HTMLDivElement>(null);
+
+  const toggleSidebar = useCallback(() => {
+    setIsSidebarOpen(prev => !prev);
+  }, []);
 
   // 直接操作 DOM 的拖拽实现，绕过 React 渲染周期以避免卡顿
   const startResize = useCallback((e: React.MouseEvent) => {
@@ -282,10 +275,29 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
     setIsSidebarResizing(true);
     const startX = e.clientX;
     const startWidth = asideRef.current?.offsetWidth ?? sidebarWidth;
-    const aside = asideRef.current;
+    const contentLayout = contentLayoutRef.current;
+    const sidebarContent = sidebarContentRef.current;
+    const sidebarResizeHandle = sidebarResizeHandleRef.current;
 
-    if (aside) {
-      aside.style.transition = 'none';
+    const updateResizeWidth = (width: number) => {
+      if (contentLayout) {
+        contentLayout.style.gridTemplateColumns = `${width}px minmax(0, 1fr)`;
+      }
+      // 拖拽需要实时扩展内容层；收缩/展开动画则继续保持这个完整宽度，避免文本重排。
+      if (sidebarContent) {
+        sidebarContent.style.width = `${width}px`;
+        sidebarContent.style.minWidth = `${width}px`;
+      }
+      if (sidebarResizeHandle) {
+        sidebarResizeHandle.style.left = `${width}px`;
+      }
+    };
+
+    if (contentLayout) {
+      contentLayout.style.transition = 'none';
+    }
+    if (sidebarResizeHandle) {
+      sidebarResizeHandle.style.transition = 'none';
     }
     document.body.style.userSelect = 'none';
     document.body.style.cursor = 'col-resize';
@@ -293,20 +305,22 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
     const handleMouseMove = (moveEvent: MouseEvent) => {
       const delta = moveEvent.clientX - startX;
       const newWidth = Math.min(Math.max(startWidth + delta, MIN_SIDEBAR_WIDTH), MAX_SIDEBAR_WIDTH);
-      if (aside) {
-        aside.style.width = `${newWidth}px`;
-      }
+      updateResizeWidth(newWidth);
     };
 
     const handleMouseUp = (upEvent: MouseEvent) => {
       const delta = upEvent.clientX - startX;
       const finalWidth = Math.min(Math.max(startWidth + delta, MIN_SIDEBAR_WIDTH), MAX_SIDEBAR_WIDTH);
 
-      if (aside) {
-        aside.style.width = `${finalWidth}px`;
-        // Force a layout flush to ensure the final width is applied instantly without transition
-        void aside.offsetHeight;
-        aside.style.transition = '';
+      updateResizeWidth(finalWidth);
+      if (contentLayout) {
+        // 拖拽结束时立即固定宽度，再恢复收缩/展开的过渡。
+        void contentLayout.offsetHeight;
+        contentLayout.style.transition = '';
+      }
+      if (sidebarResizeHandle) {
+        void sidebarResizeHandle.offsetHeight;
+        sidebarResizeHandle.style.transition = '';
       }
 
       document.body.style.userSelect = '';
@@ -336,7 +350,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
     (async () => {
       try {
         unlistenToggle = await listen('shortcut-toggle-sidebar', () => {
-          if (!cancelled) setIsSidebarOpen(prev => !prev);
+          if (!cancelled) toggleSidebar();
         });
         unlistenNew = await listen('shortcut-new-conversation', () => {
           if (!cancelled) onCreateConversationRef.current();
@@ -352,7 +366,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
       const key = e.key.toLowerCase();
       if (key === 's') {
         e.preventDefault();
-        setIsSidebarOpen(prev => !prev);
+        toggleSidebar();
       } else if (key === 'n') {
         e.preventDefault();
         onCreateConversationRef.current();
@@ -366,30 +380,37 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
       unlistenNew?.();
       window.removeEventListener('keydown', handleKeyDown);
     };
-  }, []); // 空依赖：只注册一次，回调通过 ref 保持最新
+  }, [toggleSidebar]);
 
   return (
     <div className="flex h-screen w-screen flex-col bg-transparent text-linear-text-secondary font-sans overflow-hidden selection:bg-linear-surface-hover selection:text-linear-text-primary antialiased">
       <CodexMenuBar
         isSidebarOpen={isSidebarOpen}
-        onToggleSidebar={() => setIsSidebarOpen(prev => !prev)}
+        onToggleSidebar={toggleSidebar}
       />
-      <div className="flex min-h-0 flex-1 bg-linear-sidebar">
+      <div
+        ref={contentLayoutRef}
+        className="relative isolate grid min-h-0 flex-1 transition-[grid-template-columns] duration-300 ease-out bg-linear-sidebar"
+        style={{
+          gridTemplateColumns: isSidebarOpen ? `${sidebarWidth}px minmax(0, 1fr)` : '0px minmax(0, 1fr)',
+          willChange: 'grid-template-columns',
+        }}
+      >
 
         {/* 
         左侧边栏区域 (B-1): 负责导航与历史管理
-        宽度支持拖拽调整，通过 style 动态绑定
+        宽度支持拖拽调整，并由 Grid 轨道与主区域同步计算
       */}
         <aside
           ref={asideRef}
+          aria-hidden={!isSidebarOpen}
           className={`
-          codex-glass-chrome relative flex-shrink-0 h-full transition-[width] duration-500 ease-out z-20
-          ${isSidebarOpen ? 'overflow-visible' : 'overflow-hidden'}
-          ${isSidebarOpen ? '' : 'w-0 min-w-0 pointer-events-none'}
+          codex-glass-chrome relative min-w-0 h-full overflow-hidden transition-opacity duration-300 ease-out z-20
+          ${isSidebarOpen ? 'opacity-100' : 'opacity-0 pointer-events-none'}
         `}
-          style={{ width: isSidebarOpen ? sidebarWidth : 0 }}
+          style={{ willChange: 'opacity', zIndex: 20 }}
         >
-          <div className="h-full w-full shrink-0 overflow-hidden" style={{ minWidth: MIN_SIDEBAR_WIDTH }}>
+          <div ref={sidebarContentRef} className="h-full w-full shrink-0 overflow-hidden" style={{ width: sidebarWidth, minWidth: sidebarWidth }}>
             <Sidebar
               conversations={conversations}
               activeConversationId={selectedConversationId ?? activeConversation?.id ?? null}
@@ -402,33 +423,38 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
               isSearching={isSearchingConversations}
               searchQuery={searchQuery}
               onOpenSettings={onOpenSettings}
-              onOpenAgentBrowser={onOpenAgentBrowser}
               theme={theme}
               onToggleTheme={onToggleTheme}
             />
           </div>
 
-          {/*
-            侧边栏宽度拖拽条：放置在侧栏外侧，避免覆盖会话列表滚动条。
-            外层允许溢出，内容区域仍保持裁剪，确保折叠动画不受影响。
-          */}
-          {isSidebarOpen && (
-            <div
-              onMouseDown={startResize}
-              onMouseEnter={() => setIsSidebarResizeHovered(true)}
-              onMouseLeave={() => setIsSidebarResizeHovered(false)}
-              className="absolute left-full top-0 bottom-0 w-2 z-30 cursor-col-resize bg-transparent"
-              title="拖动调整宽度"
-            />
-          )}
         </aside>
+
+        {/*
+          侧边栏宽度拖拽条：独立于始终裁剪内容的 aside，沿 Grid 分界线移动。
+          这样命中区域可以伸入主区，而侧栏内容不会在展开/收缩动画中越过轨道。
+        */}
+        <div
+          ref={sidebarResizeHandleRef}
+          onMouseDown={startResize}
+          onMouseEnter={() => setIsSidebarResizeHovered(true)}
+          onMouseLeave={() => setIsSidebarResizeHovered(false)}
+          className={`absolute top-0 bottom-0 w-2 z-30 cursor-col-resize bg-transparent transition-[left,opacity] duration-300 ease-out ${
+            isSidebarOpen ? 'opacity-100' : 'opacity-0 pointer-events-none'
+          }`}
+          style={{ left: isSidebarOpen ? sidebarWidth : 0 }}
+          title="拖动调整宽度"
+          aria-hidden={!isSidebarOpen}
+        />
 
         {/* 
         右侧主对话区区域 (C-1): 应用核心交互平面
-        利用 flex-1 中自适应剩余空间。
-      */}
+        占据 Grid 的剩余空间，始终不与侧栏轨道重叠。
+        */}
         <main
-          className={`flex-1 min-w-0 h-full relative z-10 flex flex-col overflow-hidden bg-linear-bg border-t border-linear-border border-l rounded-tl-xl transition-colors ${
+          className={`min-w-0 h-full relative z-0 flex flex-col overflow-hidden bg-linear-bg border-t border-linear-border border-l transition-colors ${
+            isSidebarOpen ? 'rounded-tl-xl' : 'rounded-tl-none'
+          } ${
             isSidebarResizeHovered || isSidebarResizing
               ? 'border-l-linear-border-hover'
               : 'border-l-linear-border'
@@ -439,43 +465,31 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
           集成主对话区容器 
           内部已包含 Header, MessageList, EmptyState 与 ChatInputFooter (含 Enter 发送拦截与高度增长逻辑)
         */}
-          {agentMode ? (
-            <AgentBrowser
-              url={agentUrl}
-              isSidebarOpen={isSidebarOpen}
-              onToggleSidebar={() => setIsSidebarOpen(true)}
-              onUrlChange={onAgentUrlChange}
-              onTitleChange={onAgentTitleChange}
-              onExitAgentMode={onExitAgentMode}
-              onNewChat={onCreateConversation}
-            />
-          ) : (
-            <MainChatArea
-              conversation={activeConversation}
-              messages={messages}
-              isLoadingMessages={isLoadingMessages}
-              isLoadingMore={isLoadingMoreMessages}
-              onSendMessage={onSendMessage}
-              onLoadMore={onLoadMoreMessages}
-              hasMore={hasMoreMessages}
-              models={models}
-              activeModelId={activeModelId}
-              onModelSelect={onModelSelect}
-              isSending={isSending}
-              onRenameConversation={onRenameConversation}
-              onUpdateSystemPrompt={onUpdateSystemPrompt}
-              thinkingLevel={activeThinkingLevel}
-              onUpdateThinkingLevel={onUpdateThinkingLevel}
-              scrollRestoreMessageId={scrollRestoreMessageId}
-              onActiveMessageIdChange={onActiveMessageIdChange}
-              systemPrompts={systemPrompts}
-              onSaveSystemPromptPreset={onSaveSystemPromptPreset}
-              onDeleteSystemPromptPreset={onDeleteSystemPromptPreset}
-              onDeleteMessage={onDeleteMessage}
-              onStopGeneration={onStopGeneration}
-              onFileDrop={onFileDrop}
-            />
-          )}
+          <MainChatArea
+            conversation={activeConversation}
+            messages={messages}
+            isLoadingMessages={isLoadingMessages}
+            isLoadingMore={isLoadingMoreMessages}
+            onSendMessage={onSendMessage}
+            onLoadMore={onLoadMoreMessages}
+            hasMore={hasMoreMessages}
+            models={models}
+            activeModelId={activeModelId}
+            onModelSelect={onModelSelect}
+            isSending={isSending}
+            onRenameConversation={onRenameConversation}
+            onUpdateSystemPrompt={onUpdateSystemPrompt}
+            thinkingLevel={activeThinkingLevel}
+            onUpdateThinkingLevel={onUpdateThinkingLevel}
+            scrollRestoreMessageId={scrollRestoreMessageId}
+            onActiveMessageIdChange={onActiveMessageIdChange}
+            systemPrompts={systemPrompts}
+            onSaveSystemPromptPreset={onSaveSystemPromptPreset}
+            onDeleteSystemPromptPreset={onDeleteSystemPromptPreset}
+            onDeleteMessage={onDeleteMessage}
+            onStopGeneration={onStopGeneration}
+            onFileDrop={onFileDrop}
+          />
         </main>
 
       </div>

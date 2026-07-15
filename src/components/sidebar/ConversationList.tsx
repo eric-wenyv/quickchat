@@ -23,23 +23,16 @@ const ConversationList: React.FC<ConversationListProps> = ({
   onPin,
   isLoading,
 }) => {
-  // 加载态：渲染 6 个骨架屏卡片
+  // 加载态：渲染与单行标题布局一致的 6 个骨架项
   if (isLoading) {
     return (
       <div className="h-full min-h-0 flex flex-col gap-1 px-3 py-2 overflow-hidden">
         {[...Array(6)].map((_, i) => (
           <div
-            key={i} 
-            className="flex flex-col shrink-0 gap-2.5 p-3 rounded-md bg-linear-surface border border-transparent animate-pulse"
+            key={i}
+            className="flex shrink-0 items-center px-2.5 py-2 rounded-md bg-linear-surface border border-transparent animate-pulse"
           >
-            <div className="flex justify-between items-center">
-              <div className="h-4 w-24 bg-linear-surface-hover rounded-md" />
-              <div className="h-3 w-8 bg-linear-surface-hover/60 rounded-md" />
-            </div>
-            <div className="space-y-1.5">
-              <div className="h-3 w-full bg-linear-surface-hover/40 rounded-md" />
-              <div className="h-3 w-4/5 bg-linear-surface-hover/30 rounded-md" />
-            </div>
+            <div className="h-4 w-28 bg-linear-surface-hover rounded-md" />
           </div>
         ))}
       </div>

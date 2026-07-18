@@ -1,15 +1,152 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import type { ModelConfig, UUID } from '@/types/types';
 import { ModelForm } from './ModelForm';
+import { DEFAULT_GLOBAL_SHORTCUT } from '@/services/globalShortcut';
 
 interface ModelSettingsProps {
   models: ModelConfig[];
   visionModelId: string | null;
   onSelectVisionModel: (id: string | null) => void;
+  globalShortcut: string | null;
+  onGlobalShortcutChange: (shortcut: string | null) => Promise<void>;
   onSave: (config: ModelConfig) => void;
   onDelete: (id: UUID) => void;
   onClose: () => void;
 }
+
+interface GlobalShortcutSettingsProps {
+  value: string | null;
+  onChange: (shortcut: string | null) => Promise<void>;
+}
+
+const shortcutKeyFromEvent = (event: React.KeyboardEvent<HTMLButtonElement>): string | null => {
+  if (event.key === ' ') return 'Space';
+  if (/^[a-z0-9]$/i.test(event.key)) return event.key.toUpperCase();
+  if (/^F(?:[1-9]|1[0-2])$/i.test(event.key)) return event.key.toUpperCase();
+  return null;
+};
+
+const RESERVED_SHORTCUTS = new Set(['Ctrl+Shift+S', 'Ctrl+Shift+N']);
+
+const GlobalShortcutSettings: React.FC<GlobalShortcutSettingsProps> = ({ value, onChange }) => {
+  const [shortcut, setShortcut] = useState(value);
+  const [isCapturing, setIsCapturing] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => setShortcut(value), [value]);
+
+  const captureShortcut = (event: React.KeyboardEvent<HTMLButtonElement>) => {
+    if (!isCapturing) return;
+    event.preventDefault();
+    event.stopPropagation();
+
+    if (['Control', 'Alt', 'Shift', 'Meta'].includes(event.key)) return;
+
+    const key = shortcutKeyFromEvent(event);
+    if (!key) {
+      setError('请使用字母、数字、F1–F12 或空格键。');
+      return;
+    }
+
+    const modifiers = [
+      event.ctrlKey && 'Ctrl',
+      event.altKey && 'Alt',
+      event.shiftKey && 'Shift',
+      event.metaKey && 'Super',
+    ].filter(Boolean);
+
+    if (modifiers.length === 0) {
+      setError('快捷键必须包含 Ctrl、Alt、Shift 或 Super。');
+      return;
+    }
+
+    const nextShortcut = [...modifiers, key].join('+');
+    if (RESERVED_SHORTCUTS.has(nextShortcut)) {
+      setError('该组合键已用于应用内操作，请选择其他快捷键。');
+      return;
+    }
+
+    setShortcut(nextShortcut);
+    setError(null);
+    setIsCapturing(false);
+  };
+
+  const saveShortcut = async (nextShortcut: string | null) => {
+    setIsSaving(true);
+    setError(null);
+    try {
+      await onChange(nextShortcut);
+      setShortcut(nextShortcut);
+    } catch (saveError) {
+      setError(`无法注册此快捷键：${String(saveError)}`);
+    } finally {
+      setIsSaving(false);
+      setIsCapturing(false);
+    }
+  };
+
+  return (
+    <section className="rounded-lg border border-linear-border bg-linear-surface p-4">
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h3 className="text-sm font-bold text-linear-text-primary">快速打开</h3>
+          <p className="mt-1 text-xs leading-5 text-linear-text-tertiary">
+            在任意应用中显示或隐藏 Quick Chat。Linux 上避免使用 Alt+Space，它通常由桌面环境占用。
+          </p>
+        </div>
+        <span className={`shrink-0 rounded-md px-2 py-1 text-[10px] font-bold ${shortcut ? 'bg-emerald-500/10 text-emerald-400' : 'bg-linear-surface-hover text-linear-text-tertiary'}`}>
+          {shortcut ? '已启用' : '已禁用'}
+        </span>
+      </div>
+
+      <div className="mt-3 flex flex-wrap items-center gap-2">
+        <button
+          type="button"
+          onClick={() => {
+            setIsCapturing(true);
+            setError(null);
+          }}
+          onKeyDown={captureShortcut}
+          className={`min-w-44 rounded-lg border px-3 py-2 text-left font-mono text-sm transition-colors cursor-pointer focus:outline-none focus-visible:border-linear-border-hover ${
+            isCapturing
+              ? 'border-linear-border-hover bg-linear-surface-hover text-linear-text-primary'
+              : 'border-linear-border bg-linear-bg text-linear-text-secondary hover:bg-linear-surface-hover'
+          }`}
+          aria-label="录入快速打开快捷键"
+        >
+          {isCapturing ? '按下新的组合键…' : shortcut ?? '未设置'}
+        </button>
+        <button
+          type="button"
+          disabled={isSaving || !shortcut || isCapturing}
+          onClick={() => void saveShortcut(shortcut)}
+          className="rounded-lg border border-linear-border px-3 py-2 text-xs font-semibold text-linear-text-secondary transition-colors hover:bg-linear-surface-hover disabled:cursor-not-allowed disabled:opacity-50 cursor-pointer"
+        >
+          {isSaving ? '保存中…' : '保存'}
+        </button>
+        <button
+          type="button"
+          disabled={isSaving}
+          onClick={() => void saveShortcut(null)}
+          className="rounded-lg px-3 py-2 text-xs font-semibold text-linear-text-tertiary transition-colors hover:bg-linear-surface-hover hover:text-linear-text-secondary disabled:cursor-not-allowed disabled:opacity-50 cursor-pointer"
+        >
+          禁用
+        </button>
+        <button
+          type="button"
+          disabled={isSaving}
+          onClick={() => void saveShortcut(DEFAULT_GLOBAL_SHORTCUT)}
+          className="rounded-lg px-3 py-2 text-xs font-semibold text-linear-text-tertiary transition-colors hover:bg-linear-surface-hover hover:text-linear-text-secondary disabled:cursor-not-allowed disabled:opacity-50 cursor-pointer"
+        >
+          恢复默认
+        </button>
+      </div>
+      <p className="mt-2 text-[11px] text-linear-text-muted">点击快捷键框后，按下包含修饰键的组合键，再保存。</p>
+      {error && <p className="mt-2 text-xs text-red-400" role="alert">{error}</p>}
+    </section>
+  );
+};
 
 const PROVIDER_BADGES: Record<string, { label: string; bg: string; text: string }> = {
   google_gemini: { label: 'GG', bg: 'bg-blue-500/10', text: 'text-blue-600' },
@@ -189,6 +326,8 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({
   models,
   visionModelId,
   onSelectVisionModel,
+  globalShortcut,
+  onGlobalShortcutChange,
   onSave,
   onDelete,
   onClose,
@@ -255,6 +394,7 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({
             </div>
           ) : (
             <div className="space-y-3">
+              <GlobalShortcutSettings value={globalShortcut} onChange={onGlobalShortcutChange} />
               <h3 className="text-sm font-bold text-linear-text-primary mb-2">模型管理</h3>
               {models.length === 0 && (
                 <div className="text-center py-12 text-linear-text-tertiary text-sm">

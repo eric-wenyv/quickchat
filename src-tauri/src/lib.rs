@@ -2,7 +2,7 @@
 //
 // Tauri v2 application runtime.
 // Responsibilities:
-//   - Register tauri-plugin-global-shortcut (Alt+Space → focus toggle)
+//   - Register tauri-plugin-global-shortcut (frontend-configured quick-open shortcut)
 //   - Register tauri-plugin-sql (SQLite backend)
 //   - Window is configured as borderless + transparent via tauri.conf.json.
 //   - System tray integration (close → hide to tray, keep running in background)
@@ -145,49 +145,6 @@ except Exception:
             if stdout.is_empty() { "(empty)" } else { &stdout },
             python_path
         ))
-    }
-}
-
-// ---------------------------------------------------------------------------
-// Helper: toggle window visibility + focus (called from the shortcut handler)
-// ---------------------------------------------------------------------------
-
-/// Spotlight-style visibility toggle for the main window.
-/// - Hidden / minimised  → show + unminimise + force keyboard focus
-/// - Visible             → hide (send to background)
-fn toggle_window_focus(app: &tauri::AppHandle) {
-    let Some(window) = app.get_webview_window("main") else {
-        eprintln!("[quick-chat] window 'main' not found");
-        return;
-    };
-
-    let visible = match window.is_visible() {
-        Ok(v) => v,
-        Err(e) => {
-            eprintln!("[quick-chat] is_visible() error: {e}");
-            return;
-        }
-    };
-
-    if visible {
-        // Window is in the foreground — hide it.
-        if let Err(e) = window.hide() {
-            eprintln!("[quick-chat] hide() error: {e}");
-        }
-    } else {
-        // Window is hidden — bring it back to the front.
-        if let Err(e) = window.show() {
-            eprintln!("[quick-chat] show() error: {e}");
-            return; // No point calling set_focus if show failed.
-        }
-        // Un-minimise on Windows / macOS when applicable.
-        if let Err(e) = window.unminimize() {
-            eprintln!("[quick-chat] unminimize() error: {e}");
-        }
-        // Force keyboard focus so the user can start typing immediately.
-        if let Err(e) = window.set_focus() {
-            eprintln!("[quick-chat] set_focus() error: {e}");
-        }
     }
 }
 
@@ -356,8 +313,8 @@ pub fn run() {
             }
         })
         // ── Global shortcut plugin ──────────────────────────────────────────
-        // `.with_shortcuts` pre-registers shortcuts at startup.
-        // `.with_handler` receives ALL shortcut events; we filter by matching.
+        // The quick-open shortcut is registered by the frontend so users can
+        // change or disable it. These two shortcuts remain fixed app actions.
         .setup(|app| {
             // System tray setup
             if let Err(e) = setup_tray(app) {
@@ -371,16 +328,14 @@ pub fn run() {
 
                 app.handle().plugin(
                     ShortcutBuilder::new()
-                        .with_shortcuts(["alt+space", "ctrl+shift+s", "ctrl+shift+n"])
+                        .with_shortcuts(["ctrl+shift+s", "ctrl+shift+n"])
                         .expect("failed to register global shortcuts")
                         .with_handler(|app, shortcut, event| {
                             // Act only on key-down to prevent double-firing.
                             if event.state != ShortcutState::Pressed {
                                 return;
                             }
-                            if shortcut.matches(Modifiers::ALT, Code::Space) {
-                                toggle_window_focus(app);
-                            } else if shortcut.matches(Modifiers::CONTROL | Modifiers::SHIFT, Code::KeyS) {
+                            if shortcut.matches(Modifiers::CONTROL | Modifiers::SHIFT, Code::KeyS) {
                                 let _ = app.emit("shortcut-toggle-sidebar", ());
                             } else if shortcut.matches(Modifiers::CONTROL | Modifiers::SHIFT, Code::KeyN) {
                                 let _ = app.emit("shortcut-new-conversation", ());

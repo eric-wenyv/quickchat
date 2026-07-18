@@ -29,6 +29,11 @@ import type { ChatMessage, ChatContentPart } from "./services/ai";
 import { parseAttachments, getLanguageFromFilename } from "./utils/file";
 import { parseImageDescriptions, serializeImageDescriptions, type ImageDescription } from "./utils/image-description";
 import { searchWeb, formatSearchResults } from "./services/search";
+import {
+  getConfiguredGlobalShortcut,
+  initializeGlobalShortcut,
+  setConfiguredGlobalShortcut,
+} from "./services/globalShortcut";
 import { isThreadSending, markThreadIdle, markThreadSending, type ThreadSendingState } from "./utils/threadState";
 import type {
   ConversationSummary,
@@ -123,6 +128,7 @@ export default function App() {
   const [dbReady, setDbReady] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [systemPrompts, setSystemPrompts] = useState<SystemPrompt[]>([]);
+  const [globalShortcut, setGlobalShortcut] = useState<string | null>(() => getConfiguredGlobalShortcut());
 
   const [isLoadingConversations, setIsLoadingConversations] = useState(false);
   const [isSearchingConversations, setIsSearchingConversations] = useState(false);
@@ -157,6 +163,12 @@ export default function App() {
   const activeMessageIdRef = useRef<UUID | null>(null);
 
   const isSending = isThreadSending(sendingByConversationId, activeConversation?.id);
+
+  useEffect(() => {
+    void initializeGlobalShortcut().catch(error => {
+      console.warn('全局快速打开快捷键未注册:', error);
+    });
+  }, []);
 
   useEffect(() => {
     activeConversationIdRef.current = activeConversation?.id ?? null;
@@ -1215,6 +1227,11 @@ export default function App() {
     }
   };
 
+  const handleSaveGlobalShortcut = async (shortcut: string | null) => {
+    await setConfiguredGlobalShortcut(shortcut);
+    setGlobalShortcut(shortcut);
+  };
+
   // --- 自动创建空对话（就绪后且无活跃会话时）---
   const didAutoCreateRef = useRef(false);
   useEffect(() => {
@@ -1306,6 +1323,8 @@ export default function App() {
         <ModelSettings
           models={models}
           visionModelId={visionModelId}
+          globalShortcut={globalShortcut}
+          onGlobalShortcutChange={handleSaveGlobalShortcut}
           onSelectVisionModel={(id) => {
             setVisionModelId(id);
             if (id) localStorage.setItem('quick_chat_vision_model_id', id);

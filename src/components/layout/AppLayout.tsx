@@ -121,7 +121,7 @@ const CodexMenuBar: React.FC<CodexMenuBarProps> = ({
   return (
     <header
       data-tauri-drag-region
-      className="codex-glass-chrome relative z-40 flex h-9 w-full shrink-0 items-center justify-between text-linear-text-tertiary select-none"
+      className="codex-menu-bar codex-glass-chrome relative z-40 flex h-9 w-full shrink-0 items-center justify-between text-linear-text-tertiary select-none"
       style={{ WebkitAppRegion: 'drag' } as React.CSSProperties}
     >
       <div
@@ -383,7 +383,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
   }, [toggleSidebar]);
 
   return (
-    <div className="flex h-screen w-screen flex-col bg-transparent text-linear-text-secondary font-sans overflow-hidden selection:bg-linear-surface-hover selection:text-linear-text-primary antialiased">
+    <div className="app-window-shell flex h-screen w-screen flex-col bg-transparent text-linear-text-secondary font-sans overflow-hidden selection:bg-linear-surface-hover selection:text-linear-text-primary antialiased">
       <CodexMenuBar
         isSidebarOpen={isSidebarOpen}
         onToggleSidebar={toggleSidebar}
@@ -452,7 +452,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
         占据 Grid 的剩余空间，始终不与侧栏轨道重叠。
         */}
         <main
-          className={`min-w-0 h-full relative z-0 flex flex-col overflow-hidden bg-linear-bg border-t border-linear-border border-l transition-colors ${
+          className={`main-chat-shell min-w-0 h-full relative z-0 flex flex-col overflow-hidden bg-linear-bg border-t border-linear-border border-l transition-colors ${
             isSidebarOpen ? 'rounded-tl-xl' : 'rounded-tl-none'
           } ${
             isSidebarResizeHovered || isSidebarResizing

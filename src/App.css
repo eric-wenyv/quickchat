@@ -65,25 +65,14 @@ body,
   background: var(--color-linear-sidebar);
 }
 
-/*
- * WebView2 on Windows keeps the existing opaque chrome over native Acrylic.
- * Linux/WebKitGTK instead exposes alpha surfaces so KWin blur (or this tinted
- * fallback when compositor blur is unavailable) remains visible.
- */
-html[data-platform='linux'] .app-content-shell {
-  background: transparent;
-}
-
-html[data-platform='linux'] .codex-glass-chrome {
-  background:
-    linear-gradient(180deg, rgba(31, 31, 33, 0.78), rgba(25, 25, 27, 0.72)),
-    rgba(27, 27, 29, 0.7);
-  -webkit-backdrop-filter: blur(24px) saturate(1.05);
-  backdrop-filter: blur(24px) saturate(1.05);
-}
-
+/* Linux uses an opaque WebKitGTK surface to avoid stale transparent frames. */
 html[data-platform='linux'] {
   --quick-jump-expanded-bg: rgba(24, 24, 24, 0.82);
+  background: var(--color-linear-bg);
+}
+
+html[data-platform='linux'] .app-window-shell {
+  background: var(--color-linear-bg);
 }
 
 /* ── Keyframes ── */

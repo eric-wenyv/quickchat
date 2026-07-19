@@ -178,7 +178,7 @@ export const ChatInputFooter: React.FC<ChatInputFooterProps> = ({
   const canSend = (!!content.trim() || pendingImages.length > 0 || pendingFiles.length > 0) && !disabled;
 
   return (
-    <footer className="w-full px-4 pt-2 pb-2 bg-linear-bg relative">
+    <footer className="main-chat-footer w-full px-4 pt-2 pb-2 bg-linear-bg relative">
       <div className="absolute top-0 left-0 right-0 h-[1px] bg-gradient-to-r from-transparent via-linear-border to-transparent opacity-35" />
       <div className="mx-auto w-full max-w-[920px]">
         <div

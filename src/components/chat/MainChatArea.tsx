@@ -226,7 +226,7 @@ export const MainChatArea: React.FC<MainChatAreaProps> = ({
 
   if (!conversation) {
     return (
-      <div className="relative flex flex-col h-full w-full overflow-hidden bg-linear-bg items-center justify-center">
+      <div className="main-chat-area relative flex flex-col h-full w-full overflow-hidden bg-linear-bg items-center justify-center">
         <div className="w-8 h-8 border-2 border-linear-border border-t-linear-accent rounded-full animate-spin" />
       </div>
     );
@@ -234,7 +234,7 @@ export const MainChatArea: React.FC<MainChatAreaProps> = ({
 
   return (
     <div
-      className="relative flex flex-col h-full w-full overflow-hidden bg-linear-bg"
+      className="main-chat-area relative flex flex-col h-full w-full overflow-hidden bg-linear-bg"
       onDragEnter={handleDragEnter}
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}

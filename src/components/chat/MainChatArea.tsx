@@ -287,15 +287,16 @@ export const MainChatArea: React.FC<MainChatAreaProps> = ({
                   {/* ── 右侧中间固定导航条（DeepSeek 风格）── */}
                   {showNavPanel && (
                     <div
-                      className="absolute right-5 top-1/2 -translate-y-1/2 z-20 flex flex-col items-center py-3 overflow-hidden custom-scrollbar"
+                      className="quick-jump-nav absolute right-5 top-1/2 -translate-y-1/2 z-20 flex flex-col items-center py-3 overflow-hidden custom-scrollbar"
                       style={{
                         width: isNavHovered ? 192 : 20,
                         maxHeight: 'min(64vh, 420px)',
                         overflowX: 'hidden',
                         overflowY: isNavHovered ? 'auto' : 'hidden',
                         overscrollBehavior: 'contain',
-                        backgroundColor: isNavHovered ? 'rgba(24, 24, 24, 0.42)' : 'transparent',
+                        backgroundColor: isNavHovered ? 'var(--quick-jump-expanded-bg, rgba(24, 24, 24, 0.42))' : 'transparent',
                         backdropFilter: isNavHovered ? 'blur(28px) saturate(1.35)' : 'none',
+                        WebkitBackdropFilter: isNavHovered ? 'blur(28px) saturate(1.35)' : 'none',
                         borderRadius: isNavHovered ? '12px 0 0 12px' : 0,
                         borderWidth: '1px 0 1px 1px',
                         borderStyle: 'solid',

@@ -4,6 +4,10 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import "katex/dist/katex.min.css";
 import App from "./App";
 
+if (navigator.userAgent.includes("Linux")) {
+  document.documentElement.dataset.platform = "linux";
+}
+
 async function showTauriWindowWhenReady() {
   if (!("__TAURI_INTERNALS__" in window)) return;
 

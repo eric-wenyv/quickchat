@@ -13,6 +13,9 @@ use std::path::PathBuf;
 use tauri::{Emitter, Manager};
 use tauri_plugin_global_shortcut::{Code, Modifiers, ShortcutState};
 
+#[cfg(target_os = "linux")]
+mod linux_blur;
+
 // ---------------------------------------------------------------------------
 // Command: parse PDF / Word document via Python (pdfplumber / python-docx)
 // ---------------------------------------------------------------------------
@@ -319,6 +322,13 @@ pub fn run() {
             // System tray setup
             if let Err(e) = setup_tray(app) {
                 eprintln!("[quick-chat] tray setup error: {e}");
+            }
+
+            #[cfg(target_os = "linux")]
+            if let Some(window) = app.get_webview_window("main") {
+                if let Err(e) = linux_blur::install(&window) {
+                    eprintln!("[quick-chat] Linux blur setup error: {e}");
+                }
             }
 
             // Global shortcuts are desktop-only.

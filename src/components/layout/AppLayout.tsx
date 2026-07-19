@@ -390,7 +390,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
       />
       <div
         ref={contentLayoutRef}
-        className="relative isolate grid min-h-0 flex-1 transition-[grid-template-columns] duration-300 ease-out bg-linear-sidebar"
+        className="app-content-shell relative isolate grid min-h-0 flex-1 transition-[grid-template-columns] duration-300 ease-out bg-linear-sidebar"
         style={{
           gridTemplateColumns: isSidebarOpen ? `${sidebarWidth}px minmax(0, 1fr)` : '0px minmax(0, 1fr)',
           willChange: 'grid-template-columns',

@@ -346,19 +346,22 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
     let unlistenToggle: (() => void) | undefined;
     let unlistenNew: (() => void) | undefined;
     let cancelled = false;
+    const isTauriRuntime = '__TAURI_INTERNALS__' in window;
 
-    (async () => {
-      try {
-        unlistenToggle = await listen('shortcut-toggle-sidebar', () => {
-          if (!cancelled) toggleSidebar();
-        });
-        unlistenNew = await listen('shortcut-new-conversation', () => {
-          if (!cancelled) onCreateConversationRef.current();
-        });
-      } catch (e) {
-        console.warn('Tauri 全局快捷键监听未就绪:', e);
-      }
-    })();
+    if (isTauriRuntime) {
+      (async () => {
+        try {
+          unlistenToggle = await listen('shortcut-toggle-sidebar', () => {
+            if (!cancelled) toggleSidebar();
+          });
+          unlistenNew = await listen('shortcut-new-conversation', () => {
+            if (!cancelled) onCreateConversationRef.current();
+          });
+        } catch (e) {
+          console.warn('Tauri 全局快捷键监听未就绪:', e);
+        }
+      })();
+    }
 
     // Fallback：当焦点在主文档时，仍可通过常规键盘事件响应
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -372,13 +375,17 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
         onCreateConversationRef.current();
       }
     };
-    window.addEventListener('keydown', handleKeyDown);
+    if (!isTauriRuntime) {
+      window.addEventListener('keydown', handleKeyDown);
+    }
 
     return () => {
       cancelled = true;
       unlistenToggle?.();
       unlistenNew?.();
-      window.removeEventListener('keydown', handleKeyDown);
+      if (!isTauriRuntime) {
+        window.removeEventListener('keydown', handleKeyDown);
+      }
     };
   }, [toggleSidebar]);
 

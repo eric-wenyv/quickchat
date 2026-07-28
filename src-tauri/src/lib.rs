@@ -345,6 +345,13 @@ pub fn run() {
                             if event.state != ShortcutState::Pressed {
                                 return;
                             }
+                            let is_main_window_focused = app
+                                .get_webview_window("main")
+                                .and_then(|window| window.is_focused().ok())
+                                .unwrap_or(false);
+                            if !is_main_window_focused {
+                                return;
+                            }
                             if shortcut.matches(Modifiers::CONTROL | Modifiers::SHIFT, Code::KeyS) {
                                 let _ = app.emit("shortcut-toggle-sidebar", ());
                             } else if shortcut.matches(Modifiers::CONTROL | Modifiers::SHIFT, Code::KeyN) {

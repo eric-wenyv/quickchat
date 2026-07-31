@@ -15,6 +15,34 @@ use tauri_plugin_global_shortcut::{Code, Modifiers, ShortcutState};
 
 #[cfg(target_os = "linux")]
 mod linux_blur;
+mod server;
+
+// ---------------------------------------------------------------------------
+// Commands: LAN relay server (for the Android client)
+// ---------------------------------------------------------------------------
+
+#[tauri::command]
+async fn get_server_info(
+    state: tauri::State<'_, std::sync::Arc<server::LanServer>>,
+) -> Result<server::ServerInfo, String> {
+    Ok(state.info().await)
+}
+
+#[tauri::command]
+async fn set_server_config(
+    enabled: bool,
+    port: u16,
+    state: tauri::State<'_, std::sync::Arc<server::LanServer>>,
+) -> Result<server::ServerInfo, String> {
+    state.set_config(enabled, port).await
+}
+
+#[tauri::command]
+async fn regenerate_server_token(
+    state: tauri::State<'_, std::sync::Arc<server::LanServer>>,
+) -> Result<server::ServerInfo, String> {
+    state.regenerate_token().await
+}
 
 // ---------------------------------------------------------------------------
 // Command: parse PDF / Word document via Python (pdfplumber / python-docx)
@@ -239,7 +267,7 @@ async fn search_web(query: String) -> Result<Value, String> {
     serde_json::from_str(&body).map_err(|e| format!("Tavily 响应解析失败: {e}"))
 }
 
-fn get_tavily_api_key() -> Result<String, String> {
+pub(crate) fn get_tavily_api_key() -> Result<String, String> {
     if let Ok(value) = std::env::var("TAVILY_API_KEY") {
         let trimmed = value.trim().to_string();
         if !trimmed.is_empty() {
@@ -331,6 +359,22 @@ pub fn run() {
                 }
             }
 
+            // Embedded LAN relay server (shared SQLite + AI proxy for Android)
+            {
+                let config_dir = app.path().app_config_dir();
+                match config_dir {
+                    Ok(config_dir) => {
+                        match tauri::async_runtime::block_on(server::init(config_dir)) {
+                            Ok(lan_server) => {
+                                app.manage(lan_server);
+                            }
+                            Err(e) => eprintln!("[quick-chat] LAN server init failed: {e}"),
+                        }
+                    }
+                    _ => eprintln!("[quick-chat] LAN server init failed: cannot resolve app dirs"),
+                }
+            }
+
             // Global shortcuts are desktop-only.
             #[cfg(desktop)]
             {
@@ -371,7 +415,13 @@ pub fn run() {
         .plugin(tauri_plugin_sql::Builder::default().build())
         // ── Invoke handler ──────────────────────────────────────────────────
         // 搜索请求走 Rust 侧转发，避免在 webview 暴露 Tavily API Key。
-        .invoke_handler(tauri::generate_handler![search_web, parse_document])
+        .invoke_handler(tauri::generate_handler![
+            search_web,
+            parse_document,
+            get_server_info,
+            set_server_config,
+            regenerate_server_token
+        ])
         // ── Run ─────────────────────────────────────────────────────────────
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

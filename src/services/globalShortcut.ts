@@ -7,6 +7,14 @@ export const DEFAULT_GLOBAL_SHORTCUT = 'Ctrl+Alt+Space';
 
 let registeredShortcut: string | null = null;
 
+// Holding the shortcut down fires repeated Pressed events (key auto-repeat), and
+// each async toggle reads isVisible() before the previous show()/hide() lands.
+// Both make the window flash open and immediately close. Serialize toggles and
+// ignore presses that arrive right after a toggle.
+const TOGGLE_DEBOUNCE_MS = 400;
+let lastToggleAt = 0;
+let toggleQueue: Promise<void> = Promise.resolve();
+
 export function getConfiguredGlobalShortcut(): string | null {
   const saved = localStorage.getItem(GLOBAL_SHORTCUT_STORAGE_KEY);
 
@@ -29,12 +37,22 @@ async function toggleWindowVisibility() {
   await window.setFocus();
 }
 
+function requestToggle() {
+  const now = Date.now();
+  if (now - lastToggleAt < TOGGLE_DEBOUNCE_MS) return;
+  lastToggleAt = now;
+
+  toggleQueue = toggleQueue.then(() =>
+    toggleWindowVisibility().catch(error => {
+      console.error('切换 Quick Chat 窗口失败:', error);
+    }),
+  );
+}
+
 async function registerShortcut(shortcut: string) {
   await register(shortcut, event => {
     if (event.state === 'Pressed') {
-      void toggleWindowVisibility().catch(error => {
-        console.error('切换 Quick Chat 窗口失败:', error);
-      });
+      requestToggle();
     }
   });
 }

@@ -329,6 +329,180 @@ fn dotenv_candidate_paths() -> Vec<PathBuf> {
 }
 
 // ---------------------------------------------------------------------------
+// Command: fetch a web page and extract readable text (for the read_url tool)
+// ---------------------------------------------------------------------------
+
+/// 正文返回给模型的最大字符数，超出部分截断并标记 truncated。
+const FETCH_URL_MAX_CHARS: usize = 20_000;
+/// 响应体读取上限（字节），防止超大页面拖垮内存。
+const FETCH_URL_MAX_BYTES: usize = 5 * 1024 * 1024;
+
+/// HTML 中不提供正文语义的标签，提取文本前整体剔除。
+const HTML_STRIP_SELECTOR: &str = "script, style, noscript, template, svg, iframe, head";
+/// 块级元素：提取文本时在边界补换行，保留基本段落结构。
+const HTML_BLOCK_SELECTOR: &str =
+    "p, div, br, hr, li, ul, ol, tr, table, section, article, header, footer, aside, nav, \
+     h1, h2, h3, h4, h5, h6, blockquote, pre, figure, figcaption, form, fieldset, dl, dt, dd";
+
+fn extract_html_text(html: &str) -> (Option<String>, String) {
+    use scraper::{Html, Selector};
+
+    let mut doc = Html::parse_document(html);
+
+    let title = Selector::parse("title")
+        .ok()
+        .and_then(|sel| doc.select(&sel).next())
+        .map(|el| el.text().collect::<String>().trim().to_string())
+        .filter(|t| !t.is_empty());
+
+    // 剔除 script/style 等无正文语义的节点
+    if let Ok(strip) = Selector::parse(HTML_STRIP_SELECTOR) {
+        let ids: Vec<_> = doc.select(&strip).map(|el| el.id()).collect();
+        for id in ids {
+            if let Some(mut node) = doc.tree.get_mut(id) {
+                node.detach();
+            }
+        }
+    }
+
+    let body_html = Selector::parse("body")
+        .ok()
+        .and_then(|sel| doc.select(&sel).next())
+        .map(|el| el.inner_html())
+        .unwrap_or_default();
+
+    // 二次解析：在块级元素边界插入换行，再收集纯文本
+    let mut body_doc = Html::parse_fragment(&body_html);
+    if let Ok(blocks) = Selector::parse(HTML_BLOCK_SELECTOR) {
+        let ids: Vec<_> = body_doc.select(&blocks).map(|el| el.id()).collect();
+        for id in ids {
+            if let Some(mut node) = body_doc.tree.get_mut(id) {
+                node.append(scraper::node::Node::Text(scraper::node::Text {
+                    text: "\n".into(),
+                }));
+            }
+        }
+    }
+
+    let root = body_doc.root_element();
+    let raw: String = root.text().collect();
+
+    // 压缩空白：行内连续空白折叠为单空格，3 个以上换行折叠为 2 个
+    let mut lines: Vec<String> = raw
+        .lines()
+        .map(|line| line.split_whitespace().collect::<Vec<_>>().join(" "))
+        .collect();
+    lines.retain(|line| !line.is_empty());
+    (title, lines.join("\n"))
+}
+
+#[tauri::command]
+async fn fetch_url(url: String) -> Result<Value, String> {
+    let url = url.trim().to_string();
+    if !(url.starts_with("http://") || url.starts_with("https://")) {
+        return Err(format!("仅支持 http/https 链接: {url}"));
+    }
+
+    let client = reqwest::Client::builder()
+        .user_agent(
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 \
+             (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
+        )
+        .timeout(std::time::Duration::from_secs(15))
+        .redirect(reqwest::redirect::Policy::limited(10))
+        .build()
+        .map_err(|e| format!("创建 HTTP 客户端失败: {e}"))?;
+
+    let response = client
+        .get(&url)
+        .send()
+        .await
+        .map_err(|e| format!("请求网页失败: {e}"))?;
+
+    let status = response.status();
+    if !status.is_success() {
+        return Err(format!("网页请求失败 (HTTP {status})"));
+    }
+
+    let content_type = response
+        .headers()
+        .get(reqwest::header::CONTENT_TYPE)
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("")
+        .to_lowercase();
+
+    let bytes = response
+        .bytes()
+        .await
+        .map_err(|e| format!("读取网页内容失败: {e}"))?;
+    let bytes = if bytes.len() > FETCH_URL_MAX_BYTES {
+        &bytes[..FETCH_URL_MAX_BYTES]
+    } else {
+        &bytes[..]
+    };
+    let raw_text = String::from_utf8_lossy(bytes).to_string();
+
+    let is_html = content_type.contains("text/html") || content_type.contains("application/xhtml");
+    let (title, content) = if is_html {
+        extract_html_text(&raw_text)
+    } else {
+        (None, raw_text)
+    };
+
+    let truncated = content.chars().count() > FETCH_URL_MAX_CHARS;
+    let content: String = if truncated {
+        content.chars().take(FETCH_URL_MAX_CHARS).collect()
+    } else {
+        content
+    };
+
+    if content.trim().is_empty() {
+        return Err("网页内容为空或无法提取正文（可能需要 JS 渲染或登录）".to_string());
+    }
+
+    Ok(json!({
+        "url": url,
+        "title": title,
+        "content": content,
+        "truncated": truncated,
+    }))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::extract_html_text;
+
+    #[test]
+    fn extracts_title_and_body_text_without_scripts() {
+        let html = r#"
+            <html>
+            <head><title>示例页面</title><style>body{color:red}</style></head>
+            <body>
+                <h1>标题一</h1>
+                <p>第一段   带有多余空格。</p>
+                <script>alert('x')</script>
+                <ul><li>项目一</li><li>项目二</li></ul>
+            </body>
+            </html>
+        "#;
+        let (title, text) = extract_html_text(html);
+        assert_eq!(title.as_deref(), Some("示例页面"));
+        assert!(text.contains("标题一"));
+        assert!(text.contains("第一段 带有多余空格。"));
+        assert!(text.contains("项目一"));
+        assert!(!text.contains("alert"));
+        assert!(!text.contains("color:red"));
+    }
+
+    #[test]
+    fn collapses_blank_lines() {
+        let html = "<body><p>a</p><div><div><div>b</div></div></div></body>";
+        let (_, text) = extract_html_text(html);
+        assert_eq!(text, "a\nb");
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Public entry point (called from main.rs)
 // ---------------------------------------------------------------------------
 
@@ -418,6 +592,7 @@ pub fn run() {
         // 搜索请求走 Rust 侧转发，避免在 webview 暴露 Tavily API Key。
         .invoke_handler(tauri::generate_handler![
             search_web,
+            fetch_url,
             parse_document,
             get_server_info,
             set_server_config,

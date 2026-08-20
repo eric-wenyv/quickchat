@@ -135,6 +135,29 @@ export const WEB_SEARCH_TOOL: ToolDefinition = {
 };
 
 /**
+ * AI 阅读网页内容的工具：当用户消息包含 URL、要求阅读/总结某个页面，
+ * 或回答需要引用页面具体内容时，模型传入 URL，工具返回抓取到的正文文本。
+ */
+export const READ_URL_TOOL: ToolDefinition = {
+  type: 'function',
+  function: {
+    name: 'read_url',
+    description:
+      'Fetch and read the text content of a web page. Use this when the user shares a URL, asks to read or summarize a page, or when answering requires the actual content of a specific web page.',
+    parameters: {
+      type: 'object',
+      properties: {
+        url: {
+          type: 'string',
+          description: 'The full http/https URL of the page to read',
+        },
+      },
+      required: ['url'],
+    },
+  },
+};
+
+/**
  * AI 自主调用 Skill 的工具：模型从系统提示中的可用 Skill 目录选择一个名称，
  * 工具返回该 Skill 的完整指引（SKILL.md 内容），模型随后遵循其指引回答。
  * 标注了 disable-model-invocation 的 Skill 不出现在目录中，此工具也拒绝加载。

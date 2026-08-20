@@ -24,11 +24,12 @@ import {
   deleteSystemPrompt,
   runDatabaseMaintenance,
 } from "./services/db";
-import { appendCitationList, buildSkillCatalogPrompt, chatCompletion, describeImage, generateConversationTitle, generateFallbackConversationTitle, getWebSearchOptions, isPlaceholderConversationTitle, USE_SKILL_TOOL, WEB_SEARCH_TOOL } from "./services/ai";
+import { appendCitationList, buildSkillCatalogPrompt, chatCompletion, describeImage, generateConversationTitle, generateFallbackConversationTitle, getWebSearchOptions, isPlaceholderConversationTitle, READ_URL_TOOL, USE_SKILL_TOOL, WEB_SEARCH_TOOL } from "./services/ai";
 import type { ChatMessage, ChatContentPart, ToolDefinition } from "./services/ai";
 import { parseAttachments, getLanguageFromFilename } from "./utils/file";
 import { parseImageDescriptions, serializeImageDescriptions, type ImageDescription } from "./utils/image-description";
 import { searchWeb, formatSearchResults } from "./services/search";
+import { fetchUrlContent, formatUrlContent } from "./services/url";
 import { ensureBuiltinSkill, getAutoInvocableSkills, getSkillsSnapshot, importExternalSkills, readSkill, refreshSkills, type SkillMeta } from "./services/skills";
 import {
   getConfiguredGlobalShortcut,
@@ -1052,6 +1053,8 @@ export default function App() {
     }
     const functionTools: ToolDefinition[] = [];
     if (webSearch.enabled && webSearch.mode === 'legacy_tavily') functionTools.push(WEB_SEARCH_TOOL);
+    // read_url 不依赖搜索开关，始终可用（模型需要时自主抓取网页）
+    functionTools.push(READ_URL_TOOL);
     if (autoSkills.length > 0) functionTools.push(USE_SKILL_TOOL);
     const tools = functionTools.length > 0 ? functionTools : undefined;
     const abortController = new AbortController();
@@ -1079,8 +1082,13 @@ export default function App() {
         while (result.type === 'tool_calls' && toolLoopCount < 5) {
           toolLoopCount++;
 
+          const TOOL_LABELS: Record<string, string> = {
+            use_skill: '加载 Skill',
+            read_url: '读取网页',
+            web_search: '搜索网络',
+          };
           const toolNames = result.toolCalls
-            .map(tc => tc.function.name === 'use_skill' ? '加载 Skill' : tc.function.name)
+            .map(tc => TOOL_LABELS[tc.function.name] ?? tc.function.name)
             .join(', ');
           updateThreadMessages(convId, prev => prev.map(msg =>
             msg.id === aiMsgId
@@ -1105,6 +1113,19 @@ export default function App() {
                 toolResult = formatSearchResults(query, searchResults);
               } catch (e: any) {
                 toolResult = `搜索失败: ${e.message}`;
+              }
+            } else if (call.function.name === 'read_url') {
+              try {
+                const args = JSON.parse(call.function.arguments || '{}');
+                const url = String(args.url || '').trim();
+                if (!url) {
+                  toolResult = '读取网页失败: 未提供有效的 url 参数';
+                } else {
+                  const page = await fetchUrlContent(url);
+                  toolResult = formatUrlContent(page);
+                }
+              } catch (e: any) {
+                toolResult = `读取网页失败: ${e.message ?? e}`;
               }
             } else if (call.function.name === 'use_skill') {
               try {

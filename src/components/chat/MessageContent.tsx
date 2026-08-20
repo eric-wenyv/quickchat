@@ -9,6 +9,7 @@ import type { Components } from 'react-markdown';
 import type { MessageActivity, MessageStatus, FileAttachment } from '@/types/types';
 import { parseAttachments, formatFileSize, getFileIcon } from '@/utils/file';
 import { parseImageDescriptions } from '@/utils/image-description';
+import { stripSkillContext } from '@/utils/skill-context';
 import { normalizeStreamingMarkdown } from '@/utils/markdown';
 import { isRenderableHtmlArtifact, splitRenderableHtmlArtifacts } from '@/utils/artifacts';
 import ArtifactFullscreenShell from './ArtifactFullscreenShell';
@@ -762,8 +763,9 @@ const ActivityPill: React.FC<{ label: string }> = ({ label }) => (
 );
 
 const MessageContent: React.FC<MessageContentProps> = ({ content, status, activity }) => {
-  // 先剥离图片描述注释（不在 UI 中显示），再解析文件附件
-  const { text: contentWithoutImgDesc } = parseImageDescriptions(content);
+  // 先剥离 Skill 上下文注释（/ 命令注入，UI 不显示），再剥离图片描述注释，最后解析文件附件
+  const contentWithoutSkillCtx = stripSkillContext(content);
+  const { text: contentWithoutImgDesc } = parseImageDescriptions(contentWithoutSkillCtx);
   const { text: textContent, attachments } = parseAttachments(contentWithoutImgDesc);
   const hasTextContent = textContent.trim() !== '';
   const activityLabel = activity?.label ?? (status === 'streaming' && !hasTextContent ? '思考中...' : null);

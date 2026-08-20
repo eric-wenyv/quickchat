@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import Sidebar from '../sidebar/Sidebar';
 import { MainChatArea } from '../chat/MainChatArea';
+import SkillManager from '../skills/SkillManager';
+import type { SkillMeta } from '@/services/skills';
 import { listen } from '@tauri-apps/api/event';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import type {
@@ -88,6 +90,14 @@ interface AppLayoutProps {
   onDeleteMessage: (id: UUID) => void;
   /** 中断 AI 生成 */
   onStopGeneration?: () => void;
+  /** 是否显示 Skill 管理界面（替代右侧聊天区） */
+  showSkills: boolean;
+  /** 打开/关闭 Skill 管理界面 */
+  onOpenSkills: () => void;
+  /** 在对话中使用 Skill */
+  onUseSkill: (skill: SkillMeta, content: string) => void;
+  /** 全局 Toast 通知 */
+  onNotify: (title: string, desc?: string, type?: 'error' | 'success') => void;
 }
 
 const MIN_SIDEBAR_WIDTH = 180;
@@ -242,6 +252,10 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
   onDeleteSystemPromptPreset,
   onDeleteMessage,
   onStopGeneration,
+  showSkills,
+  onOpenSkills,
+  onUseSkill,
+  onNotify,
 }) => {
   // 内部维护侧边栏开关状态，确保布局灵活性。
   // 内容层维持完整宽度，外层宽度和透明度同步过渡，避免文字和控件被压缩重排。
@@ -430,6 +444,8 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
               isSearching={isSearchingConversations}
               searchQuery={searchQuery}
               onOpenSettings={onOpenSettings}
+              onOpenSkills={onOpenSkills}
+              isSkillsActive={showSkills}
               theme={theme}
               onToggleTheme={onToggleTheme}
             />
@@ -472,6 +488,13 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
           集成主对话区容器 
           内部已包含 Header, MessageList, EmptyState 与 ChatInputFooter (含 Enter 发送拦截与高度增长逻辑)
         */}
+          {showSkills ? (
+            <SkillManager
+              onClose={onOpenSkills}
+              onUseSkill={onUseSkill}
+              onNotify={onNotify}
+            />
+          ) : (
           <MainChatArea
             conversation={activeConversation}
             messages={messages}
@@ -497,6 +520,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
             onStopGeneration={onStopGeneration}
             onFileDrop={onFileDrop}
           />
+          )}
         </main>
 
       </div>

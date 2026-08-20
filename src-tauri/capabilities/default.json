@@ -21,6 +21,7 @@
     "sql:allow-select",
     "sql:allow-load",
     "clipboard-manager:allow-read-image",
-    "opener:allow-open-url"
+    "opener:allow-open-url",
+    "opener:allow-open-path"
   ]
 }

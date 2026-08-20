@@ -1,6 +1,7 @@
 import React from 'react';
 import type { ConversationSummary, UUID } from '@/types/types';
 import NewChatButton from './NewChatButton';
+import SkillsNavButton from './SkillsNavButton';
 import SearchBar from './SearchBar';
 import ConversationList from './ConversationList';
 
@@ -19,6 +20,10 @@ interface SidebarProps {
   searchQuery: string;
   /** 打开模型设置 */
   onOpenSettings?: () => void;
+  /** 打开 Skill 管理界面 */
+  onOpenSkills?: () => void;
+  /** Skill 管理界面是否正在显示 */
+  isSkillsActive?: boolean;
   theme?: string;
   onToggleTheme?: () => void;
 }
@@ -47,6 +52,8 @@ const Sidebar: React.FC<SidebarProps> = ({
   isSearching = false,
   searchQuery,
   onOpenSettings,
+  onOpenSkills,
+  isSkillsActive = false,
 }) => {
   return (
     <aside className="relative flex flex-col h-full w-full overflow-hidden select-none">
@@ -60,6 +67,13 @@ const Sidebar: React.FC<SidebarProps> = ({
         <div style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
           <NewChatButton onClick={onCreateConversation} />
         </div>
+
+        {/* B-2.5: Skill 管理入口 */}
+        {onOpenSkills && (
+          <div style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
+            <SkillsNavButton onClick={onOpenSkills} isActive={isSkillsActive} />
+          </div>
+        )}
 
         {/* B-3: 搜索框 */}
         <div style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>

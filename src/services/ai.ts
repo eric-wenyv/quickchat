@@ -134,6 +134,44 @@ export const WEB_SEARCH_TOOL: ToolDefinition = {
   },
 };
 
+/**
+ * AI 自主调用 Skill 的工具：模型从系统提示中的可用 Skill 目录选择一个名称，
+ * 工具返回该 Skill 的完整指引（SKILL.md 内容），模型随后遵循其指引回答。
+ * 标注了 disable-model-invocation 的 Skill 不出现在目录中，此工具也拒绝加载。
+ */
+export const USE_SKILL_TOOL: ToolDefinition = {
+  type: 'function',
+  function: {
+    name: 'use_skill',
+    description:
+      'Load the full instructions of an available skill by name. Call this only when the user\'s request clearly matches a skill\'s described purpose from the available skills list, then follow the returned instructions.',
+    parameters: {
+      type: 'object',
+      properties: {
+        name: {
+          type: 'string',
+          description: 'The exact skill name from the available skills list',
+        },
+      },
+      required: ['name'],
+    },
+  },
+};
+
+/** 构造注入系统提示的可用 Skill 目录（仅 AI 可自主调用的部分） */
+export function buildSkillCatalogPrompt(skills: Array<{ id: string; name: string; description: string }>): string {
+  const lines = skills.map(s => `- ${s.id}: ${s.description || s.name}`);
+  return [
+    '## 可调用的 Skill 列表 / Available Skills',
+    '',
+    '当用户的请求与下列某个 Skill 的用途明确匹配时，调用 use_skill 工具加载其完整指引，并严格遵循返回的指引完成任务。',
+    'When the user\'s request clearly matches one of the skills below, call the use_skill tool to load its full instructions and follow them.',
+    '仅在有明确匹配时调用；不要为无关请求调用；同一条回复不要重复加载同一个 Skill。',
+    '',
+    ...lines,
+  ].join('\n');
+}
+
 // ---------------------------------------------------------------------------
 // 工具函数
 // ---------------------------------------------------------------------------
@@ -273,7 +311,8 @@ function buildRequestBody(
   };
 
   if (model.provider === 'openrouter' && webSearch?.enabled && webSearch.mode === 'official') {
-    body.tools = [buildOpenRouterWebSearchTool()];
+    // OpenRouter 官方网页搜索工具与本地 function tools（如 use_skill）可以并存
+    body.tools = [buildOpenRouterWebSearchTool(), ...(tools ?? [])];
     body.tool_choice = 'auto';
   } else if (tools && tools.length > 0) {
     body.tools = tools;

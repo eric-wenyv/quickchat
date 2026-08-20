@@ -4,6 +4,9 @@ import { ChatTextArea, type ChatTextAreaHandle } from './ChatTextArea';
 import SendButton from './SendButton';
 import ModelSelector from './ModelSelector';
 import ThinkingLevelSelector from './ThinkingLevelSelector';
+import SkillCommandPopup from './SkillCommandPopup';
+import { useSkills } from '@/hooks/useSkills';
+import type { SkillMeta } from '@/services/skills';
 import { readFileAsBase64, readFileAsText, isTextFile, isDocumentFile, parseDocument, serializeAttachments, formatFileSize, getFileIcon } from '@/utils/file';
 import { shouldPreserveCurrentFocus } from '@/utils/focus';
 
@@ -55,6 +58,52 @@ export const ChatInputFooter: React.FC<ChatInputFooterProps> = ({
   const [pendingFiles, setPendingFiles] = useState<FileAttachment[]>([]);
   const textareaRef = useRef<ChatTextAreaHandle>(null);
   const wasDisabledRef = useRef(disabled);
+
+  // ── 斜杠命令（/skill）补全 ──
+  const skills = useSkills();
+  const [slashActiveIndex, setSlashActiveIndex] = useState(0);
+  const [slashDismissed, setSlashDismissed] = useState(false);
+  // 仅当整个输入内容还是一个 / 前缀的命令 token（尚未输入空格）时弹出
+  const slashQuery = /^\/([a-zA-Z0-9_-]*)$/.test(content) ? content.slice(1).toLowerCase() : null;
+  const slashCandidates =
+    slashQuery !== null && !slashDismissed
+      ? skills
+          .filter(s =>
+            s.id.toLowerCase().includes(slashQuery) || s.name.toLowerCase().includes(slashQuery)
+          )
+          .slice(0, 8)
+      : [];
+  const showSlashPopup = slashCandidates.length > 0;
+  const clampedSlashIndex = Math.min(slashActiveIndex, Math.max(slashCandidates.length - 1, 0));
+
+  const handleSlashSelect = (skill: SkillMeta) => {
+    setContent(`/${skill.id} `);
+    setSlashActiveIndex(0);
+    textareaRef.current?.focus({ preventScroll: true });
+  };
+
+  // 捕获阶段拦截按键：弹窗打开时 Enter/Tab/方向键优先作用于补全列表，不触发发送
+  const handleKeyDownCapture = (e: React.KeyboardEvent) => {
+    if (!showSlashPopup) return;
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      e.stopPropagation();
+      setSlashActiveIndex(i => (i + 1) % slashCandidates.length);
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      e.stopPropagation();
+      setSlashActiveIndex(i => (i - 1 + slashCandidates.length) % slashCandidates.length);
+    } else if (e.key === 'Enter' || e.key === 'Tab') {
+      e.preventDefault();
+      e.stopPropagation();
+      const skill = slashCandidates[clampedSlashIndex];
+      if (skill) handleSlashSelect(skill);
+    } else if (e.key === 'Escape') {
+      e.preventDefault();
+      e.stopPropagation();
+      setSlashDismissed(true);
+    }
+  };
 
   const focusInput = (force = false) => {
     if (disabled) return;
@@ -182,9 +231,20 @@ export const ChatInputFooter: React.FC<ChatInputFooterProps> = ({
       <div className="absolute top-0 left-0 right-0 h-[1px] bg-gradient-to-r from-transparent via-linear-border to-transparent opacity-35" />
       <div className="mx-auto w-full max-w-[920px]">
         <div
+          onKeyDownCapture={handleKeyDownCapture}
           className="relative group overflow-visible bg-[#2D2D2D] border border-[rgba(255,255,255,0.12)] shadow-[0_18px_48px_rgba(0,0,0,0.28)] rounded-2xl hover:border-[rgba(255,255,255,0.18)] focus-within:border-[rgba(255,255,255,0.22)] focus-within:shadow-[0_0_0_1px_rgba(255,255,255,0.06),0_18px_54px_rgba(0,0,0,0.34)]"
           style={{ transition: 'border-color 0.14s var(--ease-snappy), box-shadow 0.14s var(--ease-snappy)' }}
         >
+          {/* 斜杠命令补全弹窗 */}
+          {showSlashPopup && (
+            <SkillCommandPopup
+              skills={slashCandidates}
+              activeIndex={clampedSlashIndex}
+              onHover={setSlashActiveIndex}
+              onSelect={handleSlashSelect}
+            />
+          )}
+
           {/* 图片预览区 */}
           {pendingImages.length > 0 && (
             <div className="flex gap-2 px-4 pt-3 pb-1 overflow-x-auto scrollbar-hide">
@@ -240,7 +300,12 @@ export const ChatInputFooter: React.FC<ChatInputFooterProps> = ({
             <ChatTextArea
               ref={textareaRef}
               value={content}
-              onChange={setContent}
+              onChange={(v) => {
+                setContent(v);
+                // 内容变化后重新允许弹出补全（Escape 仅临时关闭）
+                setSlashDismissed(false);
+                setSlashActiveIndex(0);
+              }}
               onSubmit={handleSend}
               onImagePaste={handleImagePaste}
               onFilePaste={handleFilePaste}

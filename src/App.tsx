@@ -24,11 +24,12 @@ import {
   deleteSystemPrompt,
   runDatabaseMaintenance,
 } from "./services/db";
-import { appendCitationList, chatCompletion, describeImage, generateConversationTitle, generateFallbackConversationTitle, getWebSearchOptions, isPlaceholderConversationTitle, WEB_SEARCH_TOOL } from "./services/ai";
-import type { ChatMessage, ChatContentPart } from "./services/ai";
+import { appendCitationList, buildSkillCatalogPrompt, chatCompletion, describeImage, generateConversationTitle, generateFallbackConversationTitle, getWebSearchOptions, isPlaceholderConversationTitle, USE_SKILL_TOOL, WEB_SEARCH_TOOL } from "./services/ai";
+import type { ChatMessage, ChatContentPart, ToolDefinition } from "./services/ai";
 import { parseAttachments, getLanguageFromFilename } from "./utils/file";
 import { parseImageDescriptions, serializeImageDescriptions, type ImageDescription } from "./utils/image-description";
 import { searchWeb, formatSearchResults } from "./services/search";
+import { ensureBuiltinSkill, getAutoInvocableSkills, getSkillsSnapshot, importExternalSkills, readSkill, refreshSkills, type SkillMeta } from "./services/skills";
 import {
   getConfiguredGlobalShortcut,
   initializeGlobalShortcut,
@@ -127,6 +128,7 @@ export default function App() {
   const [visionModelId, setVisionModelId] = useState<string | null>(() => localStorage.getItem('quick_chat_vision_model_id') || null);
   const [dbReady, setDbReady] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
+  const [showSkills, setShowSkills] = useState(false);
   const [systemPrompts, setSystemPrompts] = useState<SystemPrompt[]>([]);
   const [globalShortcut, setGlobalShortcut] = useState<string | null>(() => getConfiguredGlobalShortcut());
 
@@ -399,8 +401,78 @@ export default function App() {
       });
   }, [dbReady, normalizedSearchQuery, conversations]);
 
+  // --- Skills：首次写入内置 Skill + 启动时自动导入 Claude/Codex 新增 Skill ---
+  useEffect(() => {
+    if (!dbReady) return;
+    (async () => {
+      try {
+        await ensureBuiltinSkill();
+      } catch (e) {
+        console.warn('内置 Skill 初始化失败:', e);
+      }
+      try {
+        const report = await importExternalSkills();
+        if (report.imported.length > 0) {
+          const byClaude = report.imported.filter(i => i.source === 'claude').length;
+          const byCodex = report.imported.length - byClaude;
+          const parts = [
+            byClaude > 0 ? `Claude ${byClaude} 个` : '',
+            byCodex > 0 ? `Codex ${byCodex} 个` : '',
+          ].filter(Boolean).join('、');
+          showToast('已自动导入 Skill', `来自 ${parts}`, 'success');
+        }
+      } catch (e) {
+        console.warn('自动导入 Skill 失败:', e);
+      }
+      // 刷新全局 Skill 缓存（/ 命令补全与 AI 自主调用目录共用）
+      try {
+        await refreshSkills();
+      } catch (e) {
+        console.warn('加载 Skill 列表失败:', e);
+      }
+    })();
+  }, [dbReady]);
+
+  // --- Skill 管理界面开关 / 在对话中使用 Skill ---
+  const handleOpenSkills = useCallback(() => {
+    setShowSkills(prev => !prev);
+  }, []);
+
+  const handleUseSkill = useCallback((skill: SkillMeta, skillContent: string) => {
+    const defaultModel = models.find(m => m.is_default) || models[0];
+    if (!defaultModel) {
+      showToast('无法创建', '请先配置 AI 模型');
+      return;
+    }
+    const now = Date.now();
+    const newConv: Conversation = {
+      id: crypto.randomUUID(),
+      title: `Skill: ${skill.name}`,
+      model_id: defaultModel.id,
+      system_prompt: `# Skill: ${skill.name}\n\n${skillContent}\n\n---\n以上是 Skill「${skill.name}」的完整说明，请在后续对话中遵循其中的指引。`,
+      thinking_level: defaultModel.thinking_level ?? null,
+      last_viewed_message_id: null,
+      created_at: now,
+      updated_at: now,
+    };
+    selectRequestIdRef.current += 1;
+    setSelectedConversationId(newConv.id);
+    activeConversationIdRef.current = newConv.id;
+    setActiveConversation(newConv);
+    setActiveModelId(defaultModel.id);
+    setActiveThinkingLevel(newConv.thinking_level);
+    setMessages([]);
+    messagesByConversationRef.current[newConv.id] = [];
+    setHasMoreMessages(false);
+    setIsLoadingMoreMessages(false);
+    setScrollRestoreMessageId(null);
+    setShowSkills(false);
+    showToast('已注入 Skill', `「${skill.name}」将作为新对话的上下文`, 'success');
+  }, [models]);
+
   // --- 会话操作 ---
   const handleSelectConversation = async (id: UUID, summaryOverride?: ConversationSummary) => {
+    setShowSkills(false);
     // 保存即将离开的会话的滚动位置（内存 + DB 持久化）
     const oldConvId = activeConversationIdRef.current;
     if (oldConvId && oldConvId !== id) {
@@ -516,6 +588,7 @@ export default function App() {
       return;
     }
     const modelId = defaultModel.id;
+    setShowSkills(false);
     // 新对话继承默认模型上一次使用的思考程度（若有思考选择的话）
     const thinkingLevel = defaultModel.thinking_level ?? null;
     // 如果当前已经有一个存在于列表中的空活跃会话，避免重复创建
@@ -938,10 +1011,49 @@ export default function App() {
       }
     }
 
+    // ── 斜杠命令：/skill-id 展开为 Skill 完整指引 ──
+    // 指引存入消息内的 HTML 注释（react-markdown 不渲染，UI 只显示 /命令 原文），
+    // 因此在整个会话的后续轮次中持续生效。
+    const slashMatch = effectiveUserContent.match(/^\/([a-zA-Z0-9_-]+)(?:\s+[\s\S]*)?$/);
+    if (slashMatch) {
+      const cmd = slashMatch[1].toLowerCase();
+      const skill = getSkillsSnapshot().find(
+        s => s.id.toLowerCase() === cmd || s.name.toLowerCase() === cmd
+      );
+      if (skill) {
+        try {
+          const skillMarkdown = await readSkill(skill.id);
+          effectiveUserContent = `${effectiveUserContent}\n\n<!-- skill-context:${skill.id}\n${skillMarkdown}\n-->`;
+          const updatedUserMsg: Message = { ...userMsg, content: effectiveUserContent };
+          updateThreadMessages(convId, prev => prev.map(msg =>
+            msg.id === userMsgId ? updatedUserMsg : msg
+          ));
+          try {
+            await updateMessage(userMsgId, { content: effectiveUserContent, updated_at: Date.now() });
+          } catch (e) {
+            console.error('写入 Skill 上下文失败:', e);
+          }
+        } catch (e) {
+          console.error('加载 Skill 失败:', e);
+          showToast('Skill 加载失败', String(e));
+        }
+      }
+    }
+
     // 构建对话历史
     let chatHistory = buildChatHistory(threadConversation, [...previousThreadMessages, { ...userMsg, content: effectiveUserContent }], supportsVision);
     const webSearch = getWebSearchOptions(activeModel);
-    const tools = webSearch.enabled && webSearch.mode === 'legacy_tavily' ? [WEB_SEARCH_TOOL] : undefined;
+
+    // Skill：向系统提示注入 AI 可自主调用的目录（排除 disable-model-invocation），
+    // 模型通过 use_skill 工具按需加载完整指引
+    const autoSkills = getAutoInvocableSkills();
+    if (autoSkills.length > 0) {
+      chatHistory.splice(1, 0, { role: 'system', content: buildSkillCatalogPrompt(autoSkills) });
+    }
+    const functionTools: ToolDefinition[] = [];
+    if (webSearch.enabled && webSearch.mode === 'legacy_tavily') functionTools.push(WEB_SEARCH_TOOL);
+    if (autoSkills.length > 0) functionTools.push(USE_SKILL_TOOL);
+    const tools = functionTools.length > 0 ? functionTools : undefined;
     const abortController = new AbortController();
     abortControllersRef.current[convId] = abortController;
     const clearPendingAssistantUpdate = () => {
@@ -962,12 +1074,14 @@ export default function App() {
         signal: abortController.signal,
       });
 
-      if (webSearch.enabled && webSearch.mode === 'legacy_tavily') {
+      if (functionTools.length > 0) {
         let toolLoopCount = 0;
-        while (result.type === 'tool_calls' && toolLoopCount < 3) {
+        while (result.type === 'tool_calls' && toolLoopCount < 5) {
           toolLoopCount++;
 
-          const toolNames = result.toolCalls.map(tc => tc.function.name).join(', ');
+          const toolNames = result.toolCalls
+            .map(tc => tc.function.name === 'use_skill' ? '加载 Skill' : tc.function.name)
+            .join(', ');
           updateThreadMessages(convId, prev => prev.map(msg =>
             msg.id === aiMsgId
               ? { ...msg, activity: { kind: 'tool' as const, label: `正在调用工具: ${toolNames}...` }, status: 'streaming' as const }
@@ -992,6 +1106,20 @@ export default function App() {
               } catch (e: any) {
                 toolResult = `搜索失败: ${e.message}`;
               }
+            } else if (call.function.name === 'use_skill') {
+              try {
+                const args = JSON.parse(call.function.arguments || '{}');
+                const requested = String(args.name || '').trim();
+                const skill = autoSkills.find(s => s.id === requested || s.name === requested);
+                if (skill) {
+                  const skillMarkdown = await readSkill(skill.id);
+                  toolResult = `# Skill: ${skill.name}\n\n${skillMarkdown}\n\n---\n以上是 Skill「${skill.name}」的完整指引，请遵循它回应用户的请求。`;
+                } else {
+                  toolResult = `Skill "${requested}" 不存在或未允许自主调用。可调用的 Skill: ${autoSkills.map(s => s.id).join(', ') || '(无)'}`;
+                }
+              } catch (e: any) {
+                toolResult = `加载 Skill 失败: ${e.message ?? e}`;
+              }
             } else {
               toolResult = `未知工具: ${call.function.name}`;
             }
@@ -1012,6 +1140,7 @@ export default function App() {
           result = await chatCompletion({
             model: activeModel,
             messages: chatHistory,
+            tools,
             webSearch,
             signal: abortController.signal,
           });
@@ -1019,9 +1148,7 @@ export default function App() {
       }
 
       if (result.type === 'tool_calls') {
-        throw new Error(webSearch.mode === 'legacy_tavily'
-          ? '模型连续触发工具调用超过限制，请重试。'
-          : '当前模型返回了本地工具调用，但此路径不执行本地工具。');
+        throw new Error('模型连续触发工具调用超过限制，请重试。');
       }
 
       // 流式显示最终文本回复
@@ -1372,6 +1499,10 @@ export default function App() {
         onDeleteSystemPromptPreset={handleDeleteSystemPromptPreset}
         onDeleteMessage={handleDeleteMessage}
         onStopGeneration={handleStopGeneration}
+        showSkills={showSkills}
+        onOpenSkills={handleOpenSkills}
+        onUseSkill={handleUseSkill}
+        onNotify={showToast}
       />
     </ErrorBoundary>
   );

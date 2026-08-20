@@ -16,6 +16,7 @@ use tauri_plugin_global_shortcut::{Code, Modifiers, ShortcutState};
 #[cfg(target_os = "linux")]
 mod linux_blur;
 mod server;
+mod skills;
 
 // ---------------------------------------------------------------------------
 // Commands: LAN relay server (for the Android client)
@@ -420,7 +421,13 @@ pub fn run() {
             parse_document,
             get_server_info,
             set_server_config,
-            regenerate_server_token
+            regenerate_server_token,
+            skills::list_skills,
+            skills::read_skill,
+            skills::create_skill,
+            skills::delete_skill,
+            skills::import_external_skills,
+            skills::ensure_builtin_skill
         ])
         // ── Run ─────────────────────────────────────────────────────────────
         .run(tauri::generate_context!())

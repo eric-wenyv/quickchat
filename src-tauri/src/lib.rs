@@ -3,6 +3,8 @@
 // Tauri v2 application runtime.
 // Responsibilities:
 //   - Register tauri-plugin-global-shortcut (frontend-configured quick-open shortcut)
+//   - Single-instance plugin + `--toggle` arg so a compositor keybind (the only
+//     option on Wayland, where global hotkeys don't work) can summon the window
 //   - Register tauri-plugin-sql (SQLite backend)
 //   - Window is configured as borderless + transparent via tauri.conf.json.
 //   - System tray integration (close → hide to tray, keep running in background)
@@ -511,9 +513,53 @@ mod tests {
 // Public entry point (called from main.rs)
 // ---------------------------------------------------------------------------
 
+/// Toggle the main window for the quick-open flow: hidden → show + focus,
+/// visible but unfocused → focus, visible and focused → hide.
+///
+/// On Wayland the quick-open hotkey cannot be an app-registered global shortcut
+/// (global-hotkey only has an X11 backend), so the compositor keybind execs
+/// `quick-chat --toggle` and lands here via the single-instance plugin.
+#[cfg(desktop)]
+fn toggle_main_window<R: tauri::Runtime>(app: &tauri::AppHandle<R>) {
+    let Some(window) = app.get_webview_window("main") else {
+        return;
+    };
+    if window.is_visible().unwrap_or(false) {
+        if window.is_focused().unwrap_or(false) {
+            let _ = window.hide();
+        } else {
+            let _ = window.set_focus();
+        }
+    } else {
+        let _ = window.show();
+        let _ = window.unminimize();
+        let _ = window.set_focus();
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default()
+    let builder = tauri::Builder::default();
+
+    // ── Single instance: secondary launches forward here, then exit ──────
+    // Must stay registered before the global-shortcut plugin: a duplicate
+    // instance (e.g. the compositor keybind exec'ing `quick-chat --toggle`)
+    // has to exit here, before it tries to re-grab the X11 hotkeys.
+    #[cfg(desktop)]
+    let builder = builder.plugin(tauri_plugin_single_instance::init(
+        |app, argv, _cwd| {
+            if argv.iter().any(|arg| arg == "--toggle") {
+                toggle_main_window(app);
+            } else if let Some(window) = app.get_webview_window("main") {
+                // Plain relaunch: surface the already-running window.
+                let _ = window.show();
+                let _ = window.unminimize();
+                let _ = window.set_focus();
+            }
+        },
+    ));
+
+    builder
         // ── Intercept close request: hide to tray instead of quitting ───────
         .on_window_event(|window, event| {
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {

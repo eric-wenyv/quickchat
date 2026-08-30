@@ -94,6 +94,7 @@ const GlobalShortcutSettings: React.FC<GlobalShortcutSettingsProps> = ({ value, 
           <h3 className="text-sm font-bold text-linear-text-primary">快速打开</h3>
           <p className="mt-1 text-xs leading-5 text-linear-text-tertiary">
             在任意应用中显示或隐藏 Quick Chat。Linux 上避免使用 Alt+Space，它通常由桌面环境占用。
+            Wayland（含 Hyprland）下应用无法注册全局快捷键，需改在合成器中绑定 quick-chat --toggle。
           </p>
         </div>
         <span className={`shrink-0 rounded-md px-2 py-1 text-[10px] font-bold ${shortcut ? 'bg-emerald-500/10 text-emerald-400' : 'bg-linear-surface-hover text-linear-text-tertiary'}`}>

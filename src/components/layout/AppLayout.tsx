@@ -355,21 +355,34 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
   const onCreateConversationRef = useRef(onCreateConversation);
   onCreateConversationRef.current = onCreateConversation;
 
-  // 快捷键监听：Tauri 全局快捷键（可穿透 iframe）+ window fallback（主文档焦点时）
+  // 快捷键监听：Tauri 全局快捷键事件（X11/macOS/Windows 生效，可穿透 iframe）+
+  // DOM keydown（主文档焦点时生效）。Wayland 不允许应用全局抢键（global-hotkey
+  // 仅实现了 X11 后端），keydown 是那里唯一的路径；在其他平台上同一次按键会
+  // 同时走两条通道，用短时去重避免触发两次。
   useEffect(() => {
     let unlistenToggle: (() => void) | undefined;
     let unlistenNew: (() => void) | undefined;
     let cancelled = false;
     const isTauriRuntime = '__TAURI_INTERNALS__' in window;
 
+    const DEDUPE_MS = 100;
+    let lastFiredAt = 0;
+    const fireOnce = (action: () => void) => {
+      if (cancelled) return;
+      const now = Date.now();
+      if (now - lastFiredAt < DEDUPE_MS) return;
+      lastFiredAt = now;
+      action();
+    };
+
     if (isTauriRuntime) {
       (async () => {
         try {
           unlistenToggle = await listen('shortcut-toggle-sidebar', () => {
-            if (!cancelled) toggleSidebar();
+            fireOnce(toggleSidebar);
           });
           unlistenNew = await listen('shortcut-new-conversation', () => {
-            if (!cancelled) onCreateConversationRef.current();
+            fireOnce(() => onCreateConversationRef.current());
           });
         } catch (e) {
           console.warn('Tauri 全局快捷键监听未就绪:', e);
@@ -377,29 +390,26 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
       })();
     }
 
-    // Fallback：当焦点在主文档时，仍可通过常规键盘事件响应
+    // 焦点在主文档（含输入框）时响应；焦点在 iframe（HTML artifact）内时不会
+    // 触发，那种情况由上面的全局快捷键路径覆盖（Wayland 除外）。
     const handleKeyDown = (e: KeyboardEvent) => {
       if (!e.ctrlKey || !e.shiftKey) return;
       const key = e.key.toLowerCase();
       if (key === 's') {
         e.preventDefault();
-        toggleSidebar();
+        fireOnce(toggleSidebar);
       } else if (key === 'n') {
         e.preventDefault();
-        onCreateConversationRef.current();
+        fireOnce(() => onCreateConversationRef.current());
       }
     };
-    if (!isTauriRuntime) {
-      window.addEventListener('keydown', handleKeyDown);
-    }
+    window.addEventListener('keydown', handleKeyDown);
 
     return () => {
       cancelled = true;
       unlistenToggle?.();
       unlistenNew?.();
-      if (!isTauriRuntime) {
-        window.removeEventListener('keydown', handleKeyDown);
-      }
+      window.removeEventListener('keydown', handleKeyDown);
     };
   }, [toggleSidebar]);
 

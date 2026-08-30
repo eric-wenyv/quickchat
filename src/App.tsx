@@ -156,6 +156,9 @@ export default function App() {
   const initPromiseRef = useRef<Promise<void> | null>(null);
   const initialLoadPromiseRef = useRef<Promise<void> | null>(null);
   const databaseMaintenanceStartedRef = useRef(false);
+  // 模型列表镜像：异步流程（loadAll 等）里 setModels 后立即调用 handler 时，
+  // 闭包里的 models 还是旧值，统一从 ref 读取
+  const modelsRef = useRef<ModelConfig[]>([]);
 
   // ── per-conversation 状态：思考程度 + 滚动位置 ──
   const [activeThinkingLevel, setActiveThinkingLevel] = useState<'LOW' | 'MEDIUM' | 'HIGH' | null>(null);
@@ -176,6 +179,10 @@ export default function App() {
   useEffect(() => {
     activeConversationIdRef.current = activeConversation?.id ?? null;
   }, [activeConversation?.id]);
+
+  useEffect(() => {
+    modelsRef.current = models;
+  }, [models]);
 
   useEffect(() => {
     messagesRef.current = messages;
@@ -280,6 +287,9 @@ export default function App() {
       ]);
       const limitedConversations = limitConversationList(convs);
       setConversations(limitedConversations);
+      // 先同步更新 ref：下方 handleSelectConversation / handleCreateConversation
+      // 从 ref 读取模型，避免闭包捕获到旧的空 models
+      modelsRef.current = mods;
       setModels(mods);
       setSystemPrompts(prompts);
 
@@ -363,6 +373,7 @@ export default function App() {
     }
     if (toAdd.length > 0) {
       const refreshed = await getModelConfigs();
+      modelsRef.current = refreshed;
       setModels(refreshed);
       setActiveModelId(refreshed.find(m => m.is_default)?.id || refreshed[0].id);
       showToast('已加载默认模型', `${toAdd.length} 个模型已自动创建`, 'success');
@@ -440,7 +451,7 @@ export default function App() {
   }, []);
 
   const handleUseSkill = useCallback((skill: SkillMeta, skillContent: string) => {
-    const defaultModel = models.find(m => m.is_default) || models[0];
+    const defaultModel = modelsRef.current.find(m => m.is_default) || modelsRef.current[0];
     if (!defaultModel) {
       showToast('无法创建', '请先配置 AI 模型');
       return;
@@ -469,7 +480,7 @@ export default function App() {
     setScrollRestoreMessageId(null);
     setShowSkills(false);
     showToast('已注入 Skill', `「${skill.name}」将作为新对话的上下文`, 'success');
-  }, [models]);
+  }, []);
 
   // --- 会话操作 ---
   const handleSelectConversation = async (id: UUID, summaryOverride?: ConversationSummary) => {
@@ -527,8 +538,8 @@ export default function App() {
         activeConversationIdRef.current = convDetail.id;
         setActiveConversation(convDetail);
         // 恢复会话绑定的模型（若模型已被删除则 fallback 到默认模型）
-        const convModel = models.find(m => m.id === convDetail.model_id);
-        const fallbackModel = models.find(m => m.is_default) || models[0];
+        const convModel = modelsRef.current.find(m => m.id === convDetail.model_id);
+        const fallbackModel = modelsRef.current.find(m => m.is_default) || modelsRef.current[0];
         const effectiveModelId = convModel ? convDetail.model_id : (fallbackModel?.id ?? '');
         if (effectiveModelId) setActiveModelId(effectiveModelId);
         // 恢复会话的 thinking_level
@@ -583,7 +594,7 @@ export default function App() {
 
   const handleCreateConversation = useCallback(async () => {
     // 新对话使用默认模型（不是当前活跃模型），fallback 到第一个可用模型
-    const defaultModel = models.find(m => m.is_default) || models[0];
+    const defaultModel = modelsRef.current.find(m => m.is_default) || modelsRef.current[0];
     if (!defaultModel) {
       showToast('无法创建', '请先配置 AI 模型');
       return;
@@ -621,7 +632,7 @@ export default function App() {
     setHasMoreMessages(false);
     setIsLoadingMoreMessages(false);
     setScrollRestoreMessageId(null);
-  }, [models, activeConversation, messages, conversations]);
+  }, [activeConversation, messages, conversations]);
 
   const handleDeleteConversation = async (id: UUID) => {
     try {
@@ -884,6 +895,12 @@ export default function App() {
       return;
     }
 
+    // 与 ThinkingLevelSelector 的显示逻辑一致：gemini-3 的空档位按 MEDIUM 发送
+    const effectiveThinkingLevel =
+      activeModel.provider === 'google_gemini' && activeModel.model_id.includes('gemini-3')
+        ? (activeThinkingLevel ?? 'MEDIUM')
+        : activeThinkingLevel;
+
     // 如果是新会话（未持久化），先保存
     const isExisting = conversations.some(c => c.id === convId);
     if (!isExisting) {
@@ -1046,7 +1063,10 @@ export default function App() {
     const webSearch = getWebSearchOptions(activeModel);
 
     // Skill：向系统提示注入 AI 可自主调用的目录（排除 disable-model-invocation），
-    // 模型通过 use_skill 工具按需加载完整指引
+    // 模型通过 use_skill 工具按需加载完整指引。
+    // 发送前重扫一遍：用户可能在应用外手改了 SKILL.md（增删 disable-model-invocation 等），
+    // 使改动无需重启即可在本条消息生效；刷新失败则沿用现有快照
+    try { await refreshSkills(); } catch { /* keep snapshot */ }
     const autoSkills = getAutoInvocableSkills();
     if (autoSkills.length > 0) {
       chatHistory.splice(1, 0, { role: 'system', content: buildSkillCatalogPrompt(autoSkills) });
@@ -1074,6 +1094,7 @@ export default function App() {
         messages: chatHistory,
         tools,
         webSearch,
+        thinkingLevel: effectiveThinkingLevel,
         signal: abortController.signal,
       });
 
@@ -1163,6 +1184,7 @@ export default function App() {
             messages: chatHistory,
             tools,
             webSearch,
+            thinkingLevel: effectiveThinkingLevel,
             signal: abortController.signal,
           });
         }

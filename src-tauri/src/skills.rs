@@ -73,43 +73,259 @@ fn skill_dir(id: &str) -> Result<PathBuf, String> {
 }
 
 // ---------------------------------------------------------------------------
-// Frontmatter 解析（行级简单解析：name / description 单行值）
+// Frontmatter 解析（对齐 Claude 的 YAML 解析语义）
+//
+// SKILL.md 头部是标准 YAML frontmatter，Claude（gray-matter + js-yaml）按
+// YAML 解析。官方 Skill 大量使用块标量写法，单行解析会把描述读成 ">"：
+//
+//   description: >
+//     折叠为单行的多行描述
+//
+// 这里实现 Skill 实际用到的 YAML 子集：普通标量（含更缩进续行的折叠）、
+// 单/双引号标量、块标量（| 与 >，含 -/+ 裁剪与数字缩进指示）、# 注释剥离。
 // ---------------------------------------------------------------------------
 
-/// 解析 frontmatter，返回 (name, description, disable_model_invocation)
-fn parse_frontmatter(content: &str) -> (Option<String>, Option<String>, bool) {
-    let trimmed = content.trim_start();
-    if !trimmed.starts_with("---") {
-        return (None, None, false);
+#[derive(Default)]
+struct Frontmatter {
+    name: Option<String>,
+    description: Option<String>,
+    disable_model_invocation: bool,
+}
+
+fn indent_of(line: &str) -> usize {
+    line.len() - line.trim_start().len()
+}
+
+/// 顶层映射键：`name`、`disable-model-invocation` 等（字母数字_-，冒号前）
+fn split_key(line: &str) -> Option<(&str, &str)> {
+    let (key, rest) = line.split_once(':')?;
+    let key = key.trim();
+    if key.is_empty()
+        || !key
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+    {
+        return None;
     }
-    let mut name = None;
-    let mut description = None;
-    let mut disable_model_invocation = false;
-    // 跳过首行 "---"，读到下一个 "---" 为止
-    for line in trimmed.lines().skip(1) {
-        let line = line.trim_end();
-        if line.trim() == "---" {
+    Some((key, rest))
+}
+
+/// 块标量头：| 或 > 加可选的缩进指示数字与 -/+ 裁剪指示（如 `>`、`|-`、`|2+`）
+fn block_scalar_header(rest: &str) -> Option<char> {
+    let mut chars = rest.chars();
+    let style = chars.next()?;
+    if style != '|' && style != '>' {
+        return None;
+    }
+    let mut seen_digit = false;
+    let mut seen_chomp = false;
+    for c in chars {
+        match c {
+            '1'..='9' if !seen_digit => seen_digit = true,
+            '-' | '+' if !seen_chomp => seen_chomp = true,
+            _ => return None,
+        }
+    }
+    Some(style)
+}
+
+/// 剥离普通标量行内的注释（YAML：# 注释前必须有空白）
+fn strip_plain_comment(s: &str) -> &str {
+    match s.find(" #") {
+        Some(pos) => &s[..pos],
+        None => s,
+    }
+}
+
+/// 折叠块标量（>）：相邻非空行以空格连接，空行变为换行，
+/// 更缩进的行（相对块缩进还有前导空白）与其前后保留原换行
+fn fold_block_lines(lines: &[String]) -> String {
+    let mut out = String::new();
+    let mut prev_more_indented: Option<bool> = None;
+    let mut pending_newlines = 0usize;
+    for line in lines {
+        if line.trim().is_empty() {
+            pending_newlines += 1;
+            continue;
+        }
+        let more_indented = line.starts_with(' ');
+        match prev_more_indented {
+            Some(_) if pending_newlines > 0 => out.push_str(&"\n".repeat(pending_newlines)),
+            Some(prev) if prev || more_indented => out.push('\n'),
+            Some(_) => out.push(' '),
+            None => {}
+        }
+        pending_newlines = 0;
+        out.push_str(line);
+        prev_more_indented = Some(more_indented);
+    }
+    out
+}
+
+/// 解析某个键的标量值，返回 (值, 键行之后额外消耗的行数)
+fn parse_scalar_value(lines: &[&str], key_index: usize, rest: &str) -> (String, usize) {
+    let rest = rest.trim();
+
+    // 块标量：| 字面量 / > 折叠
+    if let Some(style) = block_scalar_header(rest) {
+        let mut i = key_index + 1;
+        let mut block_indent: Option<usize> = None;
+        let mut raw: Vec<String> = Vec::new();
+        while i < lines.len() {
+            let line = lines[i];
+            if line.trim().is_empty() {
+                raw.push(String::new());
+                i += 1;
+                continue;
+            }
+            let ind = indent_of(line);
+            if block_indent.is_none() {
+                block_indent = Some(ind);
+            }
+            if ind < block_indent.unwrap() {
+                break;
+            }
+            raw.push(line[block_indent.unwrap()..].to_string());
+            i += 1;
+        }
+        while raw.last().is_some_and(|l| l.trim().is_empty()) {
+            raw.pop();
+        }
+        let value = if style == '>' {
+            fold_block_lines(&raw)
+        } else {
+            raw.join("\n")
+        };
+        return (value.trim_end().to_string(), i - key_index - 1);
+    }
+
+    // 引号标量（按单行尽力解析：'' 与 \" 等转义）
+    if let Some(quote) = rest.chars().next().filter(|c| *c == '"' || *c == '\'') {
+        let mut value = String::new();
+        let mut chars = rest[quote.len_utf8()..].chars().peekable();
+        while let Some(c) = chars.next() {
+            if quote == '"' && c == '\\' {
+                match chars.next() {
+                    Some('n') => value.push('\n'),
+                    Some('t') => value.push('\t'),
+                    Some('r') => value.push('\r'),
+                    Some('"') => value.push('"'),
+                    Some('\\') => value.push('\\'),
+                    Some(other) => {
+                        value.push('\\');
+                        value.push(other);
+                    }
+                    None => value.push('\\'),
+                }
+                continue;
+            }
+            if c == quote {
+                if quote == '\'' && chars.peek() == Some(&'\'') {
+                    chars.next();
+                    value.push('\'');
+                    continue;
+                }
+                break;
+            }
+            value.push(c);
+        }
+        return (value.trim().to_string(), 0);
+    }
+
+    // 普通标量：截掉 # 注释；键值为空或后续行更缩进时，续行折叠进来
+    let mut value = if rest.starts_with('#') {
+        String::new()
+    } else {
+        strip_plain_comment(rest).trim().to_string()
+    };
+    let mut i = key_index + 1;
+    let mut pending_newlines = 0usize;
+    while i < lines.len() {
+        let line = lines[i];
+        if line.trim().is_empty() {
+            if value.is_empty() {
+                break;
+            }
+            pending_newlines += 1;
+            i += 1;
+            continue;
+        }
+        if indent_of(line) == 0 {
             break;
         }
-        let Some((key, value)) = line.split_once(':') else {
+        let cont = strip_plain_comment(line).trim().to_string();
+        if cont.is_empty() {
+            i += 1;
+            continue;
+        }
+        if value.is_empty() && pending_newlines == 0 {
+            value = cont;
+        } else if pending_newlines > 0 {
+            value.push_str(&"\n".repeat(pending_newlines));
+            value.push_str(&cont);
+            pending_newlines = 0;
+        } else {
+            value.push(' ');
+            value.push_str(&cont);
+        }
+        i += 1;
+    }
+    (value.trim().to_string(), i - key_index - 1)
+}
+
+fn parse_frontmatter(content: &str) -> Frontmatter {
+    let trimmed = content.trim_start();
+    let mut lines_iter = trimmed.lines();
+    let Some(first) = lines_iter.next() else {
+        return Frontmatter::default();
+    };
+    if first.trim() != "---" {
+        return Frontmatter::default();
+    }
+    let all: Vec<&str> = lines_iter
+        .map(|l| l.strip_suffix('\r').unwrap_or(l))
+        .collect();
+    let end = all
+        .iter()
+        .position(|l| l.trim() == "---")
+        .unwrap_or(all.len());
+    let lines = &all[..end];
+
+    let mut fields: Vec<(String, String)> = Vec::new();
+    let mut i = 0;
+    while i < lines.len() {
+        let line = lines[i];
+        if line.trim().is_empty() || line.trim_start().starts_with('#') {
+            i += 1;
+            continue;
+        }
+        // 只认缩进为 0 的顶层键；嵌套结构（列表等）Skill 元数据用不到，跳过
+        if indent_of(line) > 0 {
+            i += 1;
+            continue;
+        }
+        let Some((key, rest)) = split_key(line) else {
+            i += 1;
             continue;
         };
-        let value = value
-            .trim()
-            .trim_matches('"')
-            .trim_matches('\'')
-            .trim()
-            .to_string();
-        match key.trim() {
-            "name" if !value.is_empty() => name = Some(value),
-            "description" if !value.is_empty() => description = Some(value),
-            "disable-model-invocation" | "disable_model_invocation" => {
-                disable_model_invocation = matches!(value.as_str(), "true" | "yes" | "1");
-            }
-            _ => {}
-        }
+        let (value, consumed) = parse_scalar_value(lines, i, rest);
+        fields.push((key.to_string(), value));
+        i += 1 + consumed;
     }
-    (name, description, disable_model_invocation)
+
+    let get = |k: &str| {
+        fields
+            .iter()
+            .find(|(key, _)| key == k)
+            .map(|(_, v)| v.clone())
+    };
+    Frontmatter {
+        name: get("name").filter(|v| !v.is_empty()),
+        description: get("description").filter(|v| !v.is_empty()),
+        disable_model_invocation: get("disable-model-invocation")
+            .or_else(|| get("disable_model_invocation"))
+            .is_some_and(|v| matches!(v.to_lowercase().as_str(), "true" | "yes" | "on" | "1")),
+    }
 }
 
 fn read_source(path: &Path) -> String {
@@ -137,8 +353,7 @@ fn dir_has_assets(path: &Path) -> bool {
 
 fn copy_dir_recursive(src: &Path, dst: &Path) -> Result<(), String> {
     fs::create_dir_all(dst).map_err(|e| format!("创建目录失败 {}: {e}", dst.display()))?;
-    let entries =
-        fs::read_dir(src).map_err(|e| format!("读取目录失败 {}: {e}", src.display()))?;
+    let entries = fs::read_dir(src).map_err(|e| format!("读取目录失败 {}: {e}", src.display()))?;
     for entry in entries.flatten() {
         let name = entry.file_name();
         if name == ".git" {
@@ -195,15 +410,15 @@ pub fn list_skills() -> Result<Vec<SkillMeta>, String> {
             continue;
         }
         let content = fs::read_to_string(&skill_md).unwrap_or_default();
-        let (fm_name, fm_desc, fm_disable) = parse_frontmatter(&content);
+        let fm = parse_frontmatter(&content);
         skills.push(SkillMeta {
             id: dir_name.clone(),
-            name: fm_name.unwrap_or(dir_name),
-            description: fm_desc.unwrap_or_default(),
+            name: fm.name.unwrap_or(dir_name),
+            description: fm.description.unwrap_or_default(),
             source: read_source(&path),
             path: path.to_string_lossy().to_string(),
             has_assets: dir_has_assets(&path),
-            disable_model_invocation: fm_disable,
+            disable_model_invocation: fm.disable_model_invocation,
         });
     }
     skills.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
@@ -214,6 +429,62 @@ pub fn list_skills() -> Result<Vec<SkillMeta>, String> {
 pub fn read_skill(id: String) -> Result<String, String> {
     let dir = skill_dir(&id)?;
     fs::read_to_string(dir.join("SKILL.md")).map_err(|e| format!("读取 Skill 失败: {e}"))
+}
+
+/// 描述内联写入 YAML 是否安全（不含冒号/井号/引号等特殊字符、不以空白结尾）
+fn is_plain_inline_safe(s: &str) -> bool {
+    !s.is_empty()
+        && !s.starts_with([' ', '\t', '#'])
+        && !s.starts_with("- ")
+        && !s.starts_with("? ")
+        && !s.starts_with(": ")
+        && !s.ends_with([' ', '\t'])
+        && !s.chars().any(|c| {
+            matches!(
+                c,
+                ':' | '#'
+                    | '"'
+                    | '\''
+                    | '\n'
+                    | '\r'
+                    | '{'
+                    | '}'
+                    | '['
+                    | ']'
+                    | ','
+                    | '&'
+                    | '*'
+                    | '!'
+                    | '|'
+                    | '>'
+                    | '%'
+                    | '@'
+                    | '`'
+            )
+        })
+}
+
+/// 序列化 description 字段：简单文本内联单行；含特殊字符时改用字面量块标量
+/// （|-），保证 Claude / Codex 的 YAML 解析器读到的文本与用户输入完全一致
+fn format_description_yaml(desc: &str) -> String {
+    if is_plain_inline_safe(desc) {
+        return format!("description: {desc}\n");
+    }
+    if desc.is_empty() {
+        return "description: \"\"\n".to_string();
+    }
+    let indented = desc
+        .lines()
+        .map(|l| {
+            if l.is_empty() {
+                String::new()
+            } else {
+                format!("  {l}")
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+    format!("description: |-\n{indented}\n")
 }
 
 #[tauri::command]
@@ -227,7 +498,13 @@ pub fn create_skill(
         .trim()
         .to_lowercase()
         .chars()
-        .map(|c| if c.is_ascii_alphanumeric() || c == '-' || c == '_' { c } else { '-' })
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || c == '-' || c == '_' {
+                c
+            } else {
+                '-'
+            }
+        })
         .collect::<String>()
         .split('-')
         .filter(|s| !s.is_empty())
@@ -248,10 +525,14 @@ pub fn create_skill(
         ""
     };
     let markdown = format!(
-        "---\nname: {slug}\ndescription: {}\n{}---\n\n{}\n",
-        description.trim(),
+        "---\nname: {slug}\n{}{}---\n\n{}\n",
+        format_description_yaml(description.trim()),
         disable_line,
-        if body.is_empty() { format!("# {slug}\n") } else { body.to_string() }
+        if body.is_empty() {
+            format!("# {slug}\n")
+        } else {
+            body.to_string()
+        }
     );
     fs::write(dir.join("SKILL.md"), markdown).map_err(|e| format!("写入 SKILL.md 失败: {e}"))?;
     Ok(slug)
@@ -288,7 +569,7 @@ fn scan_external_source(dir: &Path) -> Vec<(String, String, PathBuf)> {
         }
         let fm_name = fs::read_to_string(path.join("SKILL.md"))
             .ok()
-            .and_then(|c| parse_frontmatter(&c).0)
+            .and_then(|c| parse_frontmatter(&c).name)
             .unwrap_or_else(|| dir_name.clone());
         found.push((dir_name, fm_name, path));
     }
@@ -317,7 +598,7 @@ pub fn import_external_skills() -> Result<ImportReport, String> {
             let dir_name = entry.file_name().to_string_lossy().to_string();
             taken.insert(dir_name.clone());
             if let Ok(content) = fs::read_to_string(path.join("SKILL.md")) {
-                if let Some(fm_name) = parse_frontmatter(&content).0 {
+                if let Some(fm_name) = parse_frontmatter(&content).name {
                     taken.insert(fm_name);
                 }
             }
@@ -358,11 +639,14 @@ pub fn import_external_skills() -> Result<ImportReport, String> {
 const BUILTIN_SKILL_ID: &str = "quick-chat-skill-guide";
 
 /// 内置 Skill 内容版本：升级内容时递增，ensure_builtin_skill 会就地更新旧版本
-const BUILTIN_SKILL_VERSION: &str = "2";
+const BUILTIN_SKILL_VERSION: &str = "4";
 
 const BUILTIN_SKILL_MD: &str = r#"---
 name: quick-chat-skill-guide
-description: Quick Chat Skill 使用指南 —— 斜杠命令与 AI 自主调用、如何自动/手动导入 Claude 与 Codex 的 Skill、创建新 Skill、目录结构与 SKILL.md 格式规范。
+description: >
+  Quick Chat Skill 使用指南：斜杠命令与 AI 自主调用、从 Claude / Codex 导入 Skill、
+  新建 Skill、目录结构与 SKILL.md frontmatter 规范。Use when the user asks how to
+  create, import, preview, or invoke skills in Quick Chat, or how SKILL.md works.
 ---
 
 # Quick Chat Skill 指南
@@ -384,7 +668,7 @@ Skill 是一个以 Markdown 描述的能力包，遵循 Claude / Codex 的 Skill
 
 ### 禁止 AI 自主调用
 
-在 `SKILL.md` 的 frontmatter 中加入：
+在 `SKILL.md` 的 frontmatter 中加入（Claude 规范字段，`true` = 禁止，缺省或 `false` = 允许）：
 
 ```markdown
 ---
@@ -396,6 +680,7 @@ disable-model-invocation: true
 
 标注后该 Skill 不会出现在 AI 的可用目录中，只能由用户通过 `/my-skill` 主动调用。
 新建 Skill 时勾选「仅手动调用」也会写入此字段。
+直接编辑 SKILL.md 增删该字段无需重启：下一条消息发送时会重新扫描并即时生效。
 
 ## 目录结构
 
@@ -407,12 +692,17 @@ disable-model-invocation: true
     └── templates/      # 可选：模板、参考文件
 ```
 
-`SKILL.md` 开头的 frontmatter 定义名称与描述：
+`SKILL.md` 开头的 frontmatter（YAML）定义名称与描述，遵循 Claude Skill 规范：
+
+- `name`：小写字母、数字、连字符，与目录名一致
+- `description`：说明这个 Skill 做什么、什么时候用（when to use / triggers），上限 1024 字符
+- 较长的描述推荐用 `>` 折叠块写法：源码里分多行书写，解析时自动折叠成一行
 
 ```markdown
 ---
 name: my-skill
-description: 一句话说明这个 Skill 什么时候用、做什么。
+description: >
+  一句话说明这个 Skill 做什么、什么时候用（when to use / triggers）。
 ---
 
 # 正文：具体的使用指引……
@@ -483,33 +773,50 @@ mod tests {
     /// 单个测试函数串行跑完全部断言，避免并发修改 HOME 环境变量
     #[test]
     fn skills_end_to_end() {
-        let tmp = std::env::temp_dir().join(format!("quick_chat_skills_test_{}", std::process::id()));
+        let tmp =
+            std::env::temp_dir().join(format!("quick_chat_skills_test_{}", std::process::id()));
         let _ = fs::remove_dir_all(&tmp);
         fs::create_dir_all(&tmp).unwrap();
         std::env::set_var("HOME", &tmp);
 
-        // 准备外部来源：claude 有 shared + claude-only；codex 有 shared（应输给 claude）、
-        // codex-only、.system 内置（应跳过）。claude-only 带附属脚本与符号链接。
+        // 准备外部来源：claude 有 shared + claude-only + folded（块标量描述）；
+        // codex 有 shared（应输给 claude）、codex-only、.system 内置（应跳过）。
+        // claude-only 带附属脚本与符号链接。
         let claude = tmp.join(".claude/skills");
         let codex = tmp.join(".codex/skills");
         write_skill(&claude, "shared", "shared", "claude 版本");
         write_skill(&claude, "claude-only", "claude-only", "带附件");
         fs::write(claude.join("claude-only/run.sh"), "#!/bin/sh\necho hi\n").unwrap();
+        // Claude 官方 Skill 的折叠块写法：description: > + 缩进多行；
+        // 布尔值用首字母大写的 True（js-yaml 同样识别）
+        fs::create_dir_all(claude.join("folded")).unwrap();
+        fs::write(
+            claude.join("folded/SKILL.md"),
+            "---\nname: folded\ndescription: >\n  第一行说明\n  第二行：带冒号与 \"引号\"\ndisable-model-invocation: True\n---\n\n# folded\n",
+        )
+        .unwrap();
         write_skill(&codex, "shared", "shared", "codex 版本");
         write_skill(&codex, "codex-only", "codex-only", "codex 独有");
         write_skill(&codex, ".system/sys", "sys", "内置应跳过");
 
         // 内置 Skill：首次写入，且写入标记
         ensure_builtin_skill().unwrap();
-        assert!(tmp.join(".chat/skills/quick-chat-skill-guide/SKILL.md").is_file());
+        assert!(tmp
+            .join(".chat/skills/quick-chat-skill-guide/SKILL.md")
+            .is_file());
         let guide = read_skill("quick-chat-skill-guide".into()).unwrap();
         assert!(guide.contains("如何导入 Skill"));
 
         // 导入：claude 优先、跳过 .system、跳过已存在
         let report = import_external_skills().unwrap();
-        assert_eq!(report.imported.len(), 3);
+        assert_eq!(report.imported.len(), 4);
         let names: HashSet<&str> = report.imported.iter().map(|i| i.name.as_str()).collect();
-        assert!(names.contains("shared") && names.contains("claude-only") && names.contains("codex-only"));
+        assert!(
+            names.contains("shared")
+                && names.contains("claude-only")
+                && names.contains("folded")
+                && names.contains("codex-only")
+        );
         let shared = report.imported.iter().find(|i| i.name == "shared").unwrap();
         assert_eq!(shared.source, "claude");
         assert!(!tmp.join(".chat/skills/sys").exists());
@@ -521,20 +828,32 @@ mod tests {
             "claude"
         );
 
-        // 重复导入：全部跳过（claude 2 个 + codex 2 个），不覆盖
+        // 重复导入：全部跳过（claude 3 个 + codex 2 个），不覆盖
         let report2 = import_external_skills().unwrap();
         assert_eq!(report2.imported.len(), 0);
-        assert_eq!(report2.skipped_existing.len(), 4);
+        assert_eq!(report2.skipped_existing.len(), 5);
 
         // 列表：frontmatter 解析 + 来源标记
         let list = list_skills().unwrap();
-        assert_eq!(list.len(), 4); // guide + 3 导入
+        assert_eq!(list.len(), 5); // guide + 4 导入
         let claude_only = list.iter().find(|s| s.id == "claude-only").unwrap();
         assert_eq!(claude_only.description, "带附件");
         assert!(claude_only.has_assets);
-        let guide_meta = list.iter().find(|s| s.id == "quick-chat-skill-guide").unwrap();
+        // 折叠块标量描述按 Claude（js-yaml）语义折叠为单行
+        let folded = list.iter().find(|s| s.id == "folded").unwrap();
+        assert_eq!(folded.description, "第一行说明 第二行：带冒号与 \"引号\"");
+        assert!(folded.disable_model_invocation);
+        let guide_meta = list
+            .iter()
+            .find(|s| s.id == "quick-chat-skill-guide")
+            .unwrap();
         assert_eq!(guide_meta.source, "builtin");
         assert!(!guide_meta.has_assets);
+        // 内置指南自身也用折叠块写法，解析结果不应残留 ">"
+        assert!(guide_meta
+            .description
+            .starts_with("Quick Chat Skill 使用指南"));
+        assert!(!guide_meta.description.contains('>'));
 
         // 新建：slug 化 + 重名拒绝 + disable-model-invocation 写入与解析
         create_skill("My Skill".into(), "测试".into(), "# 你好".into(), None).unwrap();
@@ -542,16 +861,38 @@ mod tests {
         assert!(created.contains("name: my-skill") && created.contains("# 你好"));
         assert!(create_skill("my-skill".into(), String::new(), String::new(), None).is_err());
 
-        create_skill("manual-only".into(), "仅手动".into(), String::new(), Some(true)).unwrap();
+        create_skill(
+            "manual-only".into(),
+            "仅手动".into(),
+            String::new(),
+            Some(true),
+        )
+        .unwrap();
         let list2 = list_skills().unwrap();
         let manual = list2.iter().find(|s| s.id == "manual-only").unwrap();
         assert!(manual.disable_model_invocation);
         let auto = list2.iter().find(|s| s.id == "my-skill").unwrap();
         assert!(!auto.disable_model_invocation);
 
+        // 含冒号/引号的描述写入字面量块标量（|-），保证 Claude 的 YAML 解析一致
+        let colon_desc = "使用时机：当用户说 \"帮我做简历\" 时";
+        create_skill("colon-desc".into(), colon_desc.into(), String::new(), None).unwrap();
+        let colon_file = read_skill("colon-desc".into()).unwrap();
+        assert!(colon_file.contains("description: |-\n  使用时机：当用户说 \"帮我做简历\" 时\n"));
+        let list3 = list_skills().unwrap();
+        assert_eq!(
+            list3
+                .iter()
+                .find(|s| s.id == "colon-desc")
+                .unwrap()
+                .description,
+            colon_desc
+        );
+
         // 删除 + 路径穿越防护
         delete_skill("my-skill".into()).unwrap();
         delete_skill("manual-only".into()).unwrap();
+        delete_skill("colon-desc".into()).unwrap();
         assert!(!tmp.join(".chat/skills/my-skill").exists());
         assert!(delete_skill("../..".into()).is_err());
         assert!(read_skill("../..".into()).is_err());

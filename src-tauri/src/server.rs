@@ -87,7 +87,11 @@ impl LanServer {
         }
     }
 
-    pub async fn set_config(self: &Arc<Self>, enabled: bool, port: u16) -> Result<ServerInfo, String> {
+    pub async fn set_config(
+        self: &Arc<Self>,
+        enabled: bool,
+        port: u16,
+    ) -> Result<ServerInfo, String> {
         {
             let mut guard = self.config.write().await;
             *guard = ServerConfig { enabled, port };
@@ -239,14 +243,22 @@ pub async fn init(app_config_dir: PathBuf) -> Result<Arc<LanServer>, String> {
 // Schema bootstrap (mirrors src/services/db.ts)
 // ---------------------------------------------------------------------------
 
-async fn ensure_column(db: &SqlitePool, table: &str, column: &str, ddl: &str) -> Result<(), String> {
+async fn ensure_column(
+    db: &SqlitePool,
+    table: &str,
+    column: &str,
+    ddl: &str,
+) -> Result<(), String> {
     let rows = sqlx::query(&format!("PRAGMA table_info({table})"))
         .fetch_all(db)
         .await
         .map_err(|e| e.to_string())?;
     let exists = rows.iter().any(|r| r.get::<String, _>("name") == column);
     if !exists {
-        sqlx::query(ddl).execute(db).await.map_err(|e| e.to_string())?;
+        sqlx::query(ddl)
+            .execute(db)
+            .await
+            .map_err(|e| e.to_string())?;
     }
     Ok(())
 }
@@ -291,9 +303,9 @@ async fn ensure_schema(db: &SqlitePool) -> Result<(), String> {
             display_name TEXT NOT NULL,
             api_key TEXT NOT NULL,
             api_endpoint TEXT DEFAULT NULL,
-            temperature REAL NOT NULL DEFAULT 1.0,
-            max_tokens INTEGER NOT NULL DEFAULT 4096,
-            top_p REAL NOT NULL DEFAULT 0.95,
+            temperature REAL NOT NULL DEFAULT 0.6,
+            max_tokens INTEGER NOT NULL DEFAULT 16384,
+            top_p REAL NOT NULL DEFAULT 1.0,
             thinking_level TEXT DEFAULT NULL,
             supports_vision INTEGER NOT NULL DEFAULT 0,
             is_default INTEGER NOT NULL DEFAULT 0,
@@ -341,14 +353,62 @@ async fn ensure_schema(db: &SqlitePool) -> Result<(), String> {
         let _ = sqlx::query(statement).execute(db).await;
     }
 
-    ensure_column(db, "conversations", "pinned", "ALTER TABLE conversations ADD COLUMN pinned INTEGER NOT NULL DEFAULT 0").await?;
-    ensure_column(db, "conversations", "thinking_level", "ALTER TABLE conversations ADD COLUMN thinking_level TEXT DEFAULT NULL").await?;
-    ensure_column(db, "conversations", "last_viewed_message_id", "ALTER TABLE conversations ADD COLUMN last_viewed_message_id TEXT DEFAULT NULL").await?;
-    ensure_column(db, "messages", "reasoning_content", "ALTER TABLE messages ADD COLUMN reasoning_content TEXT DEFAULT NULL").await?;
-    ensure_column(db, "messages", "token_count", "ALTER TABLE messages ADD COLUMN token_count INTEGER DEFAULT NULL").await?;
-    ensure_column(db, "messages", "input_tokens", "ALTER TABLE messages ADD COLUMN input_tokens INTEGER DEFAULT NULL").await?;
-    ensure_column(db, "messages", "output_tokens", "ALTER TABLE messages ADD COLUMN output_tokens INTEGER DEFAULT NULL").await?;
-    ensure_column(db, "messages", "model_id", "ALTER TABLE messages ADD COLUMN model_id TEXT DEFAULT NULL").await?;
+    ensure_column(
+        db,
+        "conversations",
+        "pinned",
+        "ALTER TABLE conversations ADD COLUMN pinned INTEGER NOT NULL DEFAULT 0",
+    )
+    .await?;
+    ensure_column(
+        db,
+        "conversations",
+        "thinking_level",
+        "ALTER TABLE conversations ADD COLUMN thinking_level TEXT DEFAULT NULL",
+    )
+    .await?;
+    ensure_column(
+        db,
+        "conversations",
+        "last_viewed_message_id",
+        "ALTER TABLE conversations ADD COLUMN last_viewed_message_id TEXT DEFAULT NULL",
+    )
+    .await?;
+    ensure_column(
+        db,
+        "messages",
+        "reasoning_content",
+        "ALTER TABLE messages ADD COLUMN reasoning_content TEXT DEFAULT NULL",
+    )
+    .await?;
+    ensure_column(
+        db,
+        "messages",
+        "token_count",
+        "ALTER TABLE messages ADD COLUMN token_count INTEGER DEFAULT NULL",
+    )
+    .await?;
+    ensure_column(
+        db,
+        "messages",
+        "input_tokens",
+        "ALTER TABLE messages ADD COLUMN input_tokens INTEGER DEFAULT NULL",
+    )
+    .await?;
+    ensure_column(
+        db,
+        "messages",
+        "output_tokens",
+        "ALTER TABLE messages ADD COLUMN output_tokens INTEGER DEFAULT NULL",
+    )
+    .await?;
+    ensure_column(
+        db,
+        "messages",
+        "model_id",
+        "ALTER TABLE messages ADD COLUMN model_id TEXT DEFAULT NULL",
+    )
+    .await?;
 
     Ok(())
 }
@@ -360,7 +420,10 @@ async fn ensure_schema(db: &SqlitePool) -> Result<(), String> {
 fn build_router(server: Arc<LanServer>) -> Router {
     let api = Router::new()
         .route("/health", get(health))
-        .route("/conversations", get(list_conversations).post(create_conversation))
+        .route(
+            "/conversations",
+            get(list_conversations).post(create_conversation),
+        )
         .route(
             "/conversations/{id}",
             post(update_conversation).delete(delete_conversation),
@@ -377,7 +440,10 @@ fn build_router(server: Arc<LanServer>) -> Router {
         .route("/describe-image", post(describe_image))
         .route("/chat/completions", post(chat_completions))
         .route("/events", get(sync_events))
-        .route_layer(middleware::from_fn_with_state(server.clone(), auth_middleware));
+        .route_layer(middleware::from_fn_with_state(
+            server.clone(),
+            auth_middleware,
+        ));
 
     Router::new().nest("/api", api).with_state(server)
 }
@@ -435,12 +501,18 @@ async fn sync_events(State(server): State<Arc<LanServer>>) -> Response {
     let rx = server.events.subscribe();
     let stream = BroadcastStream::new(rx).filter_map(|item| async move {
         match item {
-            Ok(value) => Some(Ok::<_, Infallible>(Event::default().data(value.to_string()))),
+            Ok(value) => Some(Ok::<_, Infallible>(
+                Event::default().data(value.to_string()),
+            )),
             Err(_) => None,
         }
     });
     Sse::new(stream)
-        .keep_alive(KeepAlive::new().interval(Duration::from_secs(15)).text("ping"))
+        .keep_alive(
+            KeepAlive::new()
+                .interval(Duration::from_secs(15))
+                .text("ping"),
+        )
         .into_response()
 }
 
@@ -462,7 +534,10 @@ async fn watch_db(server: Arc<LanServer>) {
             for row in &rows {
                 let id = row.get::<String, _>("id");
                 let updated_at = row.get::<i64, _>("updated_at");
-                if recent.iter().any(|(rid, rupd)| *rid == id && *rupd == updated_at) {
+                if recent
+                    .iter()
+                    .any(|(rid, rupd)| *rid == id && *rupd == updated_at)
+                {
                     continue;
                 }
                 recent.push_back((id, updated_at));
@@ -493,7 +568,9 @@ async fn watch_db(server: Arc<LanServer>) {
         .ok();
         if let Some(sig) = sig {
             if conv_sig.is_some() && conv_sig != Some(sig) {
-                let _ = server.events.send(json!({ "type": "conversations_changed" }));
+                let _ = server
+                    .events
+                    .send(json!({ "type": "conversations_changed" }));
             }
             conv_sig = Some(sig);
         }
@@ -562,14 +639,15 @@ async fn create_conversation(
 
     match result {
         Ok(_) => {
-            let row = sqlx::query(
-                "SELECT c.*, 0 AS message_count FROM conversations c WHERE c.id = ?1",
-            )
-            .bind(&id)
-            .fetch_one(&server.db)
-            .await;
+            let row =
+                sqlx::query("SELECT c.*, 0 AS message_count FROM conversations c WHERE c.id = ?1")
+                    .bind(&id)
+                    .fetch_one(&server.db)
+                    .await;
             match row {
-                Ok(row) => Json(json!({ "conversation": conversation_from_row(&row) })).into_response(),
+                Ok(row) => {
+                    Json(json!({ "conversation": conversation_from_row(&row) })).into_response()
+                }
                 Err(e) => err(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()),
             }
         }
@@ -591,12 +669,13 @@ async fn update_conversation(
     Json(body): Json<UpdateConversationBody>,
 ) -> Response {
     if let Some(title) = body.title {
-        if let Err(e) = sqlx::query("UPDATE conversations SET title = ?1, updated_at = ?2 WHERE id = ?3")
-            .bind(title)
-            .bind(now_millis())
-            .bind(&id)
-            .execute(&server.db)
-            .await
+        if let Err(e) =
+            sqlx::query("UPDATE conversations SET title = ?1, updated_at = ?2 WHERE id = ?3")
+                .bind(title)
+                .bind(now_millis())
+                .bind(&id)
+                .execute(&server.db)
+                .await
         {
             return err(StatusCode::INTERNAL_SERVER_ERROR, e.to_string());
         }
@@ -645,7 +724,9 @@ async fn update_conversation(
     .fetch_optional(&server.db)
     .await;
     match row {
-        Ok(Some(row)) => Json(json!({ "conversation": conversation_from_row(&row) })).into_response(),
+        Ok(Some(row)) => {
+            Json(json!({ "conversation": conversation_from_row(&row) })).into_response()
+        }
         Ok(None) => err(StatusCode::NOT_FOUND, "会话不存在"),
         Err(e) => err(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()),
     }
@@ -741,7 +822,10 @@ async fn create_message(
     Json(body): Json<CreateMessageBody>,
 ) -> Response {
     if !["user", "assistant", "system"].contains(&body.role.as_str()) {
-        return err(StatusCode::BAD_REQUEST, "role 必须是 user / assistant / system");
+        return err(
+            StatusCode::BAD_REQUEST,
+            "role 必须是 user / assistant / system",
+        );
     }
     let id = body.id.unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
     let now = now_millis();
@@ -804,12 +888,13 @@ async fn update_message(
     Json(body): Json<UpdateMessageBody>,
 ) -> Response {
     if let Some(content) = body.content {
-        if let Err(e) = sqlx::query("UPDATE messages SET content = ?1, updated_at = ?2 WHERE id = ?3")
-            .bind(content)
-            .bind(now_millis())
-            .bind(&id)
-            .execute(&server.db)
-            .await
+        if let Err(e) =
+            sqlx::query("UPDATE messages SET content = ?1, updated_at = ?2 WHERE id = ?3")
+                .bind(content)
+                .bind(now_millis())
+                .bind(&id)
+                .execute(&server.db)
+                .await
         {
             return err(StatusCode::INTERNAL_SERVER_ERROR, e.to_string());
         }
@@ -830,12 +915,13 @@ async fn update_message(
         }
     }
     if let Some(status) = body.status {
-        if let Err(e) = sqlx::query("UPDATE messages SET status = ?1, updated_at = ?2 WHERE id = ?3")
-            .bind(status)
-            .bind(now_millis())
-            .bind(&id)
-            .execute(&server.db)
-            .await
+        if let Err(e) =
+            sqlx::query("UPDATE messages SET status = ?1, updated_at = ?2 WHERE id = ?3")
+                .bind(status)
+                .bind(now_millis())
+                .bind(&id)
+                .execute(&server.db)
+                .await
         {
             return err(StatusCode::INTERNAL_SERVER_ERROR, e.to_string());
         }
@@ -962,9 +1048,18 @@ fn build_snippet(content: &str, query: &str, radius: usize) -> String {
             let idx = chars.partition_point(|(b, _)| *b < byte_pos);
             let start = idx.saturating_sub(radius);
             let end = (idx + needle.chars().count() + radius).min(chars.len());
-            (chars[start].0, chars.get(end).map(|(b, _)| *b).unwrap_or(content.len()))
+            (
+                chars[start].0,
+                chars.get(end).map(|(b, _)| *b).unwrap_or(content.len()),
+            )
         }
-        None => (0, chars.get(radius * 2).map(|(b, _)| *b).unwrap_or(content.len())),
+        None => (
+            0,
+            chars
+                .get(radius * 2)
+                .map(|(b, _)| *b)
+                .unwrap_or(content.len()),
+        ),
     };
     content[start_byte..end_byte].replace('\n', " ")
 }
@@ -1003,7 +1098,10 @@ async fn search_messages(
         Err(_) => {
             let like = format!(
                 "%{}%",
-                q.to_lowercase().replace('\\', "\\\\").replace('%', "\\%").replace('_', "\\_")
+                q.to_lowercase()
+                    .replace('\\', "\\\\")
+                    .replace('%', "\\%")
+                    .replace('_', "\\_")
             );
             match sqlx::query(
                 "SELECT m.id, m.conversation_id, m.role, m.content, m.created_at, c.title AS conversation_title
@@ -1059,6 +1157,7 @@ struct ModelConfigFull {
     temperature: f64,
     max_tokens: i64,
     top_p: f64,
+    thinking_level: Option<String>,
 }
 
 impl ModelConfigFull {
@@ -1076,13 +1175,16 @@ impl ModelConfigFull {
     }
 
     fn completions_url(&self) -> Result<String, String> {
-        Ok(format!("{}/chat/completions", self.endpoint()?.trim_end_matches('/')))
+        Ok(format!(
+            "{}/chat/completions",
+            self.endpoint()?.trim_end_matches('/')
+        ))
     }
 }
 
 async fn load_model_config(db: &SqlitePool, id: &str) -> Result<ModelConfigFull, String> {
     let row = sqlx::query(
-        "SELECT provider, model_id, api_key, api_endpoint, temperature, max_tokens, top_p
+        "SELECT provider, model_id, api_key, api_endpoint, temperature, max_tokens, top_p, thinking_level
          FROM model_configs WHERE id = ?1",
     )
     .bind(id)
@@ -1099,6 +1201,7 @@ async fn load_model_config(db: &SqlitePool, id: &str) -> Result<ModelConfigFull,
         temperature: row.get("temperature"),
         max_tokens: row.get("max_tokens"),
         top_p: row.get("top_p"),
+        thinking_level: row.get("thinking_level"),
     })
 }
 
@@ -1204,7 +1307,10 @@ fn format_search_results(query: &str, data: &Value) -> String {
     if results.is_empty() {
         return format!("搜索 \"{query}\" 未返回结果。");
     }
-    let mut lines = vec![format!("以下是通过网络搜索 \"{query}\" 获得的实时信息："), String::new()];
+    let mut lines = vec![
+        format!("以下是通过网络搜索 \"{query}\" 获得的实时信息："),
+        String::new(),
+    ];
     for (i, r) in results.iter().take(5).enumerate() {
         let title = r.get("title").and_then(|v| v.as_str()).unwrap_or("");
         let url = r.get("url").and_then(|v| v.as_str()).unwrap_or("");
@@ -1255,7 +1361,9 @@ async fn send_event(tx: &EventSender, payload: Value) -> Result<(), String> {
 }
 
 fn merge_citations(acc: &mut Vec<Value>, annotations: &Value) {
-    let Some(list) = annotations.as_array() else { return };
+    let Some(list) = annotations.as_array() else {
+        return;
+    };
     let mut seen: HashSet<String> = acc
         .iter()
         .filter_map(|c| c.get("url").and_then(|u| u.as_str()).map(|s| s.to_string()))
@@ -1265,7 +1373,9 @@ fn merge_citations(acc: &mut Vec<Value>, annotations: &Value) {
             .get("url_citation")
             .filter(|v| v.is_object())
             .unwrap_or(annotation);
-        let Some(url) = source.get("url").and_then(|u| u.as_str()) else { continue };
+        let Some(url) = source.get("url").and_then(|u| u.as_str()) else {
+            continue;
+        };
         if url.is_empty() || seen.contains(url) {
             continue;
         }
@@ -1389,8 +1499,11 @@ async fn run_provider_round(
                 done = true;
                 break;
             }
-            let Ok(parsed) = serde_json::from_str::<Value>(data) else { continue };
-            let (text_delta, reasoning_delta) = apply_stream_event(&parsed, &mut round, &mut tool_acc);
+            let Ok(parsed) = serde_json::from_str::<Value>(data) else {
+                continue;
+            };
+            let (text_delta, reasoning_delta) =
+                apply_stream_event(&parsed, &mut round, &mut tool_acc);
             if let Some(sender) = tx {
                 if let Some(delta) = text_delta {
                     send_event(sender, json!({ "type": "delta", "content": delta })).await?;
@@ -1407,7 +1520,10 @@ async fn run_provider_round(
 
     let mut indices: Vec<i64> = tool_acc.keys().copied().collect();
     indices.sort();
-    round.tool_calls = indices.into_iter().filter_map(|i| tool_acc.remove(&i)).collect();
+    round.tool_calls = indices
+        .into_iter()
+        .filter_map(|i| tool_acc.remove(&i))
+        .collect();
     Ok(round)
 }
 
@@ -1421,6 +1537,7 @@ struct ChatCompletionsBody {
     temperature: Option<f64>,
     max_tokens: Option<i64>,
     top_p: Option<f64>,
+    thinking_level: Option<String>,
 }
 
 fn build_provider_body(
@@ -1429,15 +1546,28 @@ fn build_provider_body(
     overrides: &ChatCompletionsBody,
     tools: Option<Vec<Value>>,
 ) -> Value {
+    // 思考开启时不干预采样参数（temperature/top_p 固定为 1），与桌面端 buildRequestBody 行为一致
+    let thinking_level = overrides
+        .thinking_level
+        .as_deref()
+        .or(model.thinking_level.as_deref())
+        .map(str::trim)
+        .filter(|s| !s.is_empty());
+    let thinking = thinking_level.is_some();
+
     let mut body = json!({
         "model": model.model_id,
         "messages": messages,
         "stream": true,
-        "temperature": overrides.temperature.unwrap_or(model.temperature),
+        "temperature": if thinking { 1.0 } else { overrides.temperature.unwrap_or(model.temperature) },
         "max_tokens": overrides.max_tokens.unwrap_or(model.max_tokens),
-        "top_p": overrides.top_p.unwrap_or(model.top_p),
+        "top_p": if thinking { 1.0 } else { overrides.top_p.unwrap_or(model.top_p) },
         "stream_options": { "include_usage": true }
     });
+    if let Some(level) = thinking_level {
+        // OpenAI 风格的 reasoning_effort；OpenRouter 会将其归一化（两种格式只能发其一）
+        body["reasoning_effort"] = Value::String(level.to_lowercase());
+    }
     if let Some(tools) = tools {
         body["tools"] = Value::Array(tools);
         body["tool_choice"] = json!("auto");
@@ -1477,7 +1607,9 @@ async fn chat_completions(
         }
     });
 
-    Sse::new(ReceiverStream::new(rx)).keep_alive(KeepAlive::default()).into_response()
+    Sse::new(ReceiverStream::new(rx))
+        .keep_alive(KeepAlive::default())
+        .into_response()
 }
 
 async fn run_chat_loop(
@@ -1544,29 +1676,34 @@ async fn run_chat_loop(
         for (i, tc) in round.tool_calls.iter().enumerate() {
             let call_id = tc.id.clone().unwrap_or_else(|| format!("call_{i}"));
             let name = tc.name.clone().unwrap_or_default();
-            let tool_result = if name == "web_search" {
-                let query = serde_json::from_str::<Value>(&tc.arguments)
-                    .ok()
-                    .and_then(|v| v.get("query").and_then(|q| q.as_str()).map(|s| s.to_string()))
-                    .unwrap_or_default();
-                match tavily_search(http, &query).await {
-                    Ok(data) => {
-                        let count = data
-                            .get("results")
-                            .and_then(|r| r.as_array())
-                            .map(|a| a.len())
-                            .unwrap_or(0);
-                        send_event(tx, json!({
+            let tool_result =
+                if name == "web_search" {
+                    let query = serde_json::from_str::<Value>(&tc.arguments)
+                        .ok()
+                        .and_then(|v| {
+                            v.get("query")
+                                .and_then(|q| q.as_str())
+                                .map(|s| s.to_string())
+                        })
+                        .unwrap_or_default();
+                    match tavily_search(http, &query).await {
+                        Ok(data) => {
+                            let count = data
+                                .get("results")
+                                .and_then(|r| r.as_array())
+                                .map(|a| a.len())
+                                .unwrap_or(0);
+                            send_event(tx, json!({
                             "type": "tool", "name": "web_search", "query": query, "count": count
                         }))
                         .await?;
-                        format_search_results(&query, &data)
+                            format_search_results(&query, &data)
+                        }
+                        Err(e) => format!("搜索失败: {e}"),
                     }
-                    Err(e) => format!("搜索失败: {e}"),
-                }
-            } else {
-                format!("未知工具: {name}")
-            };
+                } else {
+                    format!("未知工具: {name}")
+                };
             history.push(json!({
                 "role": "tool",
                 "content": tool_result,
@@ -1614,10 +1751,38 @@ fn clean_title_text(title: &str) -> Option<String> {
     }
     text = text
         .trim_matches(|c: char| {
-            matches!(c, '"' | '\'' | '\u{201c}' | '\u{201d}' | '\u{2018}' | '\u{2019}' | '「' | '」' | '『' | '』' | '《' | '》')
+            matches!(
+                c,
+                '"' | '\''
+                    | '\u{201c}'
+                    | '\u{201d}'
+                    | '\u{2018}'
+                    | '\u{2019}'
+                    | '「'
+                    | '」'
+                    | '『'
+                    | '』'
+                    | '《'
+                    | '》'
+            )
         })
         .trim_end_matches(|c: char| {
-            matches!(c, '。' | '.' | '!' | '！' | '?' | '？' | ',' | '，' | '、' | ';' | '；' | ':' | '：' | ' ')
+            matches!(
+                c,
+                '。' | '.'
+                    | '!'
+                    | '！'
+                    | '?'
+                    | '？'
+                    | ','
+                    | '，'
+                    | '、'
+                    | ';'
+                    | '；'
+                    | ':'
+                    | '：'
+                    | ' '
+            )
         })
         .trim()
         .to_string();
@@ -1649,7 +1814,11 @@ fn fallback_title(messages: &[TitleMessage]) -> Option<String> {
     let source = messages
         .iter()
         .find(|m| m.role == "user" && !strip_title_noise(&m.content).is_empty())
-        .or_else(|| messages.iter().find(|m| !strip_title_noise(&m.content).is_empty()))?;
+        .or_else(|| {
+            messages
+                .iter()
+                .find(|m| !strip_title_noise(&m.content).is_empty())
+        })?;
     let cleaned = strip_title_noise(&source.content);
     if cleaned.is_empty() {
         return None;
@@ -1776,7 +1945,12 @@ async fn describe_image(
     }
     let data: Value = match response.json().await {
         Ok(data) => data,
-        Err(e) => return err(StatusCode::BAD_GATEWAY, format!("图片描述响应解析失败: {e}")),
+        Err(e) => {
+            return err(
+                StatusCode::BAD_GATEWAY,
+                format!("图片描述响应解析失败: {e}"),
+            )
+        }
     };
     let description = data
         .get("choices")

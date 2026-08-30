@@ -13,8 +13,7 @@ use wayland_protocols::ext::background_effect::v1::client::{
     ext_background_effect_surface_v1::ExtBackgroundEffectSurfaceV1,
 };
 use wayland_protocols_plasma::blur::client::{
-    org_kde_kwin_blur::OrgKdeKwinBlur,
-    org_kde_kwin_blur_manager::OrgKdeKwinBlurManager,
+    org_kde_kwin_blur::OrgKdeKwinBlur, org_kde_kwin_blur_manager::OrgKdeKwinBlurManager,
 };
 
 const STANDARD_BLUR_INTERFACE: &str = "ext_background_effect_manager_v1";
@@ -150,12 +149,10 @@ fn create_blur_session(window: &gtk::ApplicationWindow) -> Result<Option<BlurSes
         return Ok(None);
     }
 
-    let wayland_display: *mut std::ffi::c_void = unsafe {
-        gdk_wayland_sys::gdk_wayland_display_get_wl_display(display_ptr.cast())
-    };
-    let wayland_surface: *mut std::ffi::c_void = unsafe {
-        gdk_wayland_sys::gdk_wayland_window_get_wl_surface(window_ptr.cast())
-    };
+    let wayland_display: *mut std::ffi::c_void =
+        unsafe { gdk_wayland_sys::gdk_wayland_display_get_wl_display(display_ptr.cast()) };
+    let wayland_surface: *mut std::ffi::c_void =
+        unsafe { gdk_wayland_sys::gdk_wayland_window_get_wl_surface(window_ptr.cast()) };
     if wayland_display.is_null() || wayland_surface.is_null() {
         return Err("GDK did not expose its Wayland display or surface".to_string());
     }

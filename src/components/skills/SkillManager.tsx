@@ -1,9 +1,11 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { openPath } from '@tauri-apps/plugin-opener';
 import MessageContent from '../chat/MessageContent';
 import SkillForm from './SkillForm';
+import SkillFrontmatterTable from './SkillFrontmatterTable';
 import { useSkills } from '@/hooks/useSkills';
+import { parseSkillFrontmatter } from '@/utils/skill-frontmatter';
 import {
   createSkill,
   deleteSkill,
@@ -70,6 +72,9 @@ const SkillManager: React.FC<SkillManagerProps> = ({ onClose, onUseSkill, onNoti
   const tooltipTimerRef = useRef<number | null>(null);
 
   const selectedSkill = skills.find(s => s.id === selectedId) ?? null;
+
+  // 头部 frontmatter 字段拆出来单独以表格展示，正文走消息渲染管线
+  const frontmatter = useMemo(() => parseSkillFrontmatter(content), [content]);
 
   const refresh = useCallback(async (keepSelection = true) => {
     try {
@@ -335,7 +340,10 @@ const SkillManager: React.FC<SkillManagerProps> = ({ onClose, onUseSkill, onNoti
                   </div>
                 ) : (
                   <div className="mx-auto max-w-3xl">
-                    <MessageContent content={content} status="completed" />
+                    {frontmatter && frontmatter.fields.length > 0 && (
+                      <SkillFrontmatterTable fields={frontmatter.fields} />
+                    )}
+                    <MessageContent content={frontmatter ? frontmatter.body : content} status="completed" />
                   </div>
                 )}
               </div>

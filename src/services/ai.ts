@@ -85,6 +85,7 @@ export interface ChatCompletionParams {
   messages: ChatMessage[];
   tools?: ToolDefinition[];
   webSearch?: WebSearchOptions;
+  thinkingLevel?: 'LOW' | 'MEDIUM' | 'HIGH' | null;
   signal?: AbortSignal;
 }
 
@@ -321,17 +322,25 @@ function buildRequestBody(
   model: ModelConfig,
   messages: ChatMessage[],
   tools?: ToolDefinition[],
-  webSearch?: WebSearchOptions
+  webSearch?: WebSearchOptions,
+  thinkingLevel?: 'LOW' | 'MEDIUM' | 'HIGH' | null
 ): unknown {
+  // 思考模型官方建议不干预采样参数（temperature/top_p 固定为 1），由推理力度控制行为
+  const thinkingEnabled = thinkingLevel != null;
   const body: Record<string, unknown> = {
     model: model.model_id,
     messages,
     stream: true,
-    temperature: model.temperature,
+    temperature: thinkingEnabled ? 1.0 : model.temperature,
     max_tokens: model.max_tokens,
-    top_p: model.top_p,
+    top_p: thinkingEnabled ? 1.0 : model.top_p,
     stream_options: { include_usage: true },
   };
+
+  if (thinkingEnabled) {
+    // OpenAI 风格的 reasoning_effort；OpenRouter 会将其归一化（两种格式只能发其一）
+    body.reasoning_effort = thinkingLevel.toLowerCase();
+  }
 
   if (model.provider === 'openrouter' && webSearch?.enabled && webSearch.mode === 'official') {
     // OpenRouter 官方网页搜索工具与本地 function tools（如 use_skill）可以并存
@@ -697,12 +706,12 @@ async function* continueTextStream(
 // ---------------------------------------------------------------------------
 
 export async function chatCompletion(params: ChatCompletionParams): Promise<ChatCompletionResult> {
-  const { model, messages, tools, webSearch, signal } = params;
+  const { model, messages, tools, webSearch, thinkingLevel, signal } = params;
 
   const endpoint = getApiEndpoint(model);
   const url = `${endpoint.replace(/\/$/, '')}/chat/completions`;
   const headers = buildHeaders(model);
-  const body = buildRequestBody(model, messages, tools, webSearch);
+  const body = buildRequestBody(model, messages, tools, webSearch, thinkingLevel);
 
   const response = await fetch(url, {
     method: 'POST',
@@ -791,12 +800,12 @@ export async function chatCompletion(params: ChatCompletionParams): Promise<Chat
 export async function streamTextCompletion(
   params: Omit<ChatCompletionParams, 'tools'>
 ): Promise<AsyncGenerator<StreamChunk, void, unknown>> {
-  const { model, messages, signal } = params;
+  const { model, messages, thinkingLevel, signal } = params;
 
   const endpoint = getApiEndpoint(model);
   const url = `${endpoint.replace(/\/$/, '')}/chat/completions`;
   const headers = buildHeaders(model);
-  const body = buildRequestBody(model, messages);
+  const body = buildRequestBody(model, messages, undefined, undefined, thinkingLevel);
 
   const response = await fetch(url, {
     method: 'POST',

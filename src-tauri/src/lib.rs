@@ -65,8 +65,7 @@ fn parse_document(data: String, ext: String) -> Result<String, String> {
     );
     let temp_path = std::env::temp_dir().join(&temp_name);
 
-    std::fs::write(&temp_path, &bytes)
-        .map_err(|e| format!("write temp file failed: {}", e))?;
+    std::fs::write(&temp_path, &bytes).map_err(|e| format!("write temp file failed: {}", e))?;
 
     // -----------------------------------------------------------------------
     // Helper: locate Python executable robustly on Windows / Unix
@@ -76,10 +75,7 @@ fn parse_document(data: String, ext: String) -> Result<String, String> {
         #[cfg(target_os = "windows")]
         {
             for name in ["python", "py", "python3"] {
-                if let Ok(output) = std::process::Command::new("where")
-                    .arg(name)
-                    .output()
-                {
+                if let Ok(output) = std::process::Command::new("where").arg(name).output() {
                     if output.status.success() {
                         let stdout = String::from_utf8_lossy(&output.stdout);
                         if let Some(line) = stdout.lines().next() {
@@ -97,10 +93,7 @@ fn parse_document(data: String, ext: String) -> Result<String, String> {
         #[cfg(not(target_os = "windows"))]
         {
             for name in ["python3", "python"] {
-                if let Ok(output) = std::process::Command::new("which")
-                    .arg(name)
-                    .output()
-                {
+                if let Ok(output) = std::process::Command::new("which").arg(name).output() {
                     if output.status.success() {
                         let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
                         if !path.is_empty() {
@@ -113,7 +106,11 @@ fn parse_document(data: String, ext: String) -> Result<String, String> {
 
         // Fallback: try bare commands (rely on PATH)
         for cmd in ["python3", "python", "py"] {
-            if std::process::Command::new(cmd).arg("--version").output().is_ok() {
+            if std::process::Command::new(cmd)
+                .arg("--version")
+                .output()
+                .is_ok()
+            {
                 return Ok(cmd.to_string());
             }
         }
@@ -173,8 +170,16 @@ except Exception:
         Err(format!(
             "Python exit code {:?}. stderr: {}. stdout: {}. python: {}",
             output.status.code(),
-            if stderr.is_empty() { "(empty)" } else { &stderr },
-            if stdout.is_empty() { "(empty)" } else { &stdout },
+            if stderr.is_empty() {
+                "(empty)"
+            } else {
+                &stderr
+            },
+            if stdout.is_empty() {
+                "(empty)"
+            } else {
+                &stdout
+            },
             python_path
         ))
     }
@@ -507,7 +512,7 @@ mod tests {
 // ---------------------------------------------------------------------------
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
-pub fn run() { 
+pub fn run() {
     tauri::Builder::default()
         // ── Intercept close request: hide to tray instead of quitting ───────
         .on_window_event(|window, event| {
@@ -573,7 +578,9 @@ pub fn run() {
                             }
                             if shortcut.matches(Modifiers::CONTROL | Modifiers::SHIFT, Code::KeyS) {
                                 let _ = app.emit("shortcut-toggle-sidebar", ());
-                            } else if shortcut.matches(Modifiers::CONTROL | Modifiers::SHIFT, Code::KeyN) {
+                            } else if shortcut
+                                .matches(Modifiers::CONTROL | Modifiers::SHIFT, Code::KeyN)
+                            {
                                 let _ = app.emit("shortcut-new-conversation", ());
                             }
                         })

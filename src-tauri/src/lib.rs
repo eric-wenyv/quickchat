@@ -537,6 +537,13 @@ fn toggle_main_window<R: tauri::Runtime>(app: &tauri::AppHandle<R>) {
     }
 }
 
+/// 删除数据库文件及其 WAL/SHM 边车文件（dev:fresh 启动时清空开发库用）。
+fn remove_db_files(dir: &std::path::Path, name: &str) {
+    for suffix in ["", "-wal", "-shm"] {
+        let _ = std::fs::remove_file(dir.join(format!("{name}{suffix}")));
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let builder = tauri::Builder::default();
@@ -590,7 +597,16 @@ pub fn run() {
                 let config_dir = app.path().app_config_dir();
                 match config_dir {
                     Ok(config_dir) => {
-                        match tauri::async_runtime::block_on(server::init(config_dir)) {
+                        // dev:fresh 模式（npm run dev:fresh）：前端与 LAN 服务端都改用
+                        // 独立的开发数据库，并在启动前删除旧文件（含 WAL/SHM 边车），
+                        // 每次启动等价于全新安装的空白首启，不影响真实数据。
+                        let db_file = if std::env::var("QUICK_CHAT_DEV_DB").is_ok() {
+                            remove_db_files(&config_dir, "quick_chat_dev.db");
+                            "quick_chat_dev.db"
+                        } else {
+                            "quick_chat.db"
+                        };
+                        match tauri::async_runtime::block_on(server::init(config_dir, db_file)) {
                             Ok(lan_server) => {
                                 app.manage(lan_server);
                             }

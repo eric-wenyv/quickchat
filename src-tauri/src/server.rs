@@ -186,14 +186,14 @@ fn save_config(path: &PathBuf, config: &ServerConfig) -> Result<(), String> {
     std::fs::write(path, body).map_err(|e| format!("写入服务器配置失败: {e}"))
 }
 
-pub async fn init(app_config_dir: PathBuf) -> Result<Arc<LanServer>, String> {
+pub async fn init(app_config_dir: PathBuf, db_file: &str) -> Result<Arc<LanServer>, String> {
     // tauri-plugin-sql resolves relative `sqlite:` paths against the app
     // config dir, so the shared database lives there too.
     let app_data_dir = app_config_dir.clone();
     std::fs::create_dir_all(&app_data_dir).map_err(|e| e.to_string())?;
     std::fs::create_dir_all(&app_config_dir).map_err(|e| e.to_string())?;
 
-    let db_path = app_data_dir.join("quick_chat.db");
+    let db_path = app_data_dir.join(db_file);
     let options = SqliteConnectOptions::from_str(&format!("sqlite://{}", db_path.display()))
         .map_err(|e| format!("无效的数据库路径: {e}"))?
         .create_if_missing(true)

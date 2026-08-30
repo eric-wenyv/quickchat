@@ -18,9 +18,14 @@ import type {
 let dbInstance: Database | null = null;
 let hasTrigramMessageSearchIndex: boolean | null = null;
 
+// dev:fresh 模式（npm run dev:fresh）：改用独立的开发数据库文件，与真实数据
+// 完全隔离。Rust 侧每次启动前会删除该文件（见 lib.rs），因此每次启动都等价于
+// 全新安装的空白首启。
+const DB_FILE = import.meta.env.VITE_FRESH_DB === '1' ? 'quick_chat_dev.db' : 'quick_chat.db';
+
 export async function getDb(): Promise<Database> {
   if (dbInstance) return dbInstance;
-  dbInstance = await Database.load('sqlite:quick_chat.db');
+  dbInstance = await Database.load(`sqlite:${DB_FILE}`);
   return dbInstance;
 }
 

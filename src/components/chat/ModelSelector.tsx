@@ -151,7 +151,7 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({
               })
             ) : (
               <div className="px-4 py-8 text-center text-linear-text-muted text-xs italic">
-                No models found
+                No models found, please configure first
               </div>
             )}
           </div>

@@ -339,7 +339,7 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({
   return (
     <div role="dialog" aria-modal="true" className="fixed inset-0 z-[200] flex items-center justify-center bg-black/40 backdrop-blur-sm" onClick={onClose}>
       <div
-        className="bg-linear-bg-elevated backdrop-blur-xl border border-linear-border rounded-xl shadow-2xl w-full max-w-xl mx-4 max-h-[85vh] flex flex-col animate-in fade-in zoom-in-95 duration-200"
+        className="bg-linear-bg backdrop-blur-xl border border-linear-border rounded-xl shadow-2xl w-full max-w-xl mx-4 max-h-[85vh] flex flex-col animate-in fade-in zoom-in-95 duration-200"
         onClick={e => e.stopPropagation()}
       >
         {/* Header */}
@@ -378,6 +378,7 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({
             </div>
           ) : (
             <div className="space-y-3">
+              <GlobalShortcutSettings value={globalShortcut} onChange={onGlobalShortcutChange}/>
               <LanServerSettings />
               <h3 className="text-sm font-bold text-linear-text-primary mb-2">模型管理</h3>
               {models.length === 0 && (

@@ -75,10 +75,7 @@ export const LanServerSettings: React.FC = () => {
     <section className="rounded-lg border border-linear-border bg-linear-surface p-4">
       <div className="flex items-start justify-between gap-4">
         <div>
-          <h3 className="text-sm font-bold text-linear-text-primary">局域网服务（安卓端）</h3>
-          <p className="mt-1 text-xs leading-5 text-linear-text-tertiary">
-            开启后，安卓 App 可通过同一局域网连接本机，同步对话历史并中转 AI 请求。
-          </p>
+          <h3 className="text-sm font-bold text-linear-text-primary">局域网服务</h3>
         </div>
         <span className={`shrink-0 rounded-md px-2 py-1 text-[10px] font-bold ${
           info?.running ? 'bg-emerald-500/10 text-emerald-400' : 'bg-linear-surface-hover text-linear-text-tertiary'
@@ -126,7 +123,7 @@ export const LanServerSettings: React.FC = () => {
           {info.running && (
             <>
               <div>
-                <label className="block text-[11px] font-bold text-linear-text-secondary">连接地址（手机与电脑需在同一局域网）</label>
+                <label className="block text-[11px] font-bold text-linear-text-secondary">Address</label>
                 <div className="mt-1 space-y-1">
                   {info.addresses.length === 0 && (
                     <p className="text-xs text-linear-text-muted">未检测到局域网 IPv4 地址</p>
@@ -149,7 +146,7 @@ export const LanServerSettings: React.FC = () => {
               </div>
 
               <div>
-                <label className="block text-[11px] font-bold text-linear-text-secondary">访问 Token</label>
+                <label className="block text-[11px] font-bold text-linear-text-secondary">Token</label>
                 <div className="mt-1 flex items-center gap-1.5">
                   <button
                     type="button"
@@ -168,7 +165,6 @@ export const LanServerSettings: React.FC = () => {
                     重置
                   </button>
                 </div>
-                <p className="mt-1 text-[11px] text-linear-text-muted">重置后，已连接的手机需要用新 Token 重新配置。</p>
               </div>
             </>
           )}

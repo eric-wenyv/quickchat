@@ -29,6 +29,7 @@ const shortcutKeyFromEvent = (event: React.KeyboardEvent<HTMLButtonElement>): st
 
 const RESERVED_SHORTCUTS = new Set(['Ctrl+Shift+S', 'Ctrl+Shift+N']);
 
+// TODO: beautify or completely delete this componet
 const GlobalShortcutSettings: React.FC<GlobalShortcutSettingsProps> = ({ value, onChange }) => {
   const [shortcut, setShortcut] = useState(value);
   const [isCapturing, setIsCapturing] = useState(false);
@@ -150,12 +151,6 @@ const GlobalShortcutSettings: React.FC<GlobalShortcutSettingsProps> = ({ value, 
   );
 };
 
-const PROVIDER_BADGES: Record<string, { label: string; bg: string; text: string }> = {
-  google_gemini: { label: 'GG', bg: 'bg-blue-500/10', text: 'text-blue-600' },
-  openrouter: { label: 'OR', bg: 'bg-purple-500/10', text: 'text-purple-600' },
-  openai_compatible: { label: 'OA', bg: 'bg-emerald-500/10', text: 'text-emerald-600' },
-};
-
 interface VisionModelSelectorProps {
   models: ModelConfig[];
   value: string | null;
@@ -244,7 +239,7 @@ const VisionModelSelector: React.FC<VisionModelSelectorProps> = ({
       {isOpen && (
         <div
           role="menu"
-          className="absolute bottom-full left-0 z-50 mb-2 w-full min-w-[280px] rounded-xl bg-linear-bg-elevated/98 p-1.5 shadow-[0_18px_45px_rgba(0,0,0,0.32)] backdrop-blur-xl origin-bottom"
+          className="absolute bottom-full left-0 z-50 mb-2 w-full min-w-[280px] rounded-lg bg-linear-bg-elevated/98 p-1.5 shadow-[0_18px_45px_rgba(0,0,0,0.32)] backdrop-blur-xl origin-bottom"
           style={{ animation: 'menu-enter 0.2s var(--ease-snappy) forwards' }}
         >
           <button
@@ -252,29 +247,22 @@ const VisionModelSelector: React.FC<VisionModelSelectorProps> = ({
             role="menuitemradio"
             aria-checked={!selectedModel}
             onClick={() => handleSelect(null)}
-            className={`flex w-full items-center justify-between gap-3 rounded-lg px-3 py-2.5 text-left transition-colors duration-150 cursor-pointer ${
+            className={`flex w-full items-center justify-between gap-3 rounded-xl px-3 py-2.5 text-left transition-colors duration-150 cursor-pointer ${
               !selectedModel
                 ? 'bg-linear-surface-hover text-linear-text-primary'
                 : 'text-linear-text-secondary hover:bg-linear-surface hover:text-linear-text-primary'
             }`}
           >
             <span className="flex min-w-0 items-center gap-2.5">
-              <span className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-[5px] bg-linear-surface text-[9px] font-bold text-linear-text-tertiary">
-                A
-              </span>
               <span className="flex min-w-0 flex-col gap-0.5">
                 <span className="truncate text-sm font-semibold tracking-tight">自动选择</span>
-                <span className="truncate text-[10px] font-medium uppercase tracking-[0.08em] text-linear-text-tertiary">
-                  第一个可用的 Vision 模型
-                </span>
               </span>
             </span>
             {!selectedModel && <CheckIcon className="h-4 w-4 flex-shrink-0" />}
           </button>
 
-          <div className="max-h-52 overflow-y-auto custom-scrollbar">
+          <div className="max-h-52 overflow-y-auto custom-scrollbar space-y-1 rounded-lg">
             {visionModels.map(model => {
-              const badge = PROVIDER_BADGES[model.provider] || { label: '?', bg: 'bg-gray-500/10', text: 'text-gray-400' };
               const isActive = selectedModel?.id === model.id;
               return (
                 <button
@@ -283,21 +271,15 @@ const VisionModelSelector: React.FC<VisionModelSelectorProps> = ({
                   role="menuitemradio"
                   aria-checked={isActive}
                   onClick={() => handleSelect(model.id)}
-                  className={`flex w-full items-center justify-between gap-3 rounded-lg px-3 py-2.5 text-left transition-colors duration-150 cursor-pointer ${
+                  className={`flex w-full items-center justify-between gap-3 rounded-xl px-3 py-2.5 text-left transition-colors duration-150 cursor-pointer ${
                     isActive
                       ? 'bg-linear-surface-hover text-linear-text-primary'
                       : 'text-linear-text-secondary hover:bg-linear-surface hover:text-linear-text-primary'
                   }`}
                 >
                   <span className="flex min-w-0 items-center gap-2.5">
-                    <span className={`flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-[5px] ${badge.bg} ${badge.text} text-[8px] font-bold`}>
-                      {badge.label}
-                    </span>
                     <span className="flex min-w-0 flex-col gap-0.5">
                       <span className="truncate text-sm font-semibold tracking-tight">{model.display_name}</span>
-                      <span className="truncate text-[10px] font-medium uppercase tracking-[0.08em] text-linear-text-tertiary">
-                        {model.model_id}
-                      </span>
                     </span>
                   </span>
                   {isActive && <CheckIcon className="h-4 w-4 flex-shrink-0" />}
@@ -396,7 +378,6 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({
             </div>
           ) : (
             <div className="space-y-3">
-              <GlobalShortcutSettings value={globalShortcut} onChange={onGlobalShortcutChange} />
               <LanServerSettings />
               <h3 className="text-sm font-bold text-linear-text-primary mb-2">模型管理</h3>
               {models.length === 0 && (
@@ -405,15 +386,11 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({
                 </div>
               )}
               {models.map(model => {
-                const badge = PROVIDER_BADGES[model.provider] || { label: '?', bg: 'bg-gray-100', text: 'text-gray-500' };
                 return (
                   <div
                     key={model.id}
                     className="flex items-center gap-3 px-4 py-3 rounded-lg bg-linear-surface border border-linear-border hover:border-linear-border-hover transition-all"
                   >
-                    <div className={`flex-shrink-0 w-8 h-8 rounded-[4px] ${badge.bg} ${badge.text} flex items-center justify-center text-[10px] font-bold`}>
-                      {badge.label}
-                    </div>
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2">
                         <span className="text-sm font-bold text-linear-text-primary truncate">{model.display_name}</span>
@@ -423,7 +400,6 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({
                           </span>
                         )}
                       </div>
-                      <span className="text-[11px] text-linear-text-tertiary font-mono truncate block">{model.model_id}</span>
                     </div>
                     <div className="flex items-center gap-1 flex-shrink-0">
                       <button
@@ -480,7 +456,6 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({
               <div>
                 <label className="block text-xs font-bold text-linear-text-secondary mb-1.5">
                   图片解析模型
-                  <span className="font-normal text-linear-text-muted ml-1">— 当主模型不支持图片时，用此模型解析图片内容</span>
                 </label>
                 <VisionModelSelector
                   models={models}

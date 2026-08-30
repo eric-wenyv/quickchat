@@ -2,30 +2,6 @@ import React, { useState, useRef, useEffect, useMemo } from "react";
 import type { ModelConfig, UUID } from "@/types/types";
 import { useAutoResize } from "@/hooks/useAutoResize";
 
-const PROVIDER_BADGES: Record<string, { label: string; badge: string }> = {
-  google_gemini: {
-    label: "GG",
-    badge: "bg-[#6f8f72] text-white",
-  },
-  openrouter: {
-    label: "OR",
-    badge: "bg-[#9a7a58] text-white",
-  },
-  openai_compatible: {
-    label: "OA",
-    badge: "bg-[#6f7f91] text-white",
-  },
-};
-
-function providerBadge(provider: string) {
-  return (
-    PROVIDER_BADGES[provider] ?? {
-      label: "?",
-      badge: "bg-[#777] text-white",
-    }
-  );
-}
-
 interface ModelSelectorProps {
   models: ModelConfig[];
   activeModelId: UUID;
@@ -33,7 +9,7 @@ interface ModelSelectorProps {
 }
 
 /**
- * ModelSelector (C-12)
+ * ModelSelector
  * 模型选择下拉菜单，展示当前模型名称，点击切换
  */
 const ModelSelector: React.FC<ModelSelectorProps> = ({
@@ -102,11 +78,10 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({
         onClick={() => setIsOpen(!isOpen)}
         aria-haspopup="menu"
         aria-expanded={isOpen}
-        className={`group flex h-8 items-center gap-1.5 rounded-full px-3 text-[14px] font-semibold cursor-pointer outline-none transition-colors duration-150 ${
-          isOpen
+        className={`group flex h-8 items-center gap-1.5 rounded-full px-3 text-[14px] font-semibold cursor-pointer outline-none transition-colors duration-150 ${isOpen
             ? "bg-linear-surface-hover text-linear-text-primary"
             : "bg-transparent text-linear-text-tertiary hover:bg-linear-surface-hover hover:text-linear-text-primary focus-visible:bg-linear-surface-hover focus-visible:text-linear-text-primary"
-        }`}
+          }`}
       >
         <span className="max-w-[140px] truncate">
           {activeModel?.display_name || "Select Model"}
@@ -121,90 +96,64 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({
           strokeLinecap="round"
           strokeLinejoin="round"
         >
-          <path d="m6 9 6 6 6-6" />
+          <path d="m9 18 6-6-6-6" />
         </svg>
       </button>
-
       {isOpen && (
         <div
           data-focus-preserve="true"
           role="menu"
-          className="absolute bottom-full left-0 mb-2 w-72 rounded-xl bg-linear-bg-elevated/98 p-1.5 shadow-[0_18px_45px_rgba(0,0,0,0.32)] backdrop-blur-xl z-50 origin-bottom"
+          className="absolute left-full ml-1 bottom-0 w-40 rounded-2xl border border-linear-border p-1.5 bg-[#2D2D2D] z-50 origin-bottom-left"
           style={{ animation: "menu-enter 0.2s var(--ease-snappy) forwards" }}
         >
-          <div className="space-y-1">
-            <div className="p-1">
-              <textarea
-                ref={textareaRef}
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Search models..."
-                rows={1}
-                className="w-full resize-none overflow-hidden rounded-lg bg-linear-surface/70 px-3 py-2 text-xs text-linear-text-secondary placeholder:text-linear-text-muted outline-none transition-colors duration-150 focus:bg-linear-surface-hover"
-              />
-            </div>
-
-            <div className="max-h-60 overflow-y-auto custom-scrollbar px-1">
-              {filteredModels.length > 0 ? (
-                filteredModels.map((model) => {
-                  const provider = providerBadge(model.provider);
-                  const isActive = model.id === activeModelId;
-                  return (
-                    <button
-                      key={model.id}
-                      onClick={() => {
-                        onSelect(model.id);
-                        setIsOpen(false);
-                        setSearchQuery("");
-                      }}
-                      role="menuitemradio"
-                      aria-checked={isActive}
-                      className={`group w-full flex items-center justify-between gap-3 px-3 py-2.5 rounded-lg text-left transition-colors cursor-pointer ${
-                        isActive
-                          ? "bg-linear-surface-hover text-linear-text-primary"
-                          : "text-linear-text-secondary hover:bg-linear-surface hover:text-linear-text-primary"
+          <div className="max-h-60 overflow-y-auto custom-scrollbar space-y-1">
+            {filteredModels.length > 0 ? (
+              filteredModels.map((model) => {
+                const isActive = model.id === activeModelId;
+                return (
+                  <button
+                    key={model.id}
+                    onClick={() => {
+                      onSelect(model.id);
+                      setIsOpen(false);
+                      setSearchQuery("");
+                    }}
+                    role="menuitemradio"
+                    aria-checked={isActive}
+                    className={`group w-full flex items-center justify-between gap-1.5 px-3 py-2.5 rounded-2xl text-left transition-colors cursor-pointer ${isActive
+                        ? "bg-linear-surface-hover text-linear-text-primary"
+                        : "text-linear-text-secondary hover:bg-linear-surface hover:text-linear-text-primary"
                       }`}
-                    >
-                      <div className="flex items-center gap-2.5 min-w-0">
-                        <span
-                          className={`flex-shrink-0 w-6 h-6 rounded-[5px] ${provider.badge} flex items-center justify-center text-[8px] font-bold shadow-[inset_0_1px_0_rgba(255,255,255,0.16)]`}
+                  >
+                    <div className="flex flex-col gap-0.5 min-w-0 h-4">
+                      <span className="text-sm font-semibold tracking-tight truncate">
+                        {model.display_name}
+                      </span>
+                    </div>
+                    {isActive && (
+                      <div className="text-linear-text-primary flex-shrink-0">
+                        <svg
+                          xmlns="http://www.w3.org/2000/svg"
+                          className="w-4 h-4"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="2.5"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
                         >
-                          {provider.label}
-                        </span>
-                        <div className="flex flex-col gap-0.5 min-w-0">
-                          <span className="text-sm font-semibold tracking-tight truncate">
-                            {model.display_name}
-                          </span>
-                          <span className="text-[10px] font-medium text-linear-text-tertiary uppercase tracking-[0.08em] truncate">
-                            {model.model_id}
-                          </span>
-                        </div>
+                          <path d="M20 6 9 17l-5-5" />
+                        </svg>
                       </div>
-                      {isActive && (
-                        <div className="text-linear-text-primary flex-shrink-0">
-                          <svg
-                            xmlns="http://www.w3.org/2000/svg"
-                            className="w-4 h-4"
-                            viewBox="0 0 24 24"
-                            fill="none"
-                            stroke="currentColor"
-                            strokeWidth="2.5"
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                          >
-                            <path d="M20 6 9 17l-5-5" />
-                          </svg>
-                        </div>
-                      )}
-                    </button>
-                  );
-                })
-              ) : (
-                <div className="px-4 py-8 text-center text-linear-text-muted text-xs italic">
-                  No models found
-                </div>
-              )}
-            </div>
+                    )}
+                  </button>
+                );
+              })
+            ) : (
+              <div className="px-4 py-8 text-center text-linear-text-muted text-xs italic">
+                No models found
+              </div>
+            )}
           </div>
         </div>
       )}

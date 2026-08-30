@@ -37,3 +37,6 @@ archlinux/pkg
 *.sw?
 
 .omo/
+
+# Local design docs (superpowers)
+superpowers/

@@ -65,8 +65,8 @@ test('web search routing keeps OpenRouter official and Gemini/OpenAI-compatible 
   assert.deepEqual(getWebSearchOptions(modelConfig('openai_compatible')), { enabled: true, mode: 'legacy_tavily' });
 });
 
-test('OpenRouter official search injects server tool and omits local web_search function tool', async () => {
-  const { chatCompletion, WEB_SEARCH_TOOL } = await importAiService();
+test('OpenRouter official search injects server tool alongside local function tools', async () => {
+  const { chatCompletion, READ_URL_TOOL } = await importAiService();
   let requestBody;
 
   globalThis.fetch = async (_url, init) => {
@@ -80,11 +80,13 @@ test('OpenRouter official search injects server tool and omits local web_search 
   const result = await chatCompletion({
     model: modelConfig('openrouter'),
     messages: [{ role: 'user', content: 'What happened today?' }],
-    tools: [WEB_SEARCH_TOOL],
+    tools: [READ_URL_TOOL],
     webSearch: { enabled: true, mode: 'official' },
   });
   await readAll(result.stream);
 
+  // 官方 server tool 置于首位，本地 function tools（read_url 等）与之共存。
+  // 调用方（App.tsx）在 official 模式下本就不会再传 web_search function tool。
   assert.deepEqual(requestBody.tools, [
     {
       type: 'openrouter:web_search',
@@ -95,8 +97,8 @@ test('OpenRouter official search injects server tool and omits local web_search 
         search_context_size: 'medium',
       },
     },
+    READ_URL_TOOL,
   ]);
-  assert.equal(requestBody.tools.some((tool) => tool.type === 'function' && tool.function?.name === 'web_search'), false);
   assert.equal(requestBody.tool_choice, 'auto');
 });
 

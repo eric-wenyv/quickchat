@@ -109,7 +109,7 @@ export interface UrlCitation {
 }
 
 export type ChatCompletionResult =
-  | { type: 'text'; stream: AsyncGenerator<StreamChunk, void, unknown>; reasoningContent: string; usage: TokenUsage | null; citations?: UrlCitation[] }
+  | { type: 'text'; stream: AsyncGenerator<StreamChunk, void, unknown>; reasoningContent: string; usage: TokenUsage | null; citations?: UrlCitation[]; lateToolCalls?: ToolCall[] }
   | { type: 'tool_calls'; toolCalls: ToolCall[]; assistantMessage: string; reasoningContent: string; usage: TokenUsage | null };
 
 // ---------------------------------------------------------------------------
@@ -552,10 +552,6 @@ function textDeltaFromParsed(parsed: any): string | null {
   return typeof delta === 'string' ? delta : null;
 }
 
-function hasReasoningDelta(parsed: any): boolean {
-  return typeof parsed.choices?.[0]?.delta?.reasoning_content === 'string';
-}
-
 function accumulatorToToolCalls(acc: SSEAccumulator): ToolCall[] {
   const calls: ToolCall[] = [];
   const indices = Array.from(acc.toolCalls.keys()).sort((a, b) => a - b);
@@ -668,18 +664,25 @@ async function* continueTextStream(
       yield { delta: firstDelta, accumulated: acc.text };
     }
 
+    // 混合响应：正文开始后又出现 tool_calls（GLM 等思考模型先输出一段前言再调工具，
+    // OpenAI 规范允许 content 与 tool_calls 并存）。此时停止产出文本增量，
+    // 继续累积事件；流结束后经 result.lateToolCalls 交给调用方续跑工具循环。
+    let mixedToolCalls = false;
+
     while (true) {
       const parsed = await readNextParsedEvent(state);
       if (parsed === null) return;
 
       if (hasToolCallDelta(parsed)) {
-        throw new Error('模型在文本输出开始后又触发工具调用，无法处理混合响应。');
+        mixedToolCalls = true;
       }
 
       applyParsedEvent(acc, parsed);
       result.reasoningContent = acc.reasoningContent;
       result.usage = acc.usage;
       result.citations = acc.citations;
+
+      if (mixedToolCalls) continue;
 
       const delta = textDeltaFromParsed(parsed);
       if (delta !== null) {
@@ -697,6 +700,9 @@ async function* continueTextStream(
     result.reasoningContent = acc.reasoningContent;
     result.usage = acc.usage;
     result.citations = acc.citations;
+    if (acc.toolCalls.size > 0) {
+      result.lateToolCalls = accumulatorToToolCalls(acc);
+    }
     state.reader.releaseLock();
   }
 }
@@ -775,7 +781,10 @@ export async function chatCompletion(params: ChatCompletionParams): Promise<Chat
       }
 
       const firstDelta = textDeltaFromParsed(parsed);
-      if (firstDelta !== null || hasReasoningDelta(parsed)) {
+      // 只有真正的正文分片才提交文本分支：思考模型的 reasoning_content 总是先于
+      // content / tool_calls 到达，若凭 reasoning 就提交，随后的 tool_calls 会被
+      // continueTextStream 当成"文本后又触发工具"的混合响应而报错。
+      if (firstDelta !== null) {
         const result: Extract<ChatCompletionResult, { type: 'text' }> = {
           type: 'text',
           stream: undefined as unknown as AsyncGenerator<StreamChunk, void, unknown>,

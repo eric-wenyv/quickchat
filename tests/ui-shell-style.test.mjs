@@ -46,7 +46,6 @@ test('composer keeps model, thinking and send controls without extra status chro
   assert.doesNotMatch(sendButton, /bg-linear-accent/);
   assert.match(sendButton, /opacity-45/);
   assert.match(sendButton, /cursor-not-allowed/);
-  assert.match(modelSelector, /providerBadge/);
   assert.match(modelSelector, /h-8/);
   assert.match(thinkingSelector, /h-8/);
   assert.match(composer, /rounded-2xl/);
@@ -59,11 +58,13 @@ test('composer keeps model, thinking and send controls without extra status chro
   assert.match(thinkingSelector, /bg-transparent text-linear-text-tertiary hover:bg-linear-surface-hover/);
   assert.doesNotMatch(modelSelector, /border border-\[rgba\(255,255,255,0\.16\)\]/);
   assert.doesNotMatch(thinkingSelector, /border border-\[rgba\(255,255,255,0\.16\)\]/);
-  assert.match(modelSelector, /className=\{`group w-full flex items-center justify-between gap-3 px-3 py-2\.5 rounded-lg text-left transition-colors cursor-pointer/);
+  assert.match(modelSelector, /className=\{`group w-full flex items-center justify-between gap-1\.5 px-3 py-2\.5 rounded-2xl text-left transition-colors cursor-pointer/);
   assert.match(thinkingSelector, /className=\{`w-full flex items-center justify-between gap-2 rounded-lg px-3 py-2 text-left transition-colors duration-150 cursor-pointer/);
   assert.match(modelSelector, /role="menu"/);
   assert.match(thinkingSelector, /role="menu"/);
-  assert.match(modelSelector, /shadow-\[0_18px_45px_rgba\(0,0,0,0\.32\)\]/);
+  // ModelSelector 弹层已从阴影改为描边（border-linear-border）；ThinkingLevelSelector 保留阴影。
+  assert.match(modelSelector, /border border-linear-border/);
+  assert.doesNotMatch(modelSelector, /providerBadge/);
   assert.match(thinkingSelector, /shadow-\[0_18px_45px_rgba\(0,0,0,0\.32\)\]/);
   assert.match(modelSelector, /text-linear-text-primary/);
   assert.match(thinkingSelector, /text-linear-text-primary/);

@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import type { Conversation, SystemPrompt, UUID } from '@/types/types';
+import { isMobilePlatform } from '@/utils/platform';
 
 interface TokenStats {
   totalTokens: number;
@@ -15,6 +16,8 @@ interface MessageHeaderProps {
   savedPrompts: SystemPrompt[];
   onSavePrompt: (title: string, content: string) => void;
   onDeletePrompt: (id: UUID) => void;
+  /** 移动端：打开侧栏抽屉（桌面端不传，由 CodexMenuBar 承载） */
+  onToggleSidebar?: () => void;
 }
 
 function generateDefaultTitle(existingTitles: string[]): string {
@@ -46,6 +49,7 @@ export const MessageHeader: React.FC<MessageHeaderProps> = ({
   savedPrompts,
   onSavePrompt,
   onDeletePrompt,
+  onToggleSidebar,
 }) => {
   // ── 标题编辑状态 ──
   const [isEditingTitle, setIsEditingTitle] = useState(false);
@@ -138,12 +142,35 @@ export const MessageHeader: React.FC<MessageHeaderProps> = ({
     <>
       <header
         data-tauri-drag-region
-        className="sticky top-0 z-30 flex min-h-[56px] items-center justify-between w-full bg-linear-bg/72 backdrop-blur-xl border-b border-linear-border/70 transition-all duration-300 select-none"
+        className={`sticky top-0 z-30 min-h-[56px] items-center w-full bg-linear-bg/72 backdrop-blur-xl border-b border-linear-border/70 select-none ${
+          // 移动端：三列 Grid（侧栏开关 | 居中标题 | 平衡占位）；桌面端维持左右布局
+          isMobilePlatform
+            ? 'grid grid-cols-[auto_minmax(0,1fr)_auto]'
+            : 'flex justify-between'
+        }`}
         style={{ WebkitAppRegion: 'drag' } as React.CSSProperties}
       >
-        {/* 左侧: 标题 (可点击编辑) + 模型标识 */}
+        {/* 左侧（仅移动端）: 侧栏开关，替代被移除的 CodexMenuBar 入口 */}
+        {isMobilePlatform && onToggleSidebar && (
+          <div className="flex items-center pl-1">
+            <button
+              onClick={onToggleSidebar}
+              className="flex h-9 w-9 items-center justify-center rounded-md text-linear-text-tertiary hover:bg-linear-surface hover:text-linear-text-primary active:bg-linear-surface transition-colors"
+              aria-label="打开侧栏"
+            >
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                <rect x="4" y="4" width="19" height="19" rx="3" />
+                <path d="M9 5v14" />
+              </svg>
+            </button>
+          </div>
+        )}
+
+        {/* 标题 (可点击编辑) + 模型标识 —— 移动端整体居中 */}
         <div
-          className="flex flex-col gap-0.5 min-w-0 py-2.5 pl-5"
+          className={`flex flex-col gap-0.5 min-w-0 py-2.5 ${
+            isMobilePlatform ? 'items-center px-2 text-center' : 'pl-5'
+          }`}
           style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
         >
           {isEditingTitle ? (
@@ -214,12 +241,16 @@ export const MessageHeader: React.FC<MessageHeaderProps> = ({
           </div>
         </div>
 
-        {/* 右侧留白：窗口按钮由全局 CodexMenuBar 承载 */}
-        <div
-          className="flex items-center h-full pr-4"
-          style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
-        >
-        </div>
+        {/* 右侧: 桌面端留白（窗口按钮由 CodexMenuBar 承载）；移动端平衡占位，保证标题绝对居中 */}
+        {isMobilePlatform ? (
+          <div className="w-9" aria-hidden="true" />
+        ) : (
+          <div
+            className="flex items-center h-full pr-4"
+            style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
+          >
+          </div>
+        )}
       </header>
 
       {/* ════════════════════════════════════════════════════════════════════════
@@ -238,7 +269,7 @@ export const MessageHeader: React.FC<MessageHeaderProps> = ({
           >
             {/* 弹窗头部 */}
             <div className="flex items-center justify-between px-6 py-4 border-b border-linear-border flex-shrink-0">
-              <div className="flex items-center gap-2">
+          <div className={`flex items-center gap-2 ${isMobilePlatform ? 'flex-wrap justify-center' : ''}`}>
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-linear-text-secondary">
                   <path d="M12 20h9" /><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z" />
                 </svg>

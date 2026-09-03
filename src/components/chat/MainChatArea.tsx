@@ -55,6 +55,8 @@ interface MainChatAreaProps {
   onFileDrop?: (files: File[]) => void;
   /** 中断 AI 生成 */
   onStopGeneration?: () => void;
+  /** 移动端：打开侧栏抽屉（显示在对话头部左侧） */
+  onToggleSidebar?: () => void;
 }
 
 /**
@@ -101,10 +103,11 @@ export const MainChatArea: React.FC<MainChatAreaProps> = ({
   systemPrompts,
   onSaveSystemPromptPreset,
   onDeleteSystemPromptPreset,
-  onDeleteMessage,
-  onFileDrop,
-  onStopGeneration,
-}) => {
+   onDeleteMessage,
+   onFileDrop,
+   onStopGeneration,
+   onToggleSidebar,
+ }) => {
   const showNoMessages = conversation && messages.length === 0 && !isLoadingMessages;
   const showLoadingMessages = conversation && messages.length === 0 && isLoadingMessages;
 
@@ -249,6 +252,7 @@ export const MainChatArea: React.FC<MainChatAreaProps> = ({
         savedPrompts={systemPrompts}
         onSavePrompt={onSaveSystemPromptPreset}
         onDeletePrompt={onDeleteSystemPromptPreset}
+        onToggleSidebar={onToggleSidebar}
       />
 
       {/* 消息展示核心区 */}

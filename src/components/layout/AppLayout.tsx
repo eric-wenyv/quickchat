@@ -312,6 +312,55 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
     if (isMobilePlatform) setIsSidebarOpen(false);
   }, [onCreateConversation]);
 
+  // ── 移动端抽屉手势：任意位置右滑打开、左滑关闭 ──
+  // 不要求从屏幕边缘起始：Android 12+ 系统手势导航占据左右边缘，边缘横滑
+  // 会被系统消费（App 收到 touchcancel），手势永远触发不了。
+  // 监听挂在外层容器上：抽屉打开后，遮罩/侧栏上的左滑仍能冒泡到这里生效。
+  const touchStartRef = useRef<{ x: number; y: number } | null>(null);
+
+  /** 触摸起点位于可横向滚动区域（代码块等）或输入控件内时不启用手势，避免与横滑/文本选择冲突 */
+  const gestureBlockedByTarget = (target: EventTarget | null): boolean => {
+    let node = target as HTMLElement | null;
+    while (node && node !== document.body) {
+      if (node.scrollWidth > node.clientWidth + 1) {
+        const style = getComputedStyle(node);
+        if (/(auto|scroll)/.test(style.overflowX)) return true;
+      }
+      if (node.tagName === 'INPUT' || node.tagName === 'TEXTAREA' || node.tagName === 'SELECT' || node.isContentEditable) {
+        return true;
+      }
+      node = node.parentElement;
+    }
+    return false;
+  };
+
+  const handleShellTouchStart = useCallback((e: React.TouchEvent) => {
+    if (!isMobilePlatform || e.touches.length !== 1) return;
+    if (gestureBlockedByTarget(e.target)) return;
+    const t = e.touches[0];
+    touchStartRef.current = { x: t.clientX, y: t.clientY };
+  }, []);
+  const handleShellTouchEnd = useCallback((e: React.TouchEvent) => {
+    if (!isMobilePlatform) return;
+    const start = touchStartRef.current;
+    touchStartRef.current = null;
+    if (!start) return;
+    const t = e.changedTouches[0];
+    const dx = t.clientX - start.x;
+    const dy = t.clientY - start.y;
+    // 位移阈值 64px，且水平位移须大于垂直位移（排除纵向滚动误触）
+    if (Math.abs(dx) < 64 || Math.abs(dx) <= Math.abs(dy)) return;
+    if (dx > 0 && !isSidebarOpen) {
+      setIsSidebarOpen(true);
+    } else if (dx < 0 && isSidebarOpen) {
+      setIsSidebarOpen(false);
+    }
+  }, [isSidebarOpen]);
+  // 系统手势导航抢占时会下发 touchcancel，必须清掉起点防止脏状态
+  const handleShellTouchCancel = useCallback(() => {
+    touchStartRef.current = null;
+  }, []);
+
   // 直接操作 DOM 的拖拽实现，绕过 React 渲染周期以避免卡顿
   const startResize = useCallback((e: React.MouseEvent) => {
     e.preventDefault();
@@ -444,12 +493,18 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
 
   return (
     <div className="app-window-shell flex h-screen w-screen flex-col bg-transparent text-linear-text-secondary font-sans overflow-hidden selection:bg-linear-surface-hover selection:text-linear-text-primary antialiased">
-      <CodexMenuBar
-        isSidebarOpen={isSidebarOpen}
-        onToggleSidebar={toggleSidebar}
-      />
+      {/* 移动端不渲染菜单栏：侧栏入口移至对话头部左侧 */}
+      {!isMobilePlatform && (
+        <CodexMenuBar
+          isSidebarOpen={isSidebarOpen}
+          onToggleSidebar={toggleSidebar}
+        />
+      )}
       <div
         ref={contentLayoutRef}
+        onTouchStart={handleShellTouchStart}
+        onTouchEnd={handleShellTouchEnd}
+        onTouchCancel={handleShellTouchCancel}
         className="app-content-shell relative isolate grid min-h-0 flex-1 transition-[grid-template-columns] duration-300 ease-out bg-linear-sidebar"
         style={{
           gridTemplateColumns: isMobilePlatform
@@ -466,7 +521,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
         */}
         {isMobilePlatform && isSidebarOpen && (
           <div
-            className="absolute inset-0 z-10 bg-black/45"
+            className="absolute inset-0 z-10 bg-black/45 animate-in fade-in duration-300"
             onClick={toggleSidebar}
             aria-hidden="true"
           />
@@ -480,11 +535,11 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
           ref={asideRef}
           aria-hidden={!isSidebarOpen}
           className={`
-          codex-glass-chrome min-w-0 h-full overflow-hidden transition-[opacity,transform] duration-300 ease-out z-20
+          codex-glass-chrome min-w-0 h-full overflow-hidden transition-[opacity,translate] duration-300 ease-out z-20
           ${isMobilePlatform ? 'absolute inset-y-0 left-0 shadow-2xl' : 'relative'}
           ${isSidebarOpen ? 'opacity-100 translate-x-0' : 'opacity-0 pointer-events-none -translate-x-full'}
         `}
-          style={{ willChange: 'opacity, transform', zIndex: 20 }}
+          style={{ willChange: 'opacity, translate', zIndex: 20 }}
         >
           <div ref={sidebarContentRef} className="h-full w-full shrink-0 overflow-hidden" style={{ width: sidebarPx, minWidth: sidebarPx }}>
             <Sidebar
@@ -578,6 +633,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
             onDeleteMessage={onDeleteMessage}
             onStopGeneration={onStopGeneration}
             onFileDrop={onFileDrop}
+            onToggleSidebar={isMobilePlatform ? toggleSidebar : undefined}
           />
           )}
         </main>

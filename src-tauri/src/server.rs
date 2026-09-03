@@ -2,8 +2,7 @@
 //
 // LAN relay server embedded in the Tauri desktop app.
 // Exposes the local SQLite conversation history and proxies AI provider
-// calls (SSE streaming, tool-calling loop with Tavily web search) so the
-// Android client can connect over the local network with a bearer token.
+// calls so the Android client can connect over the local network with a bearer token.
 
 use axum::{
     extract::{Path, Query, Request, State},
@@ -29,8 +28,6 @@ use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tokio::sync::{broadcast, mpsc, RwLock};
 use tokio_stream::wrappers::{BroadcastStream, ReceiverStream};
-
-use crate::get_tavily_api_key;
 
 pub const DEFAULT_PORT: u16 = 8975;
 
@@ -1271,33 +1268,6 @@ fn openrouter_web_search_tool() -> Value {
     })
 }
 
-async fn tavily_search(http: &reqwest::Client, query: &str) -> Result<Value, String> {
-    let api_key = get_tavily_api_key()?;
-    let response = http
-        .post("https://api.tavily.com/search")
-        .bearer_auth(api_key.trim())
-        .json(&json!({
-            "query": query,
-            "search_depth": "basic",
-            "max_results": 5,
-            "include_answer": false,
-            "include_raw_content": false
-        }))
-        .send()
-        .await
-        .map_err(|e| format!("Tavily 搜索请求失败: {e}"))?;
-
-    if !response.status().is_success() {
-        let status = response.status();
-        let body = response.text().await.unwrap_or_default();
-        return Err(format!("Tavily 搜索请求失败 ({status}): {body}"));
-    }
-    response
-        .json::<Value>()
-        .await
-        .map_err(|e| format!("Tavily 响应解析失败: {e}"))
-}
-
 fn format_search_results(query: &str, data: &Value) -> String {
     let results = data
         .get("results")
@@ -1678,29 +1648,7 @@ async fn run_chat_loop(
             let name = tc.name.clone().unwrap_or_default();
             let tool_result =
                 if name == "web_search" {
-                    let query = serde_json::from_str::<Value>(&tc.arguments)
-                        .ok()
-                        .and_then(|v| {
-                            v.get("query")
-                                .and_then(|q| q.as_str())
-                                .map(|s| s.to_string())
-                        })
-                        .unwrap_or_default();
-                    match tavily_search(http, &query).await {
-                        Ok(data) => {
-                            let count = data
-                                .get("results")
-                                .and_then(|r| r.as_array())
-                                .map(|a| a.len())
-                                .unwrap_or(0);
-                            send_event(tx, json!({
-                            "type": "tool", "name": "web_search", "query": query, "count": count
-                        }))
-                        .await?;
-                            format_search_results(&query, &data)
-                        }
-                        Err(e) => format!("搜索失败: {e}"),
-                    }
+                    format!("Tauri web search已经被删除")
                 } else {
                     format!("未知工具: {name}")
                 };

@@ -25,7 +25,7 @@ import {
   runDatabaseMaintenance,
 } from "./services/db";
 import { appendCitationList, buildSkillCatalogPrompt, chatCompletion, describeImage, generateConversationTitle, generateFallbackConversationTitle, getWebSearchOptions, isPlaceholderConversationTitle, READ_URL_TOOL, USE_SKILL_TOOL, WEB_SEARCH_TOOL } from "./services/ai";
-import type { ChatMessage, ChatContentPart, ToolDefinition } from "./services/ai";
+import type { ChatMessage, ChatContentPart, ToolDefinition, ToolCall } from "./services/ai";
 import { parseAttachments, getLanguageFromFilename } from "./utils/file";
 import { parseImageDescriptions, serializeImageDescriptions, type ImageDescription } from "./utils/image-description";
 import { searchWeb, formatSearchResults } from "./services/search";
@@ -1094,24 +1094,84 @@ export default function App() {
         signal: abortController.signal,
       });
 
-      if (functionTools.length > 0) {
-        let toolLoopCount = 0;
-        while (result.type === 'tool_calls' && toolLoopCount < 5) {
-          toolLoopCount++;
+      const TOOL_LABELS: Record<string, string> = {
+        use_skill: '加载 Skill',
+        read_url: '读取网页',
+        web_search: '搜索网络',
+      };
 
-          const TOOL_LABELS: Record<string, string> = {
-            use_skill: '加载 Skill',
-            read_url: '读取网页',
-            web_search: '搜索网络',
-          };
-          const toolNames = result.toolCalls
-            .map(tc => TOOL_LABELS[tc.function.name] ?? tc.function.name)
-            .join(', ');
-          updateThreadMessages(convId, prev => prev.map(msg =>
-            msg.id === aiMsgId
-              ? { ...msg, activity: { kind: 'tool' as const, label: `正在调用工具: ${toolNames}...` }, status: 'streaming' as const }
-              : msg
-          ));
+      // 执行一轮工具调用并把结果写回 chatHistory
+      const runToolCalls = async (calls: ToolCall[]) => {
+        const toolNames = calls
+          .map(tc => TOOL_LABELS[tc.function.name] ?? tc.function.name)
+          .join(', ');
+        updateThreadMessages(convId, prev => prev.map(msg =>
+          msg.id === aiMsgId
+            ? { ...msg, activity: { kind: 'tool' as const, label: `正在调用工具: ${toolNames}...` }, status: 'streaming' as const }
+            : msg
+        ));
+
+        for (const call of calls) {
+          let toolResult = '';
+          if (call.function.name === 'web_search') {
+            try {
+              const args = JSON.parse(call.function.arguments || '{}');
+              const query = args.query || content;
+              const searchResults = await searchWeb(query);
+              toolResult = formatSearchResults(query, searchResults);
+            } catch (e: any) {
+              toolResult = `搜索失败: ${e.message}`;
+            }
+          } else if (call.function.name === 'read_url') {
+            try {
+              const args = JSON.parse(call.function.arguments || '{}');
+              const url = String(args.url || '').trim();
+              if (!url) {
+                toolResult = '读取网页失败: 未提供有效的 url 参数';
+              } else {
+                const page = await fetchUrlContent(url);
+                toolResult = formatUrlContent(page);
+              }
+            } catch (e: any) {
+              toolResult = `读取网页失败: ${e.message ?? e}`;
+            }
+          } else if (call.function.name === 'use_skill') {
+            try {
+              const args = JSON.parse(call.function.arguments || '{}');
+              const requested = String(args.name || '').trim();
+              const skill = autoSkills.find(s => s.id === requested || s.name === requested);
+              if (skill) {
+                const skillMarkdown = await readSkill(skill.id);
+                toolResult = `# Skill: ${skill.name}\n\n${skillMarkdown}\n\n---\n以上是 Skill「${skill.name}」的完整指引，请遵循它回应用户的请求。`;
+              } else {
+                toolResult = `Skill "${requested}" 不存在或未允许自主调用。可调用的 Skill: ${autoSkills.map(s => s.id).join(', ') || '(无)'}`;
+              }
+            } catch (e: any) {
+              toolResult = `加载 Skill 失败: ${e.message ?? e}`;
+            }
+          } else {
+            toolResult = `未知工具: ${call.function.name}`;
+          }
+
+          chatHistory.push({
+            role: 'tool',
+            content: toolResult,
+            tool_call_id: call.id,
+          });
+        }
+      };
+
+      let toolLoopCount = 0;
+      let accumulated = '';
+      let lastUsage: { prompt_tokens: number; completion_tokens: number; total_tokens: number } | null = null;
+
+      while (true) {
+        // 纯工具调用响应：正文尚未流出，直接进入工具循环
+        if (result.type === 'tool_calls') {
+          if (toolLoopCount >= 5) {
+            throw new Error('模型连续触发工具调用超过限制，请重试。');
+          }
+          toolLoopCount++;
 
           chatHistory.push({
             role: 'assistant',
@@ -1120,54 +1180,7 @@ export default function App() {
             reasoning_content: result.reasoningContent,
           });
 
-          for (const call of result.toolCalls) {
-            let toolResult = '';
-            if (call.function.name === 'web_search') {
-              try {
-                const args = JSON.parse(call.function.arguments || '{}');
-                const query = args.query || content;
-                const searchResults = await searchWeb(query);
-                toolResult = formatSearchResults(query, searchResults);
-              } catch (e: any) {
-                toolResult = `搜索失败: ${e.message}`;
-              }
-            } else if (call.function.name === 'read_url') {
-              try {
-                const args = JSON.parse(call.function.arguments || '{}');
-                const url = String(args.url || '').trim();
-                if (!url) {
-                  toolResult = '读取网页失败: 未提供有效的 url 参数';
-                } else {
-                  const page = await fetchUrlContent(url);
-                  toolResult = formatUrlContent(page);
-                }
-              } catch (e: any) {
-                toolResult = `读取网页失败: ${e.message ?? e}`;
-              }
-            } else if (call.function.name === 'use_skill') {
-              try {
-                const args = JSON.parse(call.function.arguments || '{}');
-                const requested = String(args.name || '').trim();
-                const skill = autoSkills.find(s => s.id === requested || s.name === requested);
-                if (skill) {
-                  const skillMarkdown = await readSkill(skill.id);
-                  toolResult = `# Skill: ${skill.name}\n\n${skillMarkdown}\n\n---\n以上是 Skill「${skill.name}」的完整指引，请遵循它回应用户的请求。`;
-                } else {
-                  toolResult = `Skill "${requested}" 不存在或未允许自主调用。可调用的 Skill: ${autoSkills.map(s => s.id).join(', ') || '(无)'}`;
-                }
-              } catch (e: any) {
-                toolResult = `加载 Skill 失败: ${e.message ?? e}`;
-              }
-            } else {
-              toolResult = `未知工具: ${call.function.name}`;
-            }
-
-            chatHistory.push({
-              role: 'tool',
-              content: toolResult,
-              tool_call_id: call.id,
-            });
-          }
+          await runToolCalls(result.toolCalls);
 
           updateThreadMessages(convId, prev => prev.map(msg =>
             msg.id === aiMsgId
@@ -1183,44 +1196,75 @@ export default function App() {
             thinkingLevel: effectiveThinkingLevel,
             signal: abortController.signal,
           });
-        }
-      }
-
-      if (result.type === 'tool_calls') {
-        throw new Error('模型连续触发工具调用超过限制，请重试。');
-      }
-
-      // 流式显示最终文本回复
-      let accumulated = '';
-      let lastUsage: { prompt_tokens: number; completion_tokens: number; total_tokens: number } | null = null;
-      for await (const chunk of result.stream) {
-        accumulated = chunk.accumulated;
-        pendingUpdatesRef.current[aiMsgId] = accumulated;
-        pendingUpdateThreadsRef.current[aiMsgId] = convId;
-        if (chunk.usage) {
-          lastUsage = chunk.usage;
+          continue;
         }
 
-        if (!rafRef.current) {
-          rafRef.current = window.requestAnimationFrame(() => {
-            const pendingEntries = Object.entries(pendingUpdatesRef.current);
-            const conversationIds = new Set(
-              pendingEntries
-                .map(([messageId]) => pendingUpdateThreadsRef.current[messageId])
-                .filter((id): id is UUID => Boolean(id))
-            );
-            for (const pendingConversationId of conversationIds) {
-              updateThreadMessages(pendingConversationId, prev => prev.map(msg => {
-                const pending = pendingUpdatesRef.current[msg.id];
-                if (pending !== undefined) {
-                  return { ...msg, content: pending, status: 'streaming' as const, activity: pending.trim() ? null : msg.activity };
-                }
-                return msg;
-              }));
-            }
-            rafRef.current = null;
+        // 流式显示文本回复（增量累加：混合响应跨多轮时正文需要拼接）
+        for await (const chunk of result.stream) {
+          accumulated += chunk.delta;
+          pendingUpdatesRef.current[aiMsgId] = accumulated;
+          pendingUpdateThreadsRef.current[aiMsgId] = convId;
+          if (chunk.usage) {
+            lastUsage = chunk.usage;
+          }
+
+          if (!rafRef.current) {
+            rafRef.current = window.requestAnimationFrame(() => {
+              const pendingEntries = Object.entries(pendingUpdatesRef.current);
+              const conversationIds = new Set(
+                pendingEntries
+                  .map(([messageId]) => pendingUpdateThreadsRef.current[messageId])
+                  .filter((id): id is UUID => Boolean(id))
+              );
+              for (const pendingConversationId of conversationIds) {
+                updateThreadMessages(pendingConversationId, prev => prev.map(msg => {
+                  const pending = pendingUpdatesRef.current[msg.id];
+                  if (pending !== undefined) {
+                    return { ...msg, content: pending, status: 'streaming' as const, activity: pending.trim() ? null : msg.activity };
+                  }
+                  return msg;
+                }));
+              }
+              rafRef.current = null;
+            });
+          }
+        }
+
+        // 混合响应：正文流出后模型又触发了工具调用（GLM 等思考模型会先输出一段
+        // 前言再调工具）。把已流出的正文连同工具调用写回历史并继续工具循环，
+        // 否则工具调用会被静默丢弃、空回复被误报为"返回了空内容"
+        if (result.lateToolCalls && result.lateToolCalls.length > 0) {
+          if (toolLoopCount >= 5) {
+            throw new Error('模型连续触发工具调用超过限制，请重试。');
+          }
+          toolLoopCount++;
+
+          chatHistory.push({
+            role: 'assistant',
+            content: accumulated,
+            tool_calls: result.lateToolCalls,
+            reasoning_content: result.reasoningContent,
           });
+
+          await runToolCalls(result.lateToolCalls);
+
+          updateThreadMessages(convId, prev => prev.map(msg =>
+            msg.id === aiMsgId
+              ? { ...msg, activity: { kind: 'thinking' as const, label: '思考中...' }, status: 'streaming' as const }
+              : msg
+          ));
+
+          result = await chatCompletion({
+            model: activeModel,
+            messages: chatHistory,
+            tools,
+            webSearch,
+            thinkingLevel: effectiveThinkingLevel,
+            signal: abortController.signal,
+          });
+          continue;
         }
+        break;
       }
 
       if (!accumulated.trim()) {

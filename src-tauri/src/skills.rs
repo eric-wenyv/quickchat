@@ -5,9 +5,6 @@
 // 存储位置：$HOME/.chat/skills/<skill-dir>/SKILL.md
 // 兼容 Claude (~/.claude/skills) 与 Codex (~/.codex/skills) 的 Skill 目录格式，
 // 导入时复制整个目录（含脚本、模板、符号链接目标等），同名时 Claude 优先。
-//
-// 每个导入的 Skill 目录内写入隐藏的 `.source` 文件记录来源（claude/codex/builtin），
-// 不影响 Claude/Codex 对该目录的识别。
 
 use serde::Serialize;
 use std::collections::HashSet;
@@ -16,9 +13,9 @@ use std::path::{Path, PathBuf};
 
 #[derive(Serialize, Clone)]
 pub struct SkillMeta {
-    /// 目录名，作为稳定 ID（读取/删除均使用它）
+    /// 目录名
     id: String,
-    /// 展示名称（frontmatter name，缺省时回退为目录名）
+    /// 展示名称
     name: String,
     description: String,
     /// claude | codex | builtin | local
@@ -27,7 +24,7 @@ pub struct SkillMeta {
     path: String,
     /// 目录中除 SKILL.md 外是否还有其它可见文件（脚本、模板等）
     has_assets: bool,
-    /// frontmatter `disable-model-invocation: true` —— 禁止 AI 自主调用，仅用户可 / 调用
+
     disable_model_invocation: bool,
 }
 

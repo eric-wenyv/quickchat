@@ -1,17 +1,15 @@
 // src-tauri/src/lib.rs
 //
-// Tauri v2 application runtime.
+// application runtime.
 // Responsibilities:
-//   - Register tauri-plugin-global-shortcut (frontend-configured quick-open shortcut)
-//   - Single-instance plugin + `--toggle` arg so a compositor keybind (the only
-//     option on Wayland, where global hotkeys don't work) can summon the window
-//   - Register tauri-plugin-sql (SQLite backend)
-//   - Window is configured as borderless + transparent via tauri.conf.json.
-//   - System tray integration (close → hide to tray, keep running in background)
+//   - Register tauri-plugin-global-shortcut 
+//   - Single-instance plugin + `--toggle` arg 
+//   - Register tauri-plugin-sql 
+//   - Window is configured as borderless + transparent 
+//   - System tray integration 
 
 use base64::Engine;
 use serde_json::{json, Value};
-use std::path::PathBuf;
 use tauri::{Emitter, Manager};
 use tauri_plugin_global_shortcut::{Code, Modifiers, ShortcutState};
 
@@ -21,7 +19,7 @@ mod server;
 mod skills;
 
 // ---------------------------------------------------------------------------
-// Commands: LAN relay server (for the Android client)
+// Commands: LAN relay mobile service server 
 // ---------------------------------------------------------------------------
 
 #[tauri::command]
@@ -48,9 +46,8 @@ async fn regenerate_server_token(
 }
 
 // ---------------------------------------------------------------------------
-// Command: parse PDF / Word document via Python (pdfplumber / python-docx)
+// Command: parse PDF / Word document via Python
 // ---------------------------------------------------------------------------
-
 #[tauri::command]
 fn parse_document(data: String, ext: String) -> Result<String, String> {
     let bytes = base64::engine::general_purpose::STANDARD
@@ -69,11 +66,9 @@ fn parse_document(data: String, ext: String) -> Result<String, String> {
 
     std::fs::write(&temp_path, &bytes).map_err(|e| format!("write temp file failed: {}", e))?;
 
-    // -----------------------------------------------------------------------
-    // Helper: locate Python executable robustly on Windows / Unix
-    // -----------------------------------------------------------------------
+    // locate Python 
     fn find_python() -> Result<String, String> {
-        // Windows: use "where" to resolve the real path
+        // Windows
         #[cfg(target_os = "windows")]
         {
             for name in ["python", "py", "python3"] {
@@ -91,7 +86,7 @@ fn parse_document(data: String, ext: String) -> Result<String, String> {
             }
         }
 
-        // Unix: try "which"
+        // Unix
         #[cfg(not(target_os = "windows"))]
         {
             for name in ["python3", "python"] {
@@ -106,7 +101,7 @@ fn parse_document(data: String, ext: String) -> Result<String, String> {
             }
         }
 
-        // Fallback: try bare commands (rely on PATH)
+        // Fallback: try bare commands
         for cmd in ["python3", "python", "py"] {
             if std::process::Command::new(cmd)
                 .arg("--version")
@@ -188,9 +183,8 @@ except Exception:
 }
 
 // ---------------------------------------------------------------------------
-// Helper: setup system tray icon with menu
+// setup system tray icon with menu
 // ---------------------------------------------------------------------------
-
 fn setup_tray(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
     use tauri::menu::{MenuBuilder, MenuItemBuilder, PredefinedMenuItem};
     use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
@@ -235,118 +229,17 @@ fn setup_tray(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-// ---------------------------------------------------------------------------
-// Helper: proxy Tavily requests through Rust to keep the API key out of the webview
-// ---------------------------------------------------------------------------
-
-#[tauri::command]
-async fn search_web(query: String) -> Result<Value, String> {
-    let api_key = get_tavily_api_key()?;
-    let api_key = api_key.trim();
-    if api_key.is_empty() {
-        return Err("Tavily API Key 未配置，请在项目根目录 .env 中设置 TAVILY_API_KEY".to_string());
-    }
-
-    let client = reqwest::Client::new();
-    let response = client
-        .post("https://api.tavily.com/search")
-        .bearer_auth(api_key)
-        .json(&json!({
-            "query": query,
-            "search_depth": "basic",
-            "max_results": 5,
-            "include_answer": false,
-            "include_raw_content": false
-        }))
-        .send()
-        .await
-        .map_err(|e| format!("Tavily 搜索请求失败: {e}"))?;
-
-    let status = response.status();
-    let body = response
-        .text()
-        .await
-        .map_err(|e| format!("Tavily 响应读取失败: {e}"))?;
-
-    if !status.is_success() {
-        return Err(format!("Tavily 搜索请求失败 ({status}): {body}"));
-    }
-
-    serde_json::from_str(&body).map_err(|e| format!("Tavily 响应解析失败: {e}"))
-}
-
-pub(crate) fn get_tavily_api_key() -> Result<String, String> {
-    if let Ok(value) = std::env::var("TAVILY_API_KEY") {
-        let trimmed = value.trim().to_string();
-        if !trimmed.is_empty() {
-            return Ok(trimmed);
-        }
-    }
-
-    read_dotenv_key("TAVILY_API_KEY").ok_or_else(|| {
-        "Tavily API Key 未配置，请在项目根目录 .env 中设置 TAVILY_API_KEY".to_string()
-    })
-}
-
-fn read_dotenv_key(key: &str) -> Option<String> {
-    for path in dotenv_candidate_paths() {
-        if let Ok(content) = std::fs::read_to_string(path) {
-            for line in content.lines() {
-                let trimmed = line.trim();
-                if trimmed.is_empty() || trimmed.starts_with('#') {
-                    continue;
-                }
-                let trimmed = trimmed.strip_prefix("export ").unwrap_or(trimmed).trim();
-                let Some((name, value)) = trimmed.split_once('=') else {
-                    continue;
-                };
-                if name.trim() != key {
-                    continue;
-                }
-                let value = value
-                    .trim()
-                    .trim_matches('"')
-                    .trim_matches('\'')
-                    .trim()
-                    .to_string();
-                if !value.is_empty() {
-                    return Some(value);
-                }
-            }
-        }
-    }
-    None
-}
-
-fn dotenv_candidate_paths() -> Vec<PathBuf> {
-    let mut paths = Vec::new();
-    if let Ok(dir) = std::env::current_dir() {
-        for ancestor in dir.ancestors() {
-            paths.push(ancestor.join(".env"));
-        }
-    }
-    if let Ok(exe) = std::env::current_exe() {
-        if let Some(dir) = exe.parent() {
-            for ancestor in dir.ancestors() {
-                paths.push(ancestor.join(".env"));
-            }
-        }
-    }
-    paths
-}
 
 // ---------------------------------------------------------------------------
-// Command: fetch a web page and extract readable text (for the read_url tool)
+// Command: fetch a web page and extract readable text 
 // ---------------------------------------------------------------------------
-
-/// 正文返回给模型的最大字符数，超出部分截断并标记 truncated。
+/// 正文返回给模型的最大字符数
 const FETCH_URL_MAX_CHARS: usize = 20_000;
-/// 响应体读取上限（字节），防止超大页面拖垮内存。
+/// 响应体读取上限
 const FETCH_URL_MAX_BYTES: usize = 5 * 1024 * 1024;
-
-/// HTML 中不提供正文语义的标签，提取文本前整体剔除。
+/// 提出 HTML 中不提供正文语义的标签
 const HTML_STRIP_SELECTOR: &str = "script, style, noscript, template, svg, iframe, head";
-/// 块级元素：提取文本时在边界补换行，保留基本段落结构。
+/// 提取文本时在边界补换行，保留基本段落结构。
 const HTML_BLOCK_SELECTOR: &str =
     "p, div, br, hr, li, ul, ol, tr, table, section, article, header, footer, aside, nav, \
      h1, h2, h3, h4, h5, h6, blockquote, pre, figure, figcaption, form, fieldset, dl, dt, dd";
@@ -362,7 +255,7 @@ fn extract_html_text(html: &str) -> (Option<String>, String) {
         .map(|el| el.text().collect::<String>().trim().to_string())
         .filter(|t| !t.is_empty());
 
-    // 剔除 script/style 等无正文语义的节点
+    // 剔除无正文语义的节点
     if let Ok(strip) = Selector::parse(HTML_STRIP_SELECTOR) {
         let ids: Vec<_> = doc.select(&strip).map(|el| el.id()).collect();
         for id in ids {
@@ -378,7 +271,7 @@ fn extract_html_text(html: &str) -> (Option<String>, String) {
         .map(|el| el.inner_html())
         .unwrap_or_default();
 
-    // 二次解析：在块级元素边界插入换行，再收集纯文本
+    // 在块级元素边界插入换行，再收集纯文本
     let mut body_doc = Html::parse_fragment(&body_html);
     if let Ok(blocks) = Selector::parse(HTML_BLOCK_SELECTOR) {
         let ids: Vec<_> = body_doc.select(&blocks).map(|el| el.id()).collect();
@@ -394,7 +287,7 @@ fn extract_html_text(html: &str) -> (Option<String>, String) {
     let root = body_doc.root_element();
     let raw: String = root.text().collect();
 
-    // 压缩空白：行内连续空白折叠为单空格，3 个以上换行折叠为 2 个
+    // 行内连续空白折叠为单空格，3 个以上换行折叠为 2 个
     let mut lines: Vec<String> = raw
         .lines()
         .map(|line| line.split_whitespace().collect::<Vec<_>>().join(" "))
@@ -510,15 +403,8 @@ mod tests {
 }
 
 // ---------------------------------------------------------------------------
-// Public entry point (called from main.rs)
+// Public entry point 
 // ---------------------------------------------------------------------------
-
-/// Toggle the main window for the quick-open flow: hidden → show + focus,
-/// visible but unfocused → focus, visible and focused → hide.
-///
-/// On Wayland the quick-open hotkey cannot be an app-registered global shortcut
-/// (global-hotkey only has an X11 backend), so the compositor keybind execs
-/// `quick-chat --toggle` and lands here via the single-instance plugin.
 #[cfg(desktop)]
 fn toggle_main_window<R: tauri::Runtime>(app: &tauri::AppHandle<R>) {
     let Some(window) = app.get_webview_window("main") else {
@@ -537,7 +423,7 @@ fn toggle_main_window<R: tauri::Runtime>(app: &tauri::AppHandle<R>) {
     }
 }
 
-/// 删除数据库文件及其 WAL/SHM 边车文件（dev:fresh 启动时清空开发库用）。
+/// dev:fresh 启动时清空开发库
 fn remove_db_files(dir: &std::path::Path, name: &str) {
     for suffix in ["", "-wal", "-shm"] {
         let _ = std::fs::remove_file(dir.join(format!("{name}{suffix}")));
@@ -549,9 +435,6 @@ pub fn run() {
     let builder = tauri::Builder::default();
 
     // ── Single instance: secondary launches forward here, then exit ──────
-    // Must stay registered before the global-shortcut plugin: a duplicate
-    // instance (e.g. the compositor keybind exec'ing `quick-chat --toggle`)
-    // has to exit here, before it tries to re-grab the X11 hotkeys.
     #[cfg(desktop)]
     let builder = builder.plugin(tauri_plugin_single_instance::init(
         |app, argv, _cwd| {
@@ -576,7 +459,7 @@ pub fn run() {
                 }
             }
         })
-        // ── Global shortcut plugin ──────────────────────────────────────────
+        // Global shortcut plugin
         // The quick-open shortcut is registered by the frontend so users can
         // change or disable it. These two shortcuts remain fixed app actions.
         .setup(|app| {
@@ -592,18 +475,17 @@ pub fn run() {
                 }
             }
 
-            // Embedded LAN relay server (shared SQLite + AI proxy for Android)
+            // Embedded LAN relay server shared SQLite + AI proxy for Android
             {
                 let config_dir = app.path().app_config_dir();
                 match config_dir {
                     Ok(config_dir) => {
-                        // dev:fresh 模式（npm run dev:fresh）：前端与 LAN 服务端都改用
-                        // 独立的开发数据库，并在启动前删除旧文件（含 WAL/SHM 边车），
-                        // 每次启动等价于全新安装的空白首启，不影响真实数据。
                         let db_file = if std::env::var("QUICK_CHAT_DEV_DB").is_ok() {
                             remove_db_files(&config_dir, "quick_chat_dev.db");
+                            // dev:fresh
                             "quick_chat_dev.db"
                         } else {
+                            // dev
                             "quick_chat.db"
                         };
                         match tauri::async_runtime::block_on(server::init(config_dir, db_file)) {
@@ -651,16 +533,14 @@ pub fn run() {
             }
             Ok(())
         })
-        // ── Clipboard manager plugin ────────────────────────────────────────
+        // Clipboard manager plugin 
         .plugin(tauri_plugin_clipboard_manager::init())
-        // ── Opener plugin ───────────────────────────────────────────────────
+        // Opener plugin
         .plugin(tauri_plugin_opener::init())
-        // ── SQLite plugin ───────────────────────────────────────────────────
+        // SQLite plugin
         .plugin(tauri_plugin_sql::Builder::default().build())
-        // ── Invoke handler ──────────────────────────────────────────────────
-        // 搜索请求走 Rust 侧转发，避免在 webview 暴露 Tavily API Key。
+        // Invoke handler
         .invoke_handler(tauri::generate_handler![
-            search_web,
             fetch_url,
             parse_document,
             get_server_info,

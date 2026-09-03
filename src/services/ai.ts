@@ -456,6 +456,9 @@ function mergeDelta(acc: SSEAccumulator, delta: any): void {
 
   if (typeof delta.reasoning_content === 'string') {
     acc.reasoningContent += delta.reasoning_content;
+  } else if (typeof delta.reasoning === 'string') {
+    // OpenRouter 归一化的思考分片使用 delta.reasoning 字段
+    acc.reasoningContent += delta.reasoning;
   }
 
   if (delta.tool_calls && Array.isArray(delta.tool_calls)) {
@@ -482,6 +485,17 @@ function mergeDelta(acc: SSEAccumulator, delta: any): void {
 }
 
 function applyParsedEvent(acc: SSEAccumulator, parsed: any): void {
+  // OpenRouter 会在流内下发错误事件（如上游 500）；若静默忽略，
+  // 用户只会看到误导性的"模型返回了空内容"而不是真实原因
+  if (parsed && typeof parsed === 'object' && parsed.error) {
+    const err = parsed.error;
+    if (typeof err === 'string') {
+      throw new Error(`API 流式响应错误: ${err}`);
+    }
+    const code = err?.code != null ? ` (${err.code})` : '';
+    const message = typeof err?.message === 'string' && err.message ? err.message : JSON.stringify(err);
+    throw new Error(`API 流式响应错误${code}: ${message}`);
+  }
   collectCitationsFromParsed(acc, parsed);
   const delta = parsed.choices?.[0]?.delta;
   const finishReason = parsed.choices?.[0]?.finish_reason;
@@ -781,10 +795,12 @@ export async function chatCompletion(params: ChatCompletionParams): Promise<Chat
       }
 
       const firstDelta = textDeltaFromParsed(parsed);
-      // 只有真正的正文分片才提交文本分支：思考模型的 reasoning_content 总是先于
-      // content / tool_calls 到达，若凭 reasoning 就提交，随后的 tool_calls 会被
-      // continueTextStream 当成"文本后又触发工具"的混合响应而报错。
-      if (firstDelta !== null) {
+      // 只有非空正文分片才提交文本分支：思考模型的 reasoning 总是先于 content /
+      // tool_calls 到达，若凭 reasoning 就提交，随后的 tool_calls 会被 continueTextStream
+      // 当成"文本后又触发工具"的混合响应；而 OpenRouter web_search 的引用分片 content
+      // 为空字符串，若据其提交，随后的 tool_calls 会全部挂进 lateToolCalls 被调用方丢弃，
+      // 最终误报"返回了空内容"。
+      if (firstDelta) {
         const result: Extract<ChatCompletionResult, { type: 'text' }> = {
           type: 'text',
           stream: undefined as unknown as AsyncGenerator<StreamChunk, void, unknown>,

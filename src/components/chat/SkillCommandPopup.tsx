@@ -18,7 +18,7 @@ const SkillCommandPopup: React.FC<SkillCommandPopupProps> = ({ skills, activeInd
   return (
     <div className="absolute bottom-full left-0 right-0 z-50 mb-2 overflow-hidden rounded-2xl border border-[rgba(255,255,255,0.12)] bg-[#2D2D2D]/98 shadow-[0_18px_48px_rgba(0,0,0,0.32)] backdrop-blur-xl animate-in fade-in slide-in-from-bottom-2">
       <div className="px-3.5 pt-2.5 pb-1.5 text-[10px] font-semibold uppercase tracking-widest text-linear-text-tertiary">
-        Skills — 选择后随消息注入完整指引
+        Skills
       </div>
       <div className="max-h-[260px] overflow-y-auto px-1.5 pb-1.5">
         {skills.map((skill, idx) => (
@@ -34,13 +34,6 @@ const SkillCommandPopup: React.FC<SkillCommandPopupProps> = ({ skills, activeInd
               idx === activeIndex ? 'bg-linear-surface-hover' : 'hover:bg-linear-surface'
             }`}
           >
-            <svg
-              width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-              strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round"
-              className="shrink-0 text-linear-text-tertiary"
-            >
-              <path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9L12 3Z" />
-            </svg>
             <span className="shrink-0 text-[13px] font-semibold text-linear-text-primary">
               /{skill.id}
             </span>

@@ -20,6 +20,35 @@ use tauri_plugin_global_shortcut::{Code, Modifiers, ShortcutState};
 #[cfg(target_os = "linux")]
 mod linux_blur;
 mod skills;
+mod sync_server;
+
+// ---------------------------------------------------------------------------
+// Commands: 桌面端同步服务（移动端是同步客户端，不注册这些状态；
+// 移动端 UI 由 platform gating 隐藏，不会调用）
+// ---------------------------------------------------------------------------
+
+#[tauri::command]
+async fn get_sync_info(
+    state: tauri::State<'_, std::sync::Arc<sync_server::SyncServer>>,
+) -> Result<sync_server::SyncInfo, String> {
+    Ok(state.info().await)
+}
+
+#[tauri::command]
+async fn set_sync_config(
+    enabled: bool,
+    port: u16,
+    state: tauri::State<'_, std::sync::Arc<sync_server::SyncServer>>,
+) -> Result<sync_server::SyncInfo, String> {
+    state.set_config(enabled, port).await
+}
+
+#[tauri::command]
+async fn regenerate_sync_token(
+    state: tauri::State<'_, std::sync::Arc<sync_server::SyncServer>>,
+) -> Result<sync_server::SyncInfo, String> {
+    state.regenerate_token().await
+}
 
 // ---------------------------------------------------------------------------
 // Command: parse PDF / Word document via Python (desktop only; no Python
@@ -472,6 +501,26 @@ pub fn run() {
                 if std::env::var("QUICK_CHAT_DEV_DB").is_ok() {
                     remove_db_files(&config_dir, "quick_chat_dev.db");
                 }
+
+                // 桌面端同步服务：移动端通过 LAN 推送/拉取配置与对话历史
+                #[cfg(desktop)]
+                {
+                    let db_file = if std::env::var("QUICK_CHAT_DEV_DB").is_ok() {
+                        "quick_chat_dev.db"
+                    } else {
+                        "quick_chat.db"
+                    };
+                    match tauri::async_runtime::block_on(sync_server::init(
+                        config_dir,
+                        db_file,
+                        app.handle().clone(),
+                    )) {
+                        Ok(server) => {
+                            app.manage(server);
+                        }
+                        Err(e) => eprintln!("[quick-chat] sync server init failed: {e}"),
+                    }
+                }
             }
 
             // Global shortcuts are desktop-only.
@@ -518,12 +567,16 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             fetch_url,
             parse_document,
+            get_sync_info,
+            set_sync_config,
+            regenerate_sync_token,
             skills::list_skills,
             skills::read_skill,
             skills::create_skill,
             skills::delete_skill,
             skills::import_external_skills,
-            skills::ensure_builtin_skill
+            skills::ensure_builtin_skill,
+            skills::upsert_skill_from_sync
         ])
         // ── Run ─────────────────────────────────────────────────────────────
         .run(tauri::generate_context!())

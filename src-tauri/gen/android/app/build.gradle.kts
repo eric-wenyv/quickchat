@@ -17,7 +17,7 @@ android {
     compileSdk = 36
     namespace = "com.tauri_app.quick_chat"
     defaultConfig {
-        manifestPlaceholders["usesCleartextTraffic"] = "false"
+        manifestPlaceholders["usesCleartextTraffic"] = "true"
         applicationId = "com.tauri_app.quick_chat"
         minSdk = 24
         targetSdk = 36

@@ -36,6 +36,12 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 base64 = "0.22"
 
+# 桌面端同步服务：移动端通过局域网推送/拉取配置与对话历史
+axum = "0.8"
+tokio = { version = "1", features = ["rt", "net", "macros", "time", "sync"] }
+sqlx = { version = "0.8", default-features = false, features = ["runtime-tokio-rustls", "sqlite"] }
+uuid = { version = "1", features = ["v4"] }
+
 [target.'cfg(target_os = "linux")'.dependencies]
 gdkwayland-sys = "0.18.2"
 gtk = "0.18.2"

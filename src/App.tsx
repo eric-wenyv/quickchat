@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
+import { listen } from "@tauri-apps/api/event";
 import AppLayout from "./components/layout/AppLayout";
 import { useTheme } from "./hooks/useTheme";
 import ModelSettings from "./components/settings/ModelSettings";
@@ -592,6 +593,65 @@ export default function App() {
       }
     }
   };
+
+  // ── 设备间同步完成后的 UI 刷新 ──
+  // 同步通道绕过前端内存状态直接写 SQLite：
+  //   • 桌面端：sync_server 处理完推送后 emit 'quick-chat-sync-pushed'
+  //   • 移动端：sync.ts 拉取合并完成后派发 'quick-chat-sync-merged'
+  // 发送中的会话只刷新列表/模型/提示词，不动消息线程缓存（避免打断流式渲染）。
+  const refreshAfterSync = async () => {
+    try {
+      const [convs, mods, prompts] = await Promise.all([
+        getConversations(CONVERSATION_LIST_LIMIT, 0),
+        getModelConfigs(),
+        getSystemPrompts(),
+      ]);
+      setConversations(limitConversationList(convs));
+      modelsRef.current = mods;
+      setModels(mods);
+      setSystemPrompts(prompts);
+
+      const isBusySending = Object.keys(sendingByConversationId).length > 0;
+      const currentId = activeConversationIdRef.current;
+      if (currentId && !isBusySending) {
+        // 清空消息线程缓存强制从 DB 重载，再复用完整的会话加载逻辑
+        messagesByConversationRef.current = {};
+        await handleSelectConversation(currentId);
+      }
+    } catch (e) {
+      console.warn('同步后刷新失败:', e);
+    }
+  };
+  // 事件监听只注册一次，通过 ref 始终调用最新渲染的刷新函数（避免陈旧闭包）
+  const refreshAfterSyncRef = useRef<() => Promise<void>>(async () => {});
+  refreshAfterSyncRef.current = refreshAfterSync;
+
+  useEffect(() => {
+    let unlisten: (() => void) | undefined;
+    let cancelled = false;
+    if ('__TAURI_INTERNALS__' in window) {
+      listen('quick-chat-sync-pushed', () => {
+        void refreshAfterSyncRef.current();
+      })
+        .then((u) => {
+          if (cancelled) {
+            u();
+            return;
+          }
+          unlisten = u;
+        })
+        .catch(() => {});
+    }
+    const onSyncMerged = () => {
+      void refreshAfterSyncRef.current();
+    };
+    window.addEventListener('quick-chat-sync-merged', onSyncMerged);
+    return () => {
+      cancelled = true;
+      unlisten?.();
+      window.removeEventListener('quick-chat-sync-merged', onSyncMerged);
+    };
+  }, []);
 
   const handleCreateConversation = useCallback(async () => {
     // 新对话使用默认模型（不是当前活跃模型），fallback 到第一个可用模型

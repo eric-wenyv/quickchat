@@ -246,19 +246,20 @@ export async function initDatabase(): Promise<void> {
   `);
 
   // ── 同步预留（Sync reservation）─────────────────────────────────────────
-  // 桌面端与移动端各自持有本地库，未来做双向同步。当前只铺 schema，不改行为：
+  // 桌面端与移动端各自持有本地库，通过 LAN 同步通道双向合并（见
+  // src/services/sync.ts 与 src-tauri/src/sync_server.rs）：
   //
-  // 1. deleted_at（conversations / messages）：软删除墓碑占位。同步要求删除
-  //    以墓碑形式传播（否则无法区分"未同步的删除"与"从未存在"）。列已建好，
-  //    查询仍按硬删除语义运行；启用同步时改为写 deleted_at 并在全查询补
-  //    `deleted_at IS NULL` 过滤。
-  // 2. sync_meta：设备级元数据（device_id、最后同步水位线、同步开关等）。
+  // 1. deleted_at（conversations / messages）：软删除墓碑占位。当前同步的
+  //    增量水位线保证已删除项不会被重新推送，但删除本身暂不传播（v1 限制）。
+  // 2. sync_meta：设备级元数据（device_id、同步开关等），预留未用。
   //
-  // 设计约定（实现同步层时遵循）：
-  // - 主键已全局唯一（UUIDv4），可直接作为同步标识；
+  // 设计约定：
+  // - 主键全局唯一（UUIDv4），直接作为同步标识；模型配置按 (provider, model_id)
+  //   自然键匹配（两端 id 独立生成）；
   // - 冲突策略 last-write-wins（按 updated_at，毫秒精度）；
-  // - api_key 默认不参与同步，如需同步必须端到端加密；
-  // - 传输通道待定（自建中继 / LAN 直连 / 云盘文件），schema 不绑定通道。
+  // - api_key 属于桌面端配置：随 export（桌面 → 移动）方向同步，
+  //   仅限用户自己的设备、经局域网 + Token 鉴权传输；
+  // - 传输通道为桌面端 sync_server（HTTP + Bearer Token），移动端为客户端。
   await ensureSyncColumns(db);
   await db.execute(`
     CREATE TABLE IF NOT EXISTS sync_meta (
@@ -1148,4 +1149,270 @@ export async function migrateFromLocalStorage(): Promise<boolean> {
 
   localStorage.setItem('quick_chat_db_migrated', 'true');
   return true;
+}
+
+// ---------------------------------------------------------------------------
+// 设备间同步（LAN 同步通道的数据面，供 src/services/sync.ts 使用）
+// 同步协议采用 last-write-wins（按 updated_at），见 initDatabase 内的同步预留注释
+// ---------------------------------------------------------------------------
+
+export interface SyncConversationRow {
+  id: string;
+  title: string;
+  model_id: string;
+  system_prompt: string | null;
+  pinned: number;
+  thinking_level: string | null;
+  last_viewed_message_id: string | null;
+  created_at: number;
+  updated_at: number;
+}
+
+export interface SyncMessageRow {
+  id: string;
+  conversation_id: string;
+  role: string;
+  content: string;
+  reasoning_content: string | null;
+  status: string;
+  token_count: number | null;
+  input_tokens: number | null;
+  output_tokens: number | null;
+  model_id: string | null;
+  created_at: number;
+  updated_at: number;
+}
+
+/** 水位线之后有更新的会话（原始行，保留 0/1 整数与 null 语义） */
+export async function getConversationsUpdatedSince(since: number): Promise<SyncConversationRow[]> {
+  const db = await getDb();
+  return db.select<SyncConversationRow[]>(
+    'SELECT id, title, model_id, system_prompt, pinned, thinking_level, last_viewed_message_id, created_at, updated_at FROM conversations WHERE updated_at > ?',
+    [since]
+  );
+}
+
+/** 水位线之后有更新的消息（原始行） */
+export async function getMessagesUpdatedSince(since: number): Promise<SyncMessageRow[]> {
+  const db = await getDb();
+  return db.select<SyncMessageRow[]>(
+    `SELECT id, conversation_id, role, content, reasoning_content, status,
+            token_count, input_tokens, output_tokens, model_id, created_at, updated_at
+     FROM messages WHERE updated_at > ?`,
+    [since]
+  );
+}
+
+export async function getConversationRowById(id: string): Promise<SyncConversationRow | null> {
+  const db = await getDb();
+  const rows = await db.select<SyncConversationRow[]>(
+    'SELECT id, title, model_id, system_prompt, pinned, thinking_level, last_viewed_message_id, created_at, updated_at FROM conversations WHERE id = ?',
+    [id]
+  );
+  return rows[0] ?? null;
+}
+
+/**
+ * 合并对端推送/拉取的会话与消息：仅当对端 updated_at 更新时覆盖（LWW）。
+ * 消息的外键依赖父会话，因此先合并会话；孤儿消息逐条跳过并计数。
+ */
+export async function mergeSyncedConversations(
+  convs: SyncConversationRow[],
+  messages: SyncMessageRow[]
+): Promise<{ conversations: number; messages: number; skipped: number }> {
+  const db = await getDb();
+  let convCount = 0;
+  let msgCount = 0;
+  let skipped = 0;
+
+  for (const c of convs) {
+    try {
+      const res = await db.execute(
+        `INSERT INTO conversations
+           (id, title, model_id, system_prompt, pinned, thinking_level, last_viewed_message_id, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT(id) DO UPDATE SET
+           title = excluded.title,
+           model_id = excluded.model_id,
+           system_prompt = excluded.system_prompt,
+           pinned = excluded.pinned,
+           thinking_level = excluded.thinking_level,
+           last_viewed_message_id = excluded.last_viewed_message_id,
+           updated_at = excluded.updated_at
+         WHERE excluded.updated_at > conversations.updated_at`,
+        [
+          c.id,
+          c.title ?? '',
+          c.model_id ?? '',
+          c.system_prompt ?? null,
+          c.pinned ? 1 : 0,
+          c.thinking_level ?? null,
+          c.last_viewed_message_id ?? null,
+          c.created_at,
+          c.updated_at,
+        ]
+      );
+      if (res.rowsAffected > 0) convCount++;
+    } catch {
+      skipped++;
+    }
+  }
+
+  for (const m of messages) {
+    try {
+      const res = await db.execute(
+        `INSERT INTO messages
+           (id, conversation_id, role, content, reasoning_content, status,
+            token_count, input_tokens, output_tokens, model_id, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT(id) DO UPDATE SET
+           content = excluded.content,
+           reasoning_content = excluded.reasoning_content,
+           status = excluded.status,
+           token_count = excluded.token_count,
+           input_tokens = excluded.input_tokens,
+           output_tokens = excluded.output_tokens,
+           model_id = excluded.model_id,
+           updated_at = excluded.updated_at
+         WHERE excluded.updated_at > messages.updated_at`,
+        [
+          m.id,
+          m.conversation_id,
+          m.role,
+          m.content ?? '',
+          m.reasoning_content ?? null,
+          m.status || 'completed',
+          m.token_count ?? null,
+          m.input_tokens ?? null,
+          m.output_tokens ?? null,
+          m.model_id ?? null,
+          m.created_at,
+          m.updated_at,
+        ]
+      );
+      if (res.rowsAffected > 0) msgCount++;
+    } catch {
+      skipped++;
+    }
+  }
+
+  return { conversations: convCount, messages: msgCount, skipped };
+}
+
+/** 同步载荷中的模型配置行（桌面端导出） */
+export interface SyncModelRow {
+  id: string;
+  provider: string;
+  model_id: string;
+  display_name: string;
+  api_key: string;
+  api_endpoint: string | null;
+  temperature: number;
+  max_tokens: number;
+  top_p: number;
+  thinking_level: string | null;
+  supports_vision: number;
+  is_default: number;
+  created_at: number;
+  updated_at: number;
+}
+
+export interface SyncSystemPromptRow {
+  id: string;
+  title: string;
+  content: string;
+  created_at: number;
+  updated_at: number;
+}
+
+/**
+ * 合并对端（桌面端）推送的模型配置：
+ * 按 (provider, model_id) 自然键匹配（两端 id 独立生成），再按 LWW（updated_at）合并。
+ */
+export async function mergeSyncedModels(models: SyncModelRow[]): Promise<{ applied: number; skipped: number }> {
+  const db = await getDb();
+  let applied = 0;
+  let skipped = 0;
+  for (const m of models) {
+    try {
+      const existing = await db.select<{ id: string; updated_at: number }[]>(
+        'SELECT id, updated_at FROM model_configs WHERE provider = ? AND model_id = ?',
+        [m.provider, m.model_id]
+      );
+      const row = existing[0];
+      if (row && row.updated_at >= m.updated_at) {
+        skipped++;
+        continue;
+      }
+      const targetId = row?.id ?? m.id;
+      await db.execute(
+        `INSERT INTO model_configs
+           (id, provider, model_id, display_name, api_key, api_endpoint,
+            temperature, max_tokens, top_p, thinking_level, supports_vision, is_default,
+            created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT(id) DO UPDATE SET
+           provider = excluded.provider,
+           model_id = excluded.model_id,
+           display_name = excluded.display_name,
+           api_key = excluded.api_key,
+           api_endpoint = excluded.api_endpoint,
+           temperature = excluded.temperature,
+           max_tokens = excluded.max_tokens,
+           top_p = excluded.top_p,
+           thinking_level = excluded.thinking_level,
+           supports_vision = excluded.supports_vision,
+           is_default = excluded.is_default,
+           updated_at = excluded.updated_at
+         WHERE excluded.updated_at > model_configs.updated_at`,
+        [
+          targetId,
+          m.provider,
+          m.model_id,
+          m.display_name || m.model_id,
+          m.api_key ?? '',
+          m.api_endpoint ?? null,
+          m.temperature ?? 0.6,
+          m.max_tokens ?? 16384,
+          m.top_p ?? 1.0,
+          m.thinking_level ?? null,
+          m.supports_vision ? 1 : 0,
+          m.is_default ? 1 : 0,
+          m.created_at ?? m.updated_at,
+          m.updated_at,
+        ]
+      );
+      applied++;
+    } catch {
+      skipped++;
+    }
+  }
+  return { applied, skipped };
+}
+
+/** 合并对端（桌面端）推送的系统提示词预设：按 id + LWW（updated_at） */
+export async function mergeSyncedSystemPrompts(
+  prompts: SyncSystemPromptRow[]
+): Promise<{ applied: number; skipped: number }> {
+  const db = await getDb();
+  let applied = 0;
+  let skipped = 0;
+  for (const p of prompts) {
+    try {
+      const res = await db.execute(
+        `INSERT INTO system_prompts (id, title, content, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?)
+         ON CONFLICT(id) DO UPDATE SET
+           title = excluded.title,
+           content = excluded.content,
+           updated_at = excluded.updated_at
+         WHERE excluded.updated_at > system_prompts.updated_at`,
+        [p.id, p.title ?? '', p.content ?? '', p.created_at, p.updated_at]
+      );
+      if (res.rowsAffected > 0) applied++;
+    } catch {
+      skipped++;
+    }
+  }
+  return { applied, skipped };
 }

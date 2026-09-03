@@ -572,6 +572,45 @@ fn create_skill_at(
     Ok(slug)
 }
 
+/// 同步通道专用：按 id 写入/覆盖 SKILL.md（内容原样落盘，不动附属文件）。
+/// 移动端合并桌面端推送的 Skills 时通过 invoke 调用。
+#[tauri::command]
+pub fn upsert_skill_from_sync(
+    app: tauri::AppHandle,
+    id: String,
+    content: String,
+) -> Result<(), String> {
+    let root = skills_root(&app)?;
+    if !is_valid_skill_id(&id) {
+        return Err(format!("非法的 Skill 名称: {id}"));
+    }
+    let dir = root.join(&id);
+    fs::create_dir_all(&dir).map_err(|e| format!("创建 Skill 目录失败: {e}"))?;
+    fs::write(dir.join("SKILL.md"), content).map_err(|e| format!("写入 SKILL.md 失败: {e}"))?;
+    Ok(())
+}
+
+#[derive(Serialize)]
+pub struct SkillExport {
+    pub id: String,
+    pub content: String,
+}
+
+/// 同步通道专用：导出全部 Skill（id + SKILL.md 原文，附属文件暂不同步）。
+/// 由桌面端同步服务调用。
+pub fn export_skills_for_sync(app: &tauri::AppHandle) -> Result<Vec<SkillExport>, String> {
+    let root = skills_root(app)?;
+    let metas = list_skills_at(&root)?;
+    let mut out = Vec::with_capacity(metas.len());
+    for meta in metas {
+        match read_skill_at(&root, &meta.id) {
+            Ok(content) => out.push(SkillExport { id: meta.id, content }),
+            Err(_) => continue, // 单个读取失败不阻塞整体导出
+        }
+    }
+    Ok(out)
+}
+
 #[tauri::command]
 pub fn delete_skill(app: tauri::AppHandle, id: String) -> Result<(), String> {
     delete_skill_at(&skills_root(&app)?, &id)

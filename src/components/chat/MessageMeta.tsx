@@ -1,5 +1,6 @@
 import type { EpochMillis } from '@/types/types';
 import RelativeTime from '@/components/shared/RelativeTime';
+import { isMobilePlatform } from '@/utils/platform';
 
 interface MessageMetaProps {
   createdAt: EpochMillis;
@@ -14,7 +15,7 @@ interface MessageMetaProps {
  * MessageMeta (Linear-style)
  * 时间戳和 Token 信息用极暗灰色小字号展示。
  */
-export default function MessageMeta({ createdAt, tokenCount, inputTokens, outputTokens, modelId, role }: MessageMetaProps) {
+export default function MessageMeta({ createdAt, tokenCount, inputTokens, outputTokens, role }: MessageMetaProps) {
   const hasTokenInfo = tokenCount !== null || (inputTokens !== null && outputTokens !== null);
 
   return (
@@ -22,14 +23,7 @@ export default function MessageMeta({ createdAt, tokenCount, inputTokens, output
       <span>·</span>
       <RelativeTime timestamp={createdAt} />
 
-      {modelId && role === 'assistant' && (
-        <>
-          <span>·</span>
-          <span className="uppercase tracking-wider">{modelId}</span>
-        </>
-      )}
-
-      {hasTokenInfo && role === 'assistant' && (
+      {!isMobilePlatform && hasTokenInfo && role === 'assistant' && (
         <>
           <span>·</span>
           <div className="flex items-center gap-1.5">

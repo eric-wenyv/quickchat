@@ -1,4 +1,5 @@
 import { useEffect } from 'react';
+import { isMobilePlatform } from '@/utils/platform';
 
 /**
  * 全局键盘捕获：当用户按下任意可打印字符（且未按住 Ctrl/Meta/Alt 等修饰键），
@@ -34,6 +35,9 @@ function hasActiveModalOverlay(doc: Document): boolean {
 
 export function useAutoFocusChatInput(): void {
   useEffect(() => {
+    // 移动端没有物理键盘，程序化聚焦会直接唤起软键盘，干扰应用使用
+    if (isMobilePlatform) return;
+
     const onKeyDown = (e: KeyboardEvent) => {
       // 跳过 IME 输入合成期间的键
       if (e.isComposing || e.keyCode === 229) return;

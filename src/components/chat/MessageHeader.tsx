@@ -232,11 +232,6 @@ export const MessageHeader: React.FC<MessageHeaderProps> = ({
                   ∑ {tokenStats.totalTokens.toLocaleString()}
                 </span>
               )}
-              {tokenStats.totalTokens === 0 && (
-                <span className="text-[10px] font-bold text-linear-text-tertiary uppercase tracking-[0.1em] font-mono">
-                  {conversation.model_id}
-                </span>
-              )}
             </div>
           </div>
         </div>

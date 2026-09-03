@@ -9,6 +9,7 @@ import { useSkills } from '@/hooks/useSkills';
 import type { SkillMeta } from '@/services/skills';
 import { readFileAsBase64, readFileAsText, isTextFile, isDocumentFile, parseDocument, serializeAttachments, formatFileSize, getFileIcon } from '@/utils/file';
 import { shouldPreserveCurrentFocus } from '@/utils/focus';
+import { isMobilePlatform } from '@/utils/platform';
 
 interface ChatInputFooterProps {
   onSend: (content: string) => void;
@@ -107,6 +108,8 @@ export const ChatInputFooter: React.FC<ChatInputFooterProps> = ({
 
   const focusInput = (force = false) => {
     if (disabled) return;
+    // 移动端不自动聚焦输入框：程序化聚焦会唤起软键盘，干扰浏览/滚动
+    if (isMobilePlatform) return;
 
     window.requestAnimationFrame(() => {
       const target = textareaRef.current?.element;

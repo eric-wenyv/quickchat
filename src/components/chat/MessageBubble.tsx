@@ -1,6 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
 import type { Message } from '@/types/types';
-import MessageAvatar from './MessageAvatar';
 import MessageContent from './MessageContent';
 import MessageMeta from './MessageMeta';
 
@@ -10,13 +9,12 @@ interface MessageBubbleProps {
 }
 
 /**
- * C-5: MessageBubble (Linear-style Feed/Log)
- * 
- * 核心改造：
- * 1. 抛弃气泡背景，采用信息流布局（上下排列，左对齐）。
- * 2. 用户消息和 AI 消息统一左对齐。
- * 3. 每轮对话之间用 1px 幽灵细线隔开。
- * 4. 头像与身份标识放在消息上方。
+ * C-5: MessageBubble (Chat 对话布局)
+ *
+ * 核心布局：
+ * 1. 用户消息靠右，使用与主题一致的气泡背景。
+ * 2. AI 回复靠左，保持信息流式全宽排版。
+ * 3. 不显示头像，仅保留身份名称与元信息。
  */
 const MessageBubble: React.FC<MessageBubbleProps> = ({ message, onDelete }) => {
   const isUser = message.role === 'user';
@@ -69,21 +67,15 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({ message, onDelete }) => {
       <div
         ref={bubbleRef}
         onContextMenu={handleContextMenu}
-        className="flex w-full group py-6 px-4 md:px-8 hover:bg-linear-surface/30"
+        className={`flex w-full group px-4 md:px-8 hover:bg-linear-surface/30 ${isUser ? 'justify-end py-4' : 'py-6'}`}
         style={{
           animation: 'message-enter 0.25s var(--ease-snappy) both',
           transition: 'background-color 0.15s var(--ease-snappy)',
         }}
       >
-        {/* 左侧：头像 + 身份标识列 */}
-        <div className="flex-shrink-0 mr-4">
-          <MessageAvatar role={message.role} />
-        </div>
-
-        {/* 右侧：身份名称/时间 + 内容 */}
-        <div className="flex flex-col min-w-0 flex-1">
+        <div className={`flex flex-col min-w-0 ${isUser ? 'items-end max-w-[85%] md:max-w-[70%]' : 'flex-1'}`}>
           {/* 身份行 */}
-          <div className="flex items-center gap-2 mb-2.5">
+          <div className={`flex items-center gap-2 ${isUser ? 'mb-1.5' : 'mb-2.5'}`}>
             <span className="text-[12px] font-medium text-linear-text-secondary">
               {isUser ? 'You' : 'Assistant'}
             </span>
@@ -97,8 +89,14 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({ message, onDelete }) => {
             />
           </div>
 
-          {/* 消息正文 - 无气泡背景 */}
-          <div className="relative w-full">
+          {/* 消息正文：用户气泡靠右 / AI 全宽靠左 */}
+          <div
+            className={
+              isUser
+                ? 'relative rounded-2xl border border-linear-border bg-linear-surface py-0.5 px-3 shadow-linear-highlight transition-colors group-hover:bg-linear-surface-hover'
+                : 'relative w-full'
+            }
+          >
             <MessageContent
               content={message.content}
               status={message.status}

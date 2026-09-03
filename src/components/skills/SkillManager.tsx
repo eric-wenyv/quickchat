@@ -6,6 +6,7 @@ import SkillForm from './SkillForm';
 import SkillFrontmatterTable from './SkillFrontmatterTable';
 import { useSkills } from '@/hooks/useSkills';
 import { parseSkillFrontmatter } from '@/utils/skill-frontmatter';
+import { isMobilePlatform } from '@/utils/platform';
 import {
   createSkill,
   deleteSkill,
@@ -52,12 +53,15 @@ const DescriptionTooltip: React.FC<{ text: string; anchor: DOMRect | null }> = (
   );
 };
 
+/** 移动端（Android/iOS）：点击 Skill 跳转全屏详情，列表与详情不并排 */
+const IS_MOBILE = isMobilePlatform;
+
 /**
  * Skill 管理界面（占据右侧主区域，替代 MainChatArea）
  *
- * - 左侧：Skill 列表（名称 + 来源徽标 + 删除），悬浮显示 description
- * - 右侧：选中 Skill 的完整 Markdown 预览（复用消息渲染管线）
- * - 顶栏：导入 Claude/Codex、新建 Skill、返回
+ * - 桌面端：左侧 Skill 列表（名称 + 来源徽标 + 删除），右侧完整 Markdown 预览
+ * - 移动端：仅显示列表，点击进入全屏详情，顶栏返回列表；不显示「导入 Claude/Codex」
+ * - 预览复用消息渲染管线；顶栏：导入 Claude/Codex（仅桌面）、新建 Skill、返回
  */
 const SkillManager: React.FC<SkillManagerProps> = ({ onClose, onUseSkill, onNotify }) => {
   const skills = useSkills();
@@ -81,7 +85,8 @@ const SkillManager: React.FC<SkillManagerProps> = ({ onClose, onUseSkill, onNoti
       const list = await refreshSkills();
       setSelectedId(prev => {
         if (keepSelection && prev && list.some(s => s.id === prev)) return prev;
-        return list[0]?.id ?? null;
+        // 移动端不自动选中，保持列表视图，由用户点击进入详情
+        return IS_MOBILE ? null : list[0]?.id ?? null;
       });
     } catch (e) {
       onNotify('加载 Skill 失败', String(e));
@@ -175,6 +180,61 @@ const SkillManager: React.FC<SkillManagerProps> = ({ onClose, onUseSkill, onNoti
   const headerButtonClass =
     'flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-[13px] font-semibold text-linear-text-secondary transition-colors hover:bg-linear-surface hover:text-linear-text-primary cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed';
 
+  // Markdown 正文（桌面详情与移动端详情共用）
+  const previewBody = isLoadingContent ? (
+    <div className="flex h-full items-center justify-center">
+      <div className="h-5 w-5 animate-spin rounded-full border-2 border-linear-border border-t-linear-text-secondary" />
+    </div>
+  ) : (
+    <div className="mx-auto max-w-3xl">
+      {frontmatter && frontmatter.fields.length > 0 && (
+        <SkillFrontmatterTable fields={frontmatter.fields} />
+      )}
+      <MessageContent content={frontmatter ? frontmatter.body : content} status="completed" />
+    </div>
+  );
+
+  // 移动端详情：全屏展示选中 Skill，顶栏返回列表
+  if (IS_MOBILE && selectedSkill) {
+    return (
+      <div className="flex h-full min-h-0 flex-col">
+        <header className="flex h-12 flex-shrink-0 items-center justify-between gap-2 border-b border-linear-border px-2">
+          <div className="flex min-w-0 items-center gap-1.5">
+            <button
+              onClick={() => setSelectedId(null)}
+              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-linear-text-tertiary transition-colors hover:bg-linear-surface hover:text-linear-text-primary cursor-pointer"
+              title="返回列表"
+              aria-label="返回列表"
+            >
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M15 18l-6-6 6-6" />
+              </svg>
+            </button>
+            <h2 className="truncate text-[15px] font-semibold text-linear-text-primary">{selectedSkill.name}</h2>
+            <SourceBadge source={selectedSkill.source} />
+            {selectedSkill.disable_model_invocation && (
+              <span className="shrink-0 rounded px-1.5 py-0.5 text-[10px] font-semibold bg-amber-500/10 text-amber-400">
+                仅手动
+              </span>
+            )}
+          </div>
+          <button
+            onClick={() => onUseSkill(selectedSkill, content)}
+            disabled={isLoadingContent || !content}
+            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-linear-text-primary text-linear-bg transition-opacity disabled:opacity-40 cursor-pointer"
+            title="在对话中使用"
+            aria-label="在对话中使用"
+          >
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2Z" />
+            </svg>
+          </button>
+        </header>
+        <div className="min-h-0 flex-1 overflow-y-auto px-4 py-5">{previewBody}</div>
+      </div>
+    );
+  }
+
   return (
     <div className="flex h-full min-h-0 flex-col">
       {/* 顶栏 */}
@@ -196,13 +256,15 @@ const SkillManager: React.FC<SkillManagerProps> = ({ onClose, onUseSkill, onNoti
           )}
         </div>
         <div className="flex items-center gap-1.5">
-          <button onClick={handleImport} disabled={isImporting} className={headerButtonClass} title="扫描 ~/.claude/skills 与 ~/.codex/skills，导入新增的 Skill">
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={isImporting ? 'animate-spin' : ''}>
-              <path d="M21 12a9 9 0 1 1-2.64-6.36" />
-              <path d="M21 3v6h-6" />
-            </svg>
-            {isImporting ? '导入中...' : '导入 Claude/Codex'}
-          </button>
+          {!IS_MOBILE && (
+            <button onClick={handleImport} disabled={isImporting} className={headerButtonClass} title="扫描 ~/.claude/skills 与 ~/.codex/skills，导入新增的 Skill">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={isImporting ? 'animate-spin' : ''}>
+                <path d="M21 12a9 9 0 1 1-2.64-6.36" />
+                <path d="M21 3v6h-6" />
+              </svg>
+              {isImporting ? '导入中...' : '导入 Claude/Codex'}
+            </button>
+          )}
           <button onClick={() => setShowForm(true)} className={headerButtonClass}>
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
               <path d="M12 5v14M5 12h14" />
@@ -212,10 +274,10 @@ const SkillManager: React.FC<SkillManagerProps> = ({ onClose, onUseSkill, onNoti
         </div>
       </header>
 
-      {/* 主体：左列表 + 右预览 */}
+      {/* 主体：列表（桌面端并排预览 / 移动端独占全屏） */}
       <div className="flex min-h-0 flex-1">
         {/* Skill 列表 */}
-        <div className="flex w-60 flex-shrink-0 flex-col overflow-y-auto border-r border-linear-border p-2">
+        <div className={`flex flex-col overflow-y-auto p-2 ${IS_MOBILE ? 'w-full flex-1' : 'w-60 flex-shrink-0 border-r border-linear-border'}`}>
           {isLoading ? (
             <div className="flex flex-1 items-center justify-center">
               <div className="h-5 w-5 animate-spin rounded-full border-2 border-linear-border border-t-linear-text-secondary" />
@@ -224,7 +286,9 @@ const SkillManager: React.FC<SkillManagerProps> = ({ onClose, onUseSkill, onNoti
             <div className="flex flex-1 flex-col items-center justify-center gap-2 px-4 text-center">
               <p className="text-[13px] font-medium text-linear-text-tertiary">还没有 Skill</p>
               <p className="text-xs leading-relaxed text-linear-text-muted">
-                点击右上角「导入 Claude/Codex」自动导入，或「新建 Skill」手动创建
+                {IS_MOBILE
+                  ? '点击右上角「新建 Skill」手动创建'
+                  : '点击右上角「导入 Claude/Codex」自动导入，或「新建 Skill」手动创建'}
               </p>
             </div>
           ) : (
@@ -235,7 +299,7 @@ const SkillManager: React.FC<SkillManagerProps> = ({ onClose, onUseSkill, onNoti
                 <div
                   key={skill.id}
                   className={`group relative mb-0.5 flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left transition-colors duration-150 ${
-                    isActive ? 'bg-linear-surface' : 'hover:bg-linear-surface/70'
+                    isActive ? 'bg-linear-surface' : 'hover:bg-linear-surface/70 active:bg-linear-surface'
                   }`}
                   onMouseEnter={(e) => handleItemEnter(e, skill)}
                   onMouseLeave={handleItemLeave}
@@ -275,7 +339,7 @@ const SkillManager: React.FC<SkillManagerProps> = ({ onClose, onUseSkill, onNoti
                   ) : (
                     <button
                       onClick={() => setConfirmDeleteId(skill.id)}
-                      className="hidden h-6 w-6 shrink-0 items-center justify-center rounded text-linear-text-tertiary transition-colors hover:bg-red-500/10 hover:text-red-400 group-hover:flex cursor-pointer"
+                      className={`h-6 w-6 shrink-0 items-center justify-center rounded text-linear-text-tertiary transition-colors hover:bg-red-500/10 hover:text-red-400 cursor-pointer ${IS_MOBILE ? 'flex' : 'hidden group-hover:flex'}`}
                       title="删除 Skill"
                       aria-label={`删除 ${skill.name}`}
                     >
@@ -292,7 +356,8 @@ const SkillManager: React.FC<SkillManagerProps> = ({ onClose, onUseSkill, onNoti
           )}
         </div>
 
-        {/* 预览区 */}
+        {/* 预览区（仅桌面端；移动端走上方全屏详情分支） */}
+        {!IS_MOBILE && (
         <div className="flex min-w-0 flex-1 flex-col">
           {selectedSkill ? (
             <>
@@ -333,20 +398,7 @@ const SkillManager: React.FC<SkillManagerProps> = ({ onClose, onUseSkill, onNoti
                   </button>
                 </div>
               </div>
-              <div className="min-h-0 flex-1 overflow-y-auto px-6 py-5">
-                {isLoadingContent ? (
-                  <div className="flex h-full items-center justify-center">
-                    <div className="h-5 w-5 animate-spin rounded-full border-2 border-linear-border border-t-linear-text-secondary" />
-                  </div>
-                ) : (
-                  <div className="mx-auto max-w-3xl">
-                    {frontmatter && frontmatter.fields.length > 0 && (
-                      <SkillFrontmatterTable fields={frontmatter.fields} />
-                    )}
-                    <MessageContent content={frontmatter ? frontmatter.body : content} status="completed" />
-                  </div>
-                )}
-              </div>
+              <div className="min-h-0 flex-1 overflow-y-auto px-6 py-5">{previewBody}</div>
             </>
           ) : (
             <div className="flex flex-1 items-center justify-center">
@@ -354,6 +406,7 @@ const SkillManager: React.FC<SkillManagerProps> = ({ onClose, onUseSkill, onNoti
             </div>
           )}
         </div>
+        )}
       </div>
 
       {showForm && <SkillForm onSave={handleCreate} onClose={() => setShowForm(false)} />}

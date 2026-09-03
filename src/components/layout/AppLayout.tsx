@@ -311,55 +311,171 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
     onCreateConversation();
     if (isMobilePlatform) setIsSidebarOpen(false);
   }, [onCreateConversation]);
+  // 移动端：从侧栏进入 Skill 管理后同样收起抽屉，否则 SkillManager 被抽屉遮挡
+  const handleOpenSkillsFromSidebar = useCallback(() => {
+    onOpenSkills();
+    if (isMobilePlatform) setIsSidebarOpen(false);
+  }, [onOpenSkills]);
 
-  // ── 移动端抽屉手势：任意位置右滑打开、左滑关闭 ──
+  // ── 移动端抽屉手势：跟手拖拽，松手按展开比例落位（>50% 展开，否则收回）──
   // 不要求从屏幕边缘起始：Android 12+ 系统手势导航占据左右边缘，边缘横滑
   // 会被系统消费（App 收到 touchcancel），手势永远触发不了。
   // 监听挂在外层容器上：抽屉打开后，遮罩/侧栏上的左滑仍能冒泡到这里生效。
-  const touchStartRef = useRef<{ x: number; y: number } | null>(null);
-
-  /** 触摸起点位于可横向滚动区域（代码块等）或输入控件内时不启用手势，避免与横滑/文本选择冲突 */
-  const gestureBlockedByTarget = (target: EventTarget | null): boolean => {
-    let node = target as HTMLElement | null;
-    while (node && node !== document.body) {
-      if (node.scrollWidth > node.clientWidth + 1) {
-        const style = getComputedStyle(node);
-        if (/(auto|scroll)/.test(style.overflowX)) return true;
-      }
-      if (node.tagName === 'INPUT' || node.tagName === 'TEXTAREA' || node.tagName === 'SELECT' || node.isContentEditable) {
-        return true;
-      }
-      node = node.parentElement;
-    }
-    return false;
-  };
-
-  const handleShellTouchStart = useCallback((e: React.TouchEvent) => {
-    if (!isMobilePlatform || e.touches.length !== 1) return;
-    if (gestureBlockedByTarget(e.target)) return;
-    const t = e.touches[0];
-    touchStartRef.current = { x: t.clientX, y: t.clientY };
-  }, []);
-  const handleShellTouchEnd = useCallback((e: React.TouchEvent) => {
-    if (!isMobilePlatform) return;
-    const start = touchStartRef.current;
-    touchStartRef.current = null;
-    if (!start) return;
-    const t = e.changedTouches[0];
-    const dx = t.clientX - start.x;
-    const dy = t.clientY - start.y;
-    // 位移阈值 64px，且水平位移须大于垂直位移（排除纵向滚动误触）
-    if (Math.abs(dx) < 64 || Math.abs(dx) <= Math.abs(dy)) return;
-    if (dx > 0 && !isSidebarOpen) {
-      setIsSidebarOpen(true);
-    } else if (dx < 0 && isSidebarOpen) {
-      setIsSidebarOpen(false);
-    }
+  // 使用原生非 passive 监听，锁定横向意图后 preventDefault，避免与纵向滚动叠加；
+  // 跟手过程直接操作 DOM（translate/opacity），绕过 React 渲染周期避免掉帧。
+  const overlayRef = useRef<HTMLDivElement>(null);
+  const isSidebarOpenRef = useRef(isSidebarOpen);
+  useEffect(() => {
+    isSidebarOpenRef.current = isSidebarOpen;
   }, [isSidebarOpen]);
-  // 系统手势导航抢占时会下发 touchcancel，必须清掉起点防止脏状态
-  const handleShellTouchCancel = useCallback(() => {
-    touchStartRef.current = null;
-  }, []);
+
+  useEffect(() => {
+    if (!isMobilePlatform) return;
+    const shell = contentLayoutRef.current;
+    const aside = asideRef.current;
+    const overlay = overlayRef.current;
+    if (!shell || !aside || !overlay) return;
+
+    const drawerWidth = sidebarPx;
+
+    /** 触摸起点位于可横向滚动区域（代码块等）或输入控件内时不启用手势，避免与横滑/文本选择冲突 */
+    const gestureBlockedByTarget = (target: EventTarget | null): boolean => {
+      let node = target as HTMLElement | null;
+      while (node && node !== document.body) {
+        if (node.scrollWidth > node.clientWidth + 1) {
+          const style = getComputedStyle(node);
+          if (/(auto|scroll)/.test(style.overflowX)) return true;
+        }
+        if (node.tagName === 'INPUT' || node.tagName === 'TEXTAREA' || node.tagName === 'SELECT' || node.isContentEditable) {
+          return true;
+        }
+        node = node.parentElement;
+      }
+      return false;
+    };
+
+    let startX = 0;
+    let startY = 0;
+    let startedOpen = false;
+    let tracking = false; // 已记录触摸起点
+    let dragging = false; // 已锁定横向意图，正在跟手
+    let progress = 0;     // 当前展开比例 0..1
+    let lastX = 0;        // 速度采样：上一次 move 的位置/时间
+    let lastT = 0;
+    let velocity = 0;     // 水平速度 px/ms（向右为正），指数平滑去抖
+    let settleTimer = 0;
+    // 快速轻扫（fling）判定阈值：速度超过它时直接按扫动方向开合，无视 50% 位置
+    const FLING_VELOCITY = 0.5;
+
+    const clearInlineStyles = () => {
+      window.clearTimeout(settleTimer);
+      aside.style.transition = '';
+      aside.style.translate = '';
+      aside.style.opacity = '';
+      overlay.style.transition = '';
+      overlay.style.opacity = '';
+      overlay.style.pointerEvents = '';
+    };
+
+    const onTouchStart = (e: TouchEvent) => {
+      if (e.touches.length !== 1) return;
+      if (gestureBlockedByTarget(e.target)) return;
+      // 上一轮 settle 的内联样式此时与状态一致，提前清理是无感操作
+      clearInlineStyles();
+      const t = e.touches[0];
+      startX = t.clientX;
+      startY = t.clientY;
+      lastX = t.clientX;
+      lastT = performance.now();
+      velocity = 0;
+      startedOpen = isSidebarOpenRef.current;
+      tracking = true;
+      dragging = false;
+      progress = startedOpen ? 1 : 0;
+    };
+
+    const onTouchMove = (e: TouchEvent) => {
+      if (!tracking) return;
+      const t = e.touches[0];
+      const now = performance.now();
+      const dt = now - lastT;
+      if (dt > 0) {
+        velocity = 0.6 * ((t.clientX - lastX) / dt) + 0.4 * velocity;
+        lastX = t.clientX;
+        lastT = now;
+      }
+      const dx = t.clientX - startX;
+      const dy = t.clientY - startY;
+      if (!dragging) {
+        // 横向位移超过 8px 才接管；纵向位移更大则让路给滚动
+        if (Math.abs(dx) < 8) return;
+        if (Math.abs(dy) >= Math.abs(dx)) {
+          tracking = false;
+          return;
+        }
+        dragging = true;
+        aside.style.transition = 'none';
+        overlay.style.transition = 'none';
+        overlay.style.pointerEvents = 'none';
+      }
+      // 跟手：以起点状态为基础随手指位移（闭合态右滑展开、展开态左滑收起），
+      // 反向位移被夹紧到 [0, drawerWidth]，抽屉始终贴住指尖
+      const basePx = startedOpen ? drawerWidth : 0;
+      const progressPx = Math.min(Math.max(basePx + dx, 0), drawerWidth);
+      progress = progressPx / drawerWidth;
+      aside.style.translate = `${progressPx - drawerWidth}px`;
+      aside.style.opacity = String(progress);
+      overlay.style.opacity = String(progress);
+      e.preventDefault();
+    };
+
+    // 松手落位：快速轻扫直接按扫动方向开合；否则按 50% 分界。
+    // 恢复 class 驱动的过渡动画走完剩余路程
+    const settle = () => {
+      dragging = false;
+      tracking = false;
+      // 松手前已停顿（期间无 move 采样）则视为静止，不沿用旧速度
+      if (performance.now() - lastT > 100) velocity = 0;
+      // 快速轻扫按纯几何方向开合：右滑展开、左滑收回（反向轻扫等于落在原状态）
+      const open = velocity > FLING_VELOCITY
+        ? true
+        : velocity < -FLING_VELOCITY
+          ? false
+          : progress > 0.5;
+      aside.style.transition = '';
+      aside.style.translate = open ? '0px' : `${-drawerWidth}px`;
+      aside.style.opacity = open ? '1' : '0';
+      overlay.style.transition = '';
+      overlay.style.opacity = open ? '1' : '0';
+      overlay.style.pointerEvents = open ? 'auto' : 'none';
+      isSidebarOpenRef.current = open;
+      setIsSidebarOpen(open);
+      window.clearTimeout(settleTimer);
+      settleTimer = window.setTimeout(clearInlineStyles, 350);
+    };
+
+    const onTouchEnd = () => {
+      if (dragging) settle();
+      tracking = false;
+    };
+    // 系统手势导航抢占（touchcancel）：已跟手则就近落位，避免闪跳
+    const onTouchCancel = () => {
+      if (dragging) settle();
+      tracking = false;
+    };
+
+    shell.addEventListener('touchstart', onTouchStart, { passive: true });
+    shell.addEventListener('touchmove', onTouchMove, { passive: false });
+    shell.addEventListener('touchend', onTouchEnd);
+    shell.addEventListener('touchcancel', onTouchCancel);
+    return () => {
+      shell.removeEventListener('touchstart', onTouchStart);
+      shell.removeEventListener('touchmove', onTouchMove);
+      shell.removeEventListener('touchend', onTouchEnd);
+      shell.removeEventListener('touchcancel', onTouchCancel);
+      window.clearTimeout(settleTimer);
+    };
+  }, [isMobilePlatform, sidebarPx]);
 
   // 直接操作 DOM 的拖拽实现，绕过 React 渲染周期以避免卡顿
   const startResize = useCallback((e: React.MouseEvent) => {
@@ -502,9 +618,6 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
       )}
       <div
         ref={contentLayoutRef}
-        onTouchStart={handleShellTouchStart}
-        onTouchEnd={handleShellTouchEnd}
-        onTouchCancel={handleShellTouchCancel}
         className="app-content-shell relative isolate grid min-h-0 flex-1 transition-[grid-template-columns] duration-300 ease-out bg-linear-sidebar"
         style={{
           gridTemplateColumns: isMobilePlatform
@@ -517,11 +630,16 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
       >
 
         {/*
-          移动端抽屉背景遮罩：点击关闭侧栏
+          移动端抽屉背景遮罩：点击关闭侧栏。
+          常驻渲染，供手势跟手时按比例渐显；透明度走 class 驱动，
+          与 aside 同模式，手势遗留的内联样式清理后可安全回退。
         */}
-        {isMobilePlatform && isSidebarOpen && (
+        {isMobilePlatform && (
           <div
-            className="absolute inset-0 z-10 bg-black/45 animate-in fade-in duration-300"
+            ref={overlayRef}
+            className={`absolute inset-0 z-10 bg-black/45 transition-opacity duration-300 ease-out ${
+              isSidebarOpen ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'
+            }`}
             onClick={toggleSidebar}
             aria-hidden="true"
           />
@@ -554,7 +672,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
               isSearching={isSearchingConversations}
               searchQuery={searchQuery}
               onOpenSettings={onOpenSettings}
-              onOpenSkills={onOpenSkills}
+              onOpenSkills={handleOpenSkillsFromSidebar}
               isSkillsActive={showSkills}
               theme={theme}
               onToggleTheme={onToggleTheme}

@@ -425,15 +425,18 @@ export default function App() {
         console.warn('内置 Skill 初始化失败:', e);
       }
       try {
-        const report = await importExternalSkills();
-        if (report.imported.length > 0) {
-          const byClaude = report.imported.filter(i => i.source === 'claude').length;
-          const byCodex = report.imported.length - byClaude;
-          const parts = [
-            byClaude > 0 ? `Claude ${byClaude} 个` : '',
-            byCodex > 0 ? `Codex ${byCodex} 个` : '',
-          ].filter(Boolean).join('、');
-          showToast('已自动导入 Skill', `来自 ${parts}`, 'success');
+        // 移动端没有 ~/.claude / ~/.codex 目录，跳过外部 Skill 导入
+        if (isDesktopPlatform) {
+          const report = await importExternalSkills();
+          if (report.imported.length > 0) {
+            const byClaude = report.imported.filter(i => i.source === 'claude').length;
+            const byCodex = report.imported.length - byClaude;
+            const parts = [
+              byClaude > 0 ? `Claude ${byClaude} 个` : '',
+              byCodex > 0 ? `Codex ${byCodex} 个` : '',
+            ].filter(Boolean).join('、');
+            showToast('已自动导入 Skill', `来自 ${parts}`, 'success');
+          }
         }
       } catch (e) {
         console.warn('自动导入 Skill 失败:', e);

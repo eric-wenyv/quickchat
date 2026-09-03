@@ -24,11 +24,10 @@ import {
   deleteSystemPrompt,
   runDatabaseMaintenance,
 } from "./services/db";
-import { appendCitationList, buildSkillCatalogPrompt, chatCompletion, describeImage, generateConversationTitle, generateFallbackConversationTitle, getWebSearchOptions, isPlaceholderConversationTitle, READ_URL_TOOL, USE_SKILL_TOOL, WEB_SEARCH_TOOL } from "./services/ai";
+import { appendCitationList, buildSkillCatalogPrompt, chatCompletion, describeImage, generateConversationTitle, generateFallbackConversationTitle, getWebSearchOptions, isPlaceholderConversationTitle, READ_URL_TOOL, USE_SKILL_TOOL } from "./services/ai";
 import type { ChatMessage, ChatContentPart, ToolDefinition, ToolCall } from "./services/ai";
 import { parseAttachments, getLanguageFromFilename } from "./utils/file";
 import { parseImageDescriptions, serializeImageDescriptions, type ImageDescription } from "./utils/image-description";
-import { searchWeb, formatSearchResults } from "./services/search";
 import { fetchUrlContent, formatUrlContent } from "./services/url";
 import { ensureBuiltinSkill, getAutoInvocableSkills, getSkillsSnapshot, importExternalSkills, readSkill, refreshSkills, type SkillMeta } from "./services/skills";
 import {
@@ -37,6 +36,7 @@ import {
   setConfiguredGlobalShortcut,
 } from "./services/globalShortcut";
 import { isThreadSending, markThreadIdle, markThreadSending, type ThreadSendingState } from "./utils/threadState";
+import { isDesktopPlatform } from "./utils/platform";
 import type {
   ConversationSummary,
   Conversation,
@@ -171,6 +171,7 @@ export default function App() {
   const isSending = isThreadSending(sendingByConversationId, activeConversation?.id);
 
   useEffect(() => {
+    if (!isDesktopPlatform) return;
     void initializeGlobalShortcut().catch(error => {
       console.warn('全局快速打开快捷键未注册:', error);
     });
@@ -1068,7 +1069,6 @@ export default function App() {
       chatHistory.splice(1, 0, { role: 'system', content: buildSkillCatalogPrompt(autoSkills) });
     }
     const functionTools: ToolDefinition[] = [];
-    if (webSearch.enabled && webSearch.mode === 'legacy_tavily') functionTools.push(WEB_SEARCH_TOOL);
     // read_url 不依赖搜索开关，始终可用（模型需要时自主抓取网页）
     functionTools.push(READ_URL_TOOL);
     if (autoSkills.length > 0) functionTools.push(USE_SKILL_TOOL);
@@ -1097,7 +1097,6 @@ export default function App() {
       const TOOL_LABELS: Record<string, string> = {
         use_skill: '加载 Skill',
         read_url: '读取网页',
-        web_search: '搜索网络',
       };
 
       // 执行一轮工具调用并把结果写回 chatHistory
@@ -1113,16 +1112,7 @@ export default function App() {
 
         for (const call of calls) {
           let toolResult = '';
-          if (call.function.name === 'web_search') {
-            try {
-              const args = JSON.parse(call.function.arguments || '{}');
-              const query = args.query || content;
-              const searchResults = await searchWeb(query);
-              toolResult = formatSearchResults(query, searchResults);
-            } catch (e: any) {
-              toolResult = `搜索失败: ${e.message}`;
-            }
-          } else if (call.function.name === 'read_url') {
+          if (call.function.name === 'read_url') {
             try {
               const args = JSON.parse(call.function.arguments || '{}');
               const url = String(args.url || '').trim();

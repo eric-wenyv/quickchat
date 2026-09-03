@@ -2,14 +2,16 @@
 //
 // Skill 管理：扫描、读取、创建、删除、导入 Skill。
 //
-// 存储位置：$HOME/.chat/skills/<skill-dir>/SKILL.md
-// 兼容 Claude (~/.claude/skills) 与 Codex (~/.codex/skills) 的 Skill 目录格式，
+// 存储位置：桌面端 $HOME/.chat/skills/<skill-dir>/SKILL.md；
+// 移动端（无可靠 HOME）存放在应用私有配置目录 skills/ 下。
+// 桌面端兼容 Claude (~/.claude/skills) 与 Codex (~/.codex/skills) 的 Skill 目录格式，
 // 导入时复制整个目录（含脚本、模板、符号链接目标等），同名时 Claude 优先。
 
 use serde::Serialize;
 use std::collections::HashSet;
 use std::fs;
 use std::path::{Path, PathBuf};
+use tauri::Manager;
 
 #[derive(Serialize, Clone)]
 pub struct SkillMeta {
@@ -24,7 +26,6 @@ pub struct SkillMeta {
     path: String,
     /// 目录中除 SKILL.md 外是否还有其它可见文件（脚本、模板等）
     has_assets: bool,
-
     disable_model_invocation: bool,
 }
 
@@ -44,12 +45,24 @@ pub struct ImportReport {
 // 路径与安全校验
 // ---------------------------------------------------------------------------
 
-fn home_dir() -> Result<PathBuf, String> {
-    dirs::home_dir().ok_or_else(|| "无法解析用户主目录".to_string())
-}
-
-fn skills_root() -> Result<PathBuf, String> {
-    Ok(home_dir()?.join(".chat").join("skills"))
+fn skills_root(app: &tauri::AppHandle) -> Result<PathBuf, String> {
+    #[cfg(desktop)]
+    {
+        // 桌面端沿用 ~/.chat/skills，与 Claude/Codex 导入约定保持一致
+        let home = app
+            .path()
+            .home_dir()
+            .map_err(|e| format!("无法解析用户主目录: {e}"))?;
+        Ok(home.join(".chat").join("skills"))
+    }
+    #[cfg(mobile)]
+    {
+        // Android 上 HOME 环境变量不可靠，Skill 存放在应用私有配置目录
+        app.path()
+            .app_config_dir()
+            .map(|dir| dir.join("skills"))
+            .map_err(|e| format!("无法解析应用数据目录: {e}"))
+    }
 }
 
 /// Skill 目录名只允许安全的 slug 字符，杜绝路径穿越
@@ -62,11 +75,11 @@ fn is_valid_skill_id(id: &str) -> bool {
             .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
 }
 
-fn skill_dir(id: &str) -> Result<PathBuf, String> {
+fn resolve_skill_dir(root: &Path, id: &str) -> Result<PathBuf, String> {
     if !is_valid_skill_id(id) {
         return Err(format!("非法的 Skill 名称: {id}"));
     }
-    Ok(skills_root()?.join(id))
+    Ok(root.join(id))
 }
 
 // ---------------------------------------------------------------------------
@@ -387,12 +400,15 @@ fn copy_dir_recursive(src: &Path, dst: &Path) -> Result<(), String> {
 // ---------------------------------------------------------------------------
 
 #[tauri::command]
-pub fn list_skills() -> Result<Vec<SkillMeta>, String> {
-    let root = skills_root()?;
-    fs::create_dir_all(&root).map_err(|e| format!("创建 Skill 目录失败: {e}"))?;
+pub fn list_skills(app: tauri::AppHandle) -> Result<Vec<SkillMeta>, String> {
+    list_skills_at(&skills_root(&app)?)
+}
+
+fn list_skills_at(root: &Path) -> Result<Vec<SkillMeta>, String> {
+    fs::create_dir_all(root).map_err(|e| format!("创建 Skill 目录失败: {e}"))?;
 
     let mut skills = Vec::new();
-    let entries = fs::read_dir(&root).map_err(|e| format!("读取 Skill 目录失败: {e}"))?;
+    let entries = fs::read_dir(root).map_err(|e| format!("读取 Skill 目录失败: {e}"))?;
     for entry in entries.flatten() {
         let path = entry.path();
         if !path.is_dir() {
@@ -418,13 +434,17 @@ pub fn list_skills() -> Result<Vec<SkillMeta>, String> {
             disable_model_invocation: fm.disable_model_invocation,
         });
     }
-    skills.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+    skills.sort_by_key(|a| a.name.to_lowercase());
     Ok(skills)
 }
 
 #[tauri::command]
-pub fn read_skill(id: String) -> Result<String, String> {
-    let dir = skill_dir(&id)?;
+pub fn read_skill(app: tauri::AppHandle, id: String) -> Result<String, String> {
+    read_skill_at(&skills_root(&app)?, &id)
+}
+
+fn read_skill_at(root: &Path, id: &str) -> Result<String, String> {
+    let dir = resolve_skill_dir(root, id)?;
     fs::read_to_string(dir.join("SKILL.md")).map_err(|e| format!("读取 Skill 失败: {e}"))
 }
 
@@ -486,6 +506,23 @@ fn format_description_yaml(desc: &str) -> String {
 
 #[tauri::command]
 pub fn create_skill(
+    app: tauri::AppHandle,
+    name: String,
+    description: String,
+    content: String,
+    disable_model_invocation: Option<bool>,
+) -> Result<String, String> {
+    create_skill_at(
+        &skills_root(&app)?,
+        name,
+        description,
+        content,
+        disable_model_invocation,
+    )
+}
+
+fn create_skill_at(
+    root: &Path,
     name: String,
     description: String,
     content: String,
@@ -510,7 +547,7 @@ pub fn create_skill(
     if !is_valid_skill_id(&slug) {
         return Err("名称无效：请使用字母、数字、连字符或下划线".to_string());
     }
-    let dir = skill_dir(&slug)?;
+    let dir = resolve_skill_dir(root, &slug)?;
     if dir.exists() {
         return Err(format!("Skill \"{slug}\" 已存在"));
     }
@@ -536,8 +573,12 @@ pub fn create_skill(
 }
 
 #[tauri::command]
-pub fn delete_skill(id: String) -> Result<(), String> {
-    let dir = skill_dir(&id)?;
+pub fn delete_skill(app: tauri::AppHandle, id: String) -> Result<(), String> {
+    delete_skill_at(&skills_root(&app)?, &id)
+}
+
+fn delete_skill_at(root: &Path, id: &str) -> Result<(), String> {
+    let dir = resolve_skill_dir(root, id)?;
     if !dir.is_dir() {
         return Err(format!("Skill \"{id}\" 不存在"));
     }
@@ -574,10 +615,32 @@ fn scan_external_source(dir: &Path) -> Vec<(String, String, PathBuf)> {
 }
 
 #[tauri::command]
-pub fn import_external_skills() -> Result<ImportReport, String> {
-    let home = home_dir()?;
-    let root = skills_root()?;
-    fs::create_dir_all(&root).map_err(|e| format!("创建 Skill 目录失败: {e}"))?;
+pub fn import_external_skills(app: tauri::AppHandle) -> Result<ImportReport, String> {
+    import_external_skills_at(&skills_root(&app)?, &external_skill_sources(&app))
+}
+
+/// 外部 Skill 来源目录。移动端没有外部工具的 Skill 目录，返回空列表。
+#[cfg(desktop)]
+fn external_skill_sources(app: &tauri::AppHandle) -> Vec<(String, PathBuf)> {
+    let Ok(home) = app.path().home_dir() else {
+        return Vec::new();
+    };
+    vec![
+        ("claude".to_string(), home.join(".claude").join("skills")),
+        ("codex".to_string(), home.join(".codex").join("skills")),
+    ]
+}
+
+#[cfg(mobile)]
+fn external_skill_sources(_app: &tauri::AppHandle) -> Vec<(String, PathBuf)> {
+    Vec::new()
+}
+
+fn import_external_skills_at(
+    root: &Path,
+    sources: &[(String, PathBuf)],
+) -> Result<ImportReport, String> {
+    fs::create_dir_all(root).map_err(|e| format!("创建 Skill 目录失败: {e}"))?;
 
     let mut report = ImportReport {
         imported: Vec::new(),
@@ -586,7 +649,7 @@ pub fn import_external_skills() -> Result<ImportReport, String> {
 
     // 已占用的名称（目录名 + frontmatter name），Claude 先扫描，因此同名时 Claude 优先
     let mut taken: HashSet<String> = HashSet::new();
-    if let Ok(entries) = fs::read_dir(&root) {
+    if let Ok(entries) = fs::read_dir(root) {
         for entry in entries.flatten() {
             let path = entry.path();
             if !path.is_dir() {
@@ -602,16 +665,10 @@ pub fn import_external_skills() -> Result<ImportReport, String> {
         }
     }
 
-    // Claude 在前：同名冲突时 Claude 的版本胜出
-    let sources = [
-        ("claude", home.join(".claude").join("skills")),
-        ("codex", home.join(".codex").join("skills")),
-    ];
-
+    // 传入的 sources 已按优先级排序：同名冲突时排在前面的来源胜出
     for (source, dir) in sources {
-        for (dir_name, fm_name, src_path) in scan_external_source(&dir) {
-            if taken.contains(&dir_name) || taken.contains(&fm_name) {
-                report.skipped_existing.push(fm_name);
+        for (dir_name, fm_name, src_path) in scan_external_source(dir) {
+            if taken.contains(&dir_name) || taken.contains(&fm_name) {                report.skipped_existing.push(fm_name);
                 continue;
             }
             let dst = root.join(&dir_name);
@@ -724,12 +781,15 @@ description: >
 > 本应用会完整保留这些文件，方便随时在文件管理器中查看或拷回。
 "#;
 
+#[tauri::command]
+pub fn ensure_builtin_skill(app: tauri::AppHandle) -> Result<(), String> {
+    ensure_builtin_skill_at(&skills_root(&app)?)
+}
+
 /// 首次运行时写入内置 Skill；内容升级时就地更新（用户已删除的则不复活）。
 /// 通过 `.builtin-installed` 标记文件记录已安装的版本。
-#[tauri::command]
-pub fn ensure_builtin_skill() -> Result<(), String> {
-    let root = skills_root()?;
-    fs::create_dir_all(&root).map_err(|e| format!("创建 Skill 目录失败: {e}"))?;
+fn ensure_builtin_skill_at(root: &Path) -> Result<(), String> {
+    fs::create_dir_all(root).map_err(|e| format!("创建 Skill 目录失败: {e}"))?;
     let flag = root.join(".builtin-installed");
     let installed_version = fs::read_to_string(&flag).unwrap_or_default();
     if installed_version.trim() == BUILTIN_SKILL_VERSION {
@@ -750,7 +810,7 @@ pub fn ensure_builtin_skill() -> Result<(), String> {
 }
 
 // ---------------------------------------------------------------------------
-// Tests：在临时 HOME 下端到端验证 Skill 的导入/增删/读取逻辑
+// Tests：在临时目录下端到端验证 Skill 的导入/增删/读取逻辑
 // ---------------------------------------------------------------------------
 
 #[cfg(test)]
@@ -767,22 +827,26 @@ mod tests {
         .unwrap();
     }
 
-    /// 单个测试函数串行跑完全部断言，避免并发修改 HOME 环境变量
+    /// 单个测试函数串行跑完全部断言
     #[test]
     fn skills_end_to_end() {
         let tmp =
             std::env::temp_dir().join(format!("quick_chat_skills_test_{}", std::process::id()));
         let _ = fs::remove_dir_all(&tmp);
         fs::create_dir_all(&tmp).unwrap();
-        std::env::set_var("HOME", &tmp);
 
-        // 准备外部来源：claude 有 shared + claude-only + folded（块标量描述）；
+        let root = tmp.join(".chat/skills");
+        // 外部来源：claude 有 shared + claude-only + folded（块标量描述）；
         // codex 有 shared（应输给 claude）、codex-only、.system 内置（应跳过）。
         // claude-only 带附属脚本与符号链接。
-        let claude = tmp.join(".claude/skills");
-        let codex = tmp.join(".codex/skills");
-        write_skill(&claude, "shared", "shared", "claude 版本");
-        write_skill(&claude, "claude-only", "claude-only", "带附件");
+        let sources = [
+            ("claude".to_string(), tmp.join(".claude/skills")),
+            ("codex".to_string(), tmp.join(".codex/skills")),
+        ];
+        let claude = &sources[0].1;
+        let codex = &sources[1].1;
+        write_skill(claude, "shared", "shared", "claude 版本");
+        write_skill(claude, "claude-only", "claude-only", "带附件");
         fs::write(claude.join("claude-only/run.sh"), "#!/bin/sh\necho hi\n").unwrap();
         // Claude 官方 Skill 的折叠块写法：description: > + 缩进多行；
         // 布尔值用首字母大写的 True（js-yaml 同样识别）
@@ -792,20 +856,18 @@ mod tests {
             "---\nname: folded\ndescription: >\n  第一行说明\n  第二行：带冒号与 \"引号\"\ndisable-model-invocation: True\n---\n\n# folded\n",
         )
         .unwrap();
-        write_skill(&codex, "shared", "shared", "codex 版本");
-        write_skill(&codex, "codex-only", "codex-only", "codex 独有");
-        write_skill(&codex, ".system/sys", "sys", "内置应跳过");
+        write_skill(codex, "shared", "shared", "codex 版本");
+        write_skill(codex, "codex-only", "codex-only", "codex 独有");
+        write_skill(codex, ".system/sys", "sys", "内置应跳过");
 
         // 内置 Skill：首次写入，且写入标记
-        ensure_builtin_skill().unwrap();
-        assert!(tmp
-            .join(".chat/skills/quick-chat-skill-guide/SKILL.md")
-            .is_file());
-        let guide = read_skill("quick-chat-skill-guide".into()).unwrap();
+        ensure_builtin_skill_at(&root).unwrap();
+        assert!(root.join("quick-chat-skill-guide/SKILL.md").is_file());
+        let guide = read_skill_at(&root, "quick-chat-skill-guide").unwrap();
         assert!(guide.contains("如何导入 Skill"));
 
         // 导入：claude 优先、跳过 .system、跳过已存在
-        let report = import_external_skills().unwrap();
+        let report = import_external_skills_at(&root, &sources).unwrap();
         assert_eq!(report.imported.len(), 4);
         let names: HashSet<&str> = report.imported.iter().map(|i| i.name.as_str()).collect();
         assert!(
@@ -816,22 +878,22 @@ mod tests {
         );
         let shared = report.imported.iter().find(|i| i.name == "shared").unwrap();
         assert_eq!(shared.source, "claude");
-        assert!(!tmp.join(".chat/skills/sys").exists());
+        assert!(!root.join("sys").exists());
 
         // 附属文件被完整复制
-        assert!(tmp.join(".chat/skills/claude-only/run.sh").is_file());
+        assert!(root.join("claude-only/run.sh").is_file());
         assert_eq!(
-            fs::read_to_string(tmp.join(".chat/skills/shared/.source")).unwrap(),
+            fs::read_to_string(root.join("shared/.source")).unwrap(),
             "claude"
         );
 
         // 重复导入：全部跳过（claude 3 个 + codex 2 个），不覆盖
-        let report2 = import_external_skills().unwrap();
+        let report2 = import_external_skills_at(&root, &sources).unwrap();
         assert_eq!(report2.imported.len(), 0);
         assert_eq!(report2.skipped_existing.len(), 5);
 
         // 列表：frontmatter 解析 + 来源标记
-        let list = list_skills().unwrap();
+        let list = list_skills_at(&root).unwrap();
         assert_eq!(list.len(), 5); // guide + 4 导入
         let claude_only = list.iter().find(|s| s.id == "claude-only").unwrap();
         assert_eq!(claude_only.description, "带附件");
@@ -853,19 +915,20 @@ mod tests {
         assert!(!guide_meta.description.contains('>'));
 
         // 新建：slug 化 + 重名拒绝 + disable-model-invocation 写入与解析
-        create_skill("My Skill".into(), "测试".into(), "# 你好".into(), None).unwrap();
-        let created = read_skill("my-skill".into()).unwrap();
+        create_skill_at(&root, "My Skill".into(), "测试".into(), "# 你好".into(), None).unwrap();
+        let created = read_skill_at(&root, "my-skill").unwrap();
         assert!(created.contains("name: my-skill") && created.contains("# 你好"));
-        assert!(create_skill("my-skill".into(), String::new(), String::new(), None).is_err());
+        assert!(create_skill_at(&root, "my-skill".into(), String::new(), String::new(), None).is_err());
 
-        create_skill(
+        create_skill_at(
+            &root,
             "manual-only".into(),
             "仅手动".into(),
             String::new(),
             Some(true),
         )
         .unwrap();
-        let list2 = list_skills().unwrap();
+        let list2 = list_skills_at(&root).unwrap();
         let manual = list2.iter().find(|s| s.id == "manual-only").unwrap();
         assert!(manual.disable_model_invocation);
         let auto = list2.iter().find(|s| s.id == "my-skill").unwrap();
@@ -873,10 +936,10 @@ mod tests {
 
         // 含冒号/引号的描述写入字面量块标量（|-），保证 Claude 的 YAML 解析一致
         let colon_desc = "使用时机：当用户说 \"帮我做简历\" 时";
-        create_skill("colon-desc".into(), colon_desc.into(), String::new(), None).unwrap();
-        let colon_file = read_skill("colon-desc".into()).unwrap();
+        create_skill_at(&root, "colon-desc".into(), colon_desc.into(), String::new(), None).unwrap();
+        let colon_file = read_skill_at(&root, "colon-desc").unwrap();
         assert!(colon_file.contains("description: |-\n  使用时机：当用户说 \"帮我做简历\" 时\n"));
-        let list3 = list_skills().unwrap();
+        let list3 = list_skills_at(&root).unwrap();
         assert_eq!(
             list3
                 .iter()
@@ -887,12 +950,12 @@ mod tests {
         );
 
         // 删除 + 路径穿越防护
-        delete_skill("my-skill".into()).unwrap();
-        delete_skill("manual-only".into()).unwrap();
-        delete_skill("colon-desc".into()).unwrap();
-        assert!(!tmp.join(".chat/skills/my-skill").exists());
-        assert!(delete_skill("../..".into()).is_err());
-        assert!(read_skill("../..".into()).is_err());
+        delete_skill_at(&root, "my-skill").unwrap();
+        delete_skill_at(&root, "manual-only").unwrap();
+        delete_skill_at(&root, "colon-desc").unwrap();
+        assert!(!root.join("my-skill").exists());
+        assert!(delete_skill_at(&root, "../..").is_err());
+        assert!(read_skill_at(&root, "../..").is_err());
 
         let _ = fs::remove_dir_all(&tmp);
     }

@@ -2,52 +2,30 @@
 //
 // application runtime.
 // Responsibilities:
-//   - Register tauri-plugin-global-shortcut 
-//   - Single-instance plugin + `--toggle` arg 
-//   - Register tauri-plugin-sql 
-//   - Window is configured as borderless + transparent 
-//   - System tray integration 
+//   - Register tauri-plugin-global-shortcut (desktop)
+//   - Single-instance plugin + `--toggle` arg (desktop)
+//   - Register tauri-plugin-sql
+//   - Window is configured as borderless + transparent (desktop)
+//   - System tray integration (desktop)
 
+#[cfg(desktop)]
 use base64::Engine;
 use serde_json::{json, Value};
-use tauri::{Emitter, Manager};
+#[cfg(desktop)]
+use tauri::Emitter;
+use tauri::Manager;
+#[cfg(desktop)]
 use tauri_plugin_global_shortcut::{Code, Modifiers, ShortcutState};
 
 #[cfg(target_os = "linux")]
 mod linux_blur;
-mod server;
 mod skills;
 
 // ---------------------------------------------------------------------------
-// Commands: LAN relay mobile service server 
+// Command: parse PDF / Word document via Python (desktop only; no Python
+// runtime exists on mobile — see parse_document mobile stub below)
 // ---------------------------------------------------------------------------
-
-#[tauri::command]
-async fn get_server_info(
-    state: tauri::State<'_, std::sync::Arc<server::LanServer>>,
-) -> Result<server::ServerInfo, String> {
-    Ok(state.info().await)
-}
-
-#[tauri::command]
-async fn set_server_config(
-    enabled: bool,
-    port: u16,
-    state: tauri::State<'_, std::sync::Arc<server::LanServer>>,
-) -> Result<server::ServerInfo, String> {
-    state.set_config(enabled, port).await
-}
-
-#[tauri::command]
-async fn regenerate_server_token(
-    state: tauri::State<'_, std::sync::Arc<server::LanServer>>,
-) -> Result<server::ServerInfo, String> {
-    state.regenerate_token().await
-}
-
-// ---------------------------------------------------------------------------
-// Command: parse PDF / Word document via Python
-// ---------------------------------------------------------------------------
+#[cfg(desktop)]
 #[tauri::command]
 fn parse_document(data: String, ext: String) -> Result<String, String> {
     let bytes = base64::engine::general_purpose::STANDARD
@@ -182,9 +160,17 @@ except Exception:
     }
 }
 
+// 移动端无 Python 运行时：文档解析暂不支持，后续替换为 Rust 原生解析库
+#[cfg(mobile)]
+#[tauri::command]
+fn parse_document(_data: String, _ext: String) -> Result<String, String> {
+    Err("移动端暂不支持 PDF / Word 文档解析".to_string())
+}
+
 // ---------------------------------------------------------------------------
-// setup system tray icon with menu
+// setup system tray icon with menu (desktop)
 // ---------------------------------------------------------------------------
+#[cfg(desktop)]
 fn setup_tray(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
     use tauri::menu::{MenuBuilder, MenuItemBuilder, PredefinedMenuItem};
     use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
@@ -450,20 +436,26 @@ pub fn run() {
     ));
 
     builder
-        // ── Intercept close request: hide to tray instead of quitting ───────
+        // ── Intercept close request: hide to tray instead of quitting (desktop) ──
         .on_window_event(|window, event| {
+            #[cfg(desktop)]
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
                 api.prevent_close();
                 if let Err(e) = window.hide() {
                     eprintln!("[quick-chat] hide() on close requested: {e}");
                 }
             }
+            #[cfg(mobile)]
+            {
+                let _ = (window, event);
+            }
         })
         // Global shortcut plugin
         // The quick-open shortcut is registered by the frontend so users can
         // change or disable it. These two shortcuts remain fixed app actions.
         .setup(|app| {
-            // System tray setup
+            // System tray setup (desktop)
+            #[cfg(desktop)]
             if let Err(e) = setup_tray(app) {
                 eprintln!("[quick-chat] tray setup error: {e}");
             }
@@ -475,27 +467,10 @@ pub fn run() {
                 }
             }
 
-            // Embedded LAN relay server shared SQLite + AI proxy for Android
-            {
-                let config_dir = app.path().app_config_dir();
-                match config_dir {
-                    Ok(config_dir) => {
-                        let db_file = if std::env::var("QUICK_CHAT_DEV_DB").is_ok() {
-                            remove_db_files(&config_dir, "quick_chat_dev.db");
-                            // dev:fresh
-                            "quick_chat_dev.db"
-                        } else {
-                            // dev
-                            "quick_chat.db"
-                        };
-                        match tauri::async_runtime::block_on(server::init(config_dir, db_file)) {
-                            Ok(lan_server) => {
-                                app.manage(lan_server);
-                            }
-                            Err(e) => eprintln!("[quick-chat] LAN server init failed: {e}"),
-                        }
-                    }
-                    _ => eprintln!("[quick-chat] LAN server init failed: cannot resolve app dirs"),
+            // dev:fresh 时清空开发库（plugin-sql 将 sqlite: 相对路径解析到 app config dir）
+            if let Ok(config_dir) = app.path().app_config_dir() {
+                if std::env::var("QUICK_CHAT_DEV_DB").is_ok() {
+                    remove_db_files(&config_dir, "quick_chat_dev.db");
                 }
             }
 
@@ -543,9 +518,6 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             fetch_url,
             parse_document,
-            get_server_info,
-            set_server_config,
-            regenerate_server_token,
             skills::list_skills,
             skills::read_skill,
             skills::create_skill,

@@ -97,7 +97,7 @@ export interface TokenUsage {
 
 export interface WebSearchOptions {
   enabled: boolean;
-  mode: 'official' | 'legacy_tavily' | 'disabled';
+  mode: 'official' | 'disabled';
 }
 
 export interface UrlCitation {
@@ -115,25 +115,6 @@ export type ChatCompletionResult =
 // ---------------------------------------------------------------------------
 // 内置工具定义
 // ---------------------------------------------------------------------------
-
-export const WEB_SEARCH_TOOL: ToolDefinition = {
-  type: 'function',
-  function: {
-    name: 'web_search',
-    description:
-      'Search the web for current, real-time information. Use this when the user asks about recent events, news, weather, stock prices, sports results, or any information that may have changed after your knowledge cutoff.',
-    parameters: {
-      type: 'object',
-      properties: {
-        query: {
-          type: 'string',
-          description: 'The search query in Chinese or English',
-        },
-      },
-      required: ['query'],
-    },
-  },
-};
 
 /**
  * AI 阅读网页内容的工具：当用户消息包含 URL、要求阅读/总结某个页面，
@@ -226,9 +207,6 @@ function buildHeaders(model: ModelConfig): Record<string, string> {
 export function getWebSearchOptions(model: ModelConfig): WebSearchOptions {
   if (model.provider === 'openrouter') {
     return { enabled: true, mode: 'official' };
-  }
-  if (model.provider === 'google_gemini' || model.provider === 'openai_compatible') {
-    return { enabled: true, mode: 'legacy_tavily' };
   }
   return { enabled: false, mode: 'disabled' };
 }
@@ -342,8 +320,8 @@ function buildRequestBody(
     body.reasoning_effort = thinkingLevel.toLowerCase();
   }
 
-  if (model.provider === 'openrouter' && webSearch?.enabled && webSearch.mode === 'official') {
-    // OpenRouter 官方网页搜索工具与本地 function tools（如 use_skill）可以并存
+  if (model.provider === 'openrouter' && webSearch?.enabled) {
+    // OpenRouter 官方网页搜索工具（由 OpenRouter 服务端执行）与本地 function tools（如 use_skill）可以并存
     body.tools = [buildOpenRouterWebSearchTool(), ...(tools ?? [])];
     body.tool_choice = 'auto';
   } else if (tools && tools.length > 0) {

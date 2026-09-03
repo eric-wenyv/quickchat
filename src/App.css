@@ -75,6 +75,21 @@ html[data-platform='linux'] .app-window-shell {
   background: var(--color-linear-bg);
 }
 
+/* Mobile WebViews have no system transparent-window concept: use an opaque
+   surface and inset the shell away from the notch and gesture areas. */
+html[data-platform='android'],
+html[data-platform='ios'] {
+  --quick-jump-expanded-bg: rgba(24, 24, 24, 0.82);
+  background: var(--color-linear-bg);
+}
+
+html[data-platform='android'] .app-window-shell,
+html[data-platform='ios'] .app-window-shell {
+  background: var(--color-linear-bg);
+  padding-top: env(safe-area-inset-top);
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
 /* ── Keyframes ── */
 
 /* Shimmer sweep for AI thinking state */

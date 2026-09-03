@@ -245,6 +245,29 @@ export async function initDatabase(): Promise<void> {
       ON messages(status) WHERE status IN ('pending', 'streaming');
   `);
 
+  // ── 同步预留（Sync reservation）─────────────────────────────────────────
+  // 桌面端与移动端各自持有本地库，未来做双向同步。当前只铺 schema，不改行为：
+  //
+  // 1. deleted_at（conversations / messages）：软删除墓碑占位。同步要求删除
+  //    以墓碑形式传播（否则无法区分"未同步的删除"与"从未存在"）。列已建好，
+  //    查询仍按硬删除语义运行；启用同步时改为写 deleted_at 并在全查询补
+  //    `deleted_at IS NULL` 过滤。
+  // 2. sync_meta：设备级元数据（device_id、最后同步水位线、同步开关等）。
+  //
+  // 设计约定（实现同步层时遵循）：
+  // - 主键已全局唯一（UUIDv4），可直接作为同步标识；
+  // - 冲突策略 last-write-wins（按 updated_at，毫秒精度）；
+  // - api_key 默认不参与同步，如需同步必须端到端加密；
+  // - 传输通道待定（自建中继 / LAN 直连 / 云盘文件），schema 不绑定通道。
+  await ensureSyncColumns(db);
+  await db.execute(`
+    CREATE TABLE IF NOT EXISTS sync_meta (
+      key        TEXT PRIMARY KEY NOT NULL,
+      value      TEXT NOT NULL,
+      updated_at INTEGER NOT NULL
+    );
+  `);
+
   // FTS5 全文检索。只创建结构，耗时的同步/重建放到首屏之后后台执行。
   await createMessageFtsIndex(db);
   try {
@@ -383,6 +406,24 @@ async function ensureConversationColumns(db: Database): Promise<void> {
     }
   } catch (e) {
     console.error('[DB] ensureConversationColumns failed:', e);
+  }
+}
+
+/** 同步预留列：deleted_at 软删除墓碑（当前不参与任何查询行为） */
+async function ensureSyncColumns(db: Database): Promise<void> {
+  try {
+    const conversations = await db.select<{ name: string }[]>('PRAGMA table_info(conversations);');
+    if (!conversations.map((c: any) => c.name).includes('deleted_at')) {
+      await db.execute('ALTER TABLE conversations ADD COLUMN deleted_at INTEGER DEFAULT NULL;');
+      console.log('[DB] Added column: conversations.deleted_at');
+    }
+    const messages = await db.select<{ name: string }[]>('PRAGMA table_info(messages);');
+    if (!messages.map((c: any) => c.name).includes('deleted_at')) {
+      await db.execute('ALTER TABLE messages ADD COLUMN deleted_at INTEGER DEFAULT NULL;');
+      console.log('[DB] Added column: messages.deleted_at');
+    }
+  } catch (e) {
+    console.error('[DB] ensureSyncColumns failed:', e);
   }
 }
 

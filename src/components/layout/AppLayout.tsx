@@ -5,6 +5,7 @@ import SkillManager from '../skills/SkillManager';
 import type { SkillMeta } from '@/services/skills';
 import { listen } from '@tauri-apps/api/event';
 import { getCurrentWindow } from '@tauri-apps/api/window';
+import { isMobilePlatform } from '@/utils/platform';
 import type {
   ConversationSummary,
   Conversation,
@@ -119,6 +120,7 @@ const CodexMenuBar: React.FC<CodexMenuBarProps> = ({
   const appWindow = getCurrentWindow();
 
   useEffect(() => {
+    if (isMobilePlatform) return;
     const unlisten = appWindow.onResized(async () => {
       setIsWindowMaximized(await appWindow.isMaximized());
     });
@@ -155,52 +157,56 @@ const CodexMenuBar: React.FC<CodexMenuBarProps> = ({
         className="flex h-full items-center"
         style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
       >
-        <button
-          onClick={() => appWindow.minimize()}
-          onMouseEnter={() => setHoveredWindowButton('minimize')}
-          onMouseLeave={() => setHoveredWindowButton(null)}
-          className={windowButtonClass}
-          style={{ backgroundColor: hoveredWindowButton === 'minimize' ? 'rgba(255,255,255,0.08)' : 'transparent' }}
-          aria-label="Minimize"
-        >
-          <svg width="10" height="1" viewBox="0 0 10 1" fill="none">
-            <rect width="10" height="1" rx="0.5" fill="currentColor" opacity="0.75" />
-          </svg>
-        </button>
-        <button
-          onClick={() => appWindow.toggleMaximize()}
-          onMouseEnter={() => setHoveredWindowButton('maximize')}
-          onMouseLeave={() => setHoveredWindowButton(null)}
-          className={windowButtonClass}
-          style={{ backgroundColor: hoveredWindowButton === 'maximize' ? 'rgba(255,255,255,0.08)' : 'transparent' }}
-          aria-label={isWindowMaximized ? 'Restore' : 'Maximize'}
-        >
-          {isWindowMaximized ? (
-            <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
-              <rect x="2" y="0" width="8" height="8" rx="0.5" stroke="currentColor" strokeWidth="1" opacity="0.75" fill="none" />
-              <rect x="0" y="2" width="8" height="8" rx="0.5" stroke="currentColor" strokeWidth="1" opacity="0.75" fill="#151515" />
-            </svg>
-          ) : (
-            <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
-              <rect x="0.5" y="0.5" width="9" height="9" rx="0.5" stroke="currentColor" strokeWidth="1" opacity="0.75" />
-            </svg>
-          )}
-        </button>
-        <button
-          onClick={() => appWindow.close()}
-          onMouseEnter={() => setHoveredWindowButton('close')}
-          onMouseLeave={() => setHoveredWindowButton(null)}
-          className={windowButtonClass}
-          style={{
-            backgroundColor: hoveredWindowButton === 'close' ? '#e81123' : 'transparent',
-            color: hoveredWindowButton === 'close' ? '#ffffff' : 'inherit',
-          }}
-          aria-label="Close"
-        >
-          <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
-            <path d="M1 1L9 9M9 1L1 9" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" opacity={hoveredWindowButton === 'close' ? 1 : 0.75} />
-          </svg>
-        </button>
+        {!isMobilePlatform && (
+          <>
+            <button
+              onClick={() => appWindow.minimize()}
+              onMouseEnter={() => setHoveredWindowButton('minimize')}
+              onMouseLeave={() => setHoveredWindowButton(null)}
+              className={windowButtonClass}
+              style={{ backgroundColor: hoveredWindowButton === 'minimize' ? 'rgba(255,255,255,0.08)' : 'transparent' }}
+              aria-label="Minimize"
+            >
+              <svg width="10" height="1" viewBox="0 0 10 1" fill="none">
+                <rect width="10" height="1" rx="0.5" fill="currentColor" opacity="0.75" />
+              </svg>
+            </button>
+            <button
+              onClick={() => appWindow.toggleMaximize()}
+              onMouseEnter={() => setHoveredWindowButton('maximize')}
+              onMouseLeave={() => setHoveredWindowButton(null)}
+              className={windowButtonClass}
+              style={{ backgroundColor: hoveredWindowButton === 'maximize' ? 'rgba(255,255,255,0.08)' : 'transparent' }}
+              aria-label={isWindowMaximized ? 'Restore' : 'Maximize'}
+            >
+              {isWindowMaximized ? (
+                <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
+                  <rect x="2" y="0" width="8" height="8" rx="0.5" stroke="currentColor" strokeWidth="1" opacity="0.75" fill="none" />
+                  <rect x="0" y="2" width="8" height="8" rx="0.5" stroke="currentColor" strokeWidth="1" opacity="0.75" fill="#151515" />
+                </svg>
+              ) : (
+                <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
+                  <rect x="0.5" y="0.5" width="9" height="9" rx="0.5" stroke="currentColor" strokeWidth="1" opacity="0.75" />
+                </svg>
+              )}
+            </button>
+            <button
+              onClick={() => appWindow.close()}
+              onMouseEnter={() => setHoveredWindowButton('close')}
+              onMouseLeave={() => setHoveredWindowButton(null)}
+              className={windowButtonClass}
+              style={{
+                backgroundColor: hoveredWindowButton === 'close' ? '#e81123' : 'transparent',
+                color: hoveredWindowButton === 'close' ? '#ffffff' : 'inherit',
+              }}
+              aria-label="Close"
+            >
+              <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
+                <path d="M1 1L9 9M9 1L1 9" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" opacity={hoveredWindowButton === 'close' ? 1 : 0.75} />
+              </svg>
+            </button>
+          </>
+        )}
       </div>
     </header>
   );
@@ -259,7 +265,8 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
 }) => {
   // 内部维护侧边栏开关状态，确保布局灵活性。
   // 内容层维持完整宽度，外层宽度和透明度同步过渡，避免文字和控件被压缩重排。
-  const [isSidebarOpen, setIsSidebarOpen] = useState(true);
+  // 移动端侧栏默认收起（抽屉式覆盖层）。
+  const [isSidebarOpen, setIsSidebarOpen] = useState(() => !isMobilePlatform);
   const [isSidebarResizeHovered, setIsSidebarResizeHovered] = useState(false);
   const [isSidebarResizing, setIsSidebarResizing] = useState(false);
 
@@ -282,6 +289,28 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
   const toggleSidebar = useCallback(() => {
     setIsSidebarOpen(prev => !prev);
   }, []);
+
+  // 移动端侧栏宽度不超过视口的 85%
+  const [mobileViewportWidth, setMobileViewportWidth] = useState(() => window.innerWidth);
+  useEffect(() => {
+    if (!isMobilePlatform) return;
+    const update = () => setMobileViewportWidth(window.innerWidth);
+    window.addEventListener('resize', update);
+    return () => window.removeEventListener('resize', update);
+  }, []);
+  const sidebarPx = isMobilePlatform
+    ? Math.min(sidebarWidth, Math.round(mobileViewportWidth * 0.85))
+    : sidebarWidth;
+
+  // 移动端：选中/新建会话后收起抽屉，让出主对话区
+  const handleSelectConversation = useCallback((id: UUID) => {
+    onSelectConversation(id);
+    if (isMobilePlatform) setIsSidebarOpen(false);
+  }, [onSelectConversation]);
+  const handleCreateConversation = useCallback(() => {
+    onCreateConversation();
+    if (isMobilePlatform) setIsSidebarOpen(false);
+  }, [onCreateConversation]);
 
   // 直接操作 DOM 的拖拽实现，绕过 React 渲染周期以避免卡顿
   const startResize = useCallback((e: React.MouseEvent) => {
@@ -423,30 +452,46 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
         ref={contentLayoutRef}
         className="app-content-shell relative isolate grid min-h-0 flex-1 transition-[grid-template-columns] duration-300 ease-out bg-linear-sidebar"
         style={{
-          gridTemplateColumns: isSidebarOpen ? `${sidebarWidth}px minmax(0, 1fr)` : '0px minmax(0, 1fr)',
+          gridTemplateColumns: isMobilePlatform
+            ? 'minmax(0, 1fr)'
+            : isSidebarOpen
+              ? `${sidebarWidth}px minmax(0, 1fr)`
+              : '0px minmax(0, 1fr)',
           willChange: 'grid-template-columns',
         }}
       >
 
+        {/*
+          移动端抽屉背景遮罩：点击关闭侧栏
+        */}
+        {isMobilePlatform && isSidebarOpen && (
+          <div
+            className="absolute inset-0 z-10 bg-black/45"
+            onClick={toggleSidebar}
+            aria-hidden="true"
+          />
+        )}
+
         {/* 
         左侧边栏区域 (B-1): 负责导航与历史管理
-        宽度支持拖拽调整，并由 Grid 轨道与主区域同步计算
+        桌面端为可拖拽宽度的 Grid 轨道；移动端为覆盖式抽屉。
       */}
         <aside
           ref={asideRef}
           aria-hidden={!isSidebarOpen}
           className={`
-          codex-glass-chrome relative min-w-0 h-full overflow-hidden transition-opacity duration-300 ease-out z-20
-          ${isSidebarOpen ? 'opacity-100' : 'opacity-0 pointer-events-none'}
+          codex-glass-chrome min-w-0 h-full overflow-hidden transition-[opacity,transform] duration-300 ease-out z-20
+          ${isMobilePlatform ? 'absolute inset-y-0 left-0 shadow-2xl' : 'relative'}
+          ${isSidebarOpen ? 'opacity-100 translate-x-0' : 'opacity-0 pointer-events-none -translate-x-full'}
         `}
-          style={{ willChange: 'opacity', zIndex: 20 }}
+          style={{ willChange: 'opacity, transform', zIndex: 20 }}
         >
-          <div ref={sidebarContentRef} className="h-full w-full shrink-0 overflow-hidden" style={{ width: sidebarWidth, minWidth: sidebarWidth }}>
+          <div ref={sidebarContentRef} className="h-full w-full shrink-0 overflow-hidden" style={{ width: sidebarPx, minWidth: sidebarPx }}>
             <Sidebar
               conversations={conversations}
               activeConversationId={selectedConversationId ?? activeConversation?.id ?? null}
-              onSelectConversation={onSelectConversation}
-              onCreateConversation={onCreateConversation}
+              onSelectConversation={handleSelectConversation}
+              onCreateConversation={handleCreateConversation}
               onDeleteConversation={onDeleteConversation}
               onPinConversation={onPinConversation}
               onSearchChange={onSearchConversations}
@@ -466,31 +511,35 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
         {/*
           侧边栏宽度拖拽条：独立于始终裁剪内容的 aside，沿 Grid 分界线移动。
           这样命中区域可以伸入主区，而侧栏内容不会在展开/收缩动画中越过轨道。
+          （桌面端专属）
         */}
-        <div
-          ref={sidebarResizeHandleRef}
-          onMouseDown={startResize}
-          onMouseEnter={() => setIsSidebarResizeHovered(true)}
-          onMouseLeave={() => setIsSidebarResizeHovered(false)}
-          className={`absolute top-0 bottom-0 w-2 z-30 cursor-col-resize bg-transparent transition-[left,opacity] duration-300 ease-out ${
-            isSidebarOpen ? 'opacity-100' : 'opacity-0 pointer-events-none'
-          }`}
-          style={{ left: isSidebarOpen ? sidebarWidth : 0 }}
-          title="拖动调整宽度"
-          aria-hidden={!isSidebarOpen}
-        />
-
+        {!isMobilePlatform && (
+          <div
+            ref={sidebarResizeHandleRef}
+            onMouseDown={startResize}
+            onMouseEnter={() => setIsSidebarResizeHovered(true)}
+            onMouseLeave={() => setIsSidebarResizeHovered(false)}
+            className={`absolute top-0 bottom-0 w-2 z-30 cursor-col-resize bg-transparent transition-[left,opacity] duration-300 ease-out ${
+              isSidebarOpen ? 'opacity-100' : 'opacity-0 pointer-events-none'
+            }`}
+            style={{ left: isSidebarOpen ? sidebarWidth : 0 }}
+            title="拖动调整宽度"
+            aria-hidden={!isSidebarOpen}
+          />
+        )}
         {/* 
         右侧主对话区区域 (C-1): 应用核心交互平面
         占据 Grid 的剩余空间，始终不与侧栏轨道重叠。
         */}
         <main
-          className={`main-chat-shell min-w-0 h-full relative z-0 flex flex-col overflow-hidden bg-linear-bg border-t border-linear-border border-l transition-colors ${
-            isSidebarOpen ? 'rounded-tl-xl' : 'rounded-tl-none'
-          } ${
-            isSidebarResizeHovered || isSidebarResizing
-              ? 'border-l-linear-border-hover'
-              : 'border-l-linear-border'
+          className={`main-chat-shell min-w-0 h-full relative z-0 flex flex-col overflow-hidden bg-linear-bg transition-colors ${
+            isMobilePlatform
+              ? ''
+              : `border-t border-linear-border border-l ${isSidebarOpen ? 'rounded-tl-xl' : 'rounded-tl-none'} ${
+                  isSidebarResizeHovered || isSidebarResizing
+                    ? 'border-l-linear-border-hover'
+                    : 'border-l-linear-border'
+                }`
           }`}
         >
 

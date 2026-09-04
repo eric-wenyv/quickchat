@@ -839,7 +839,7 @@ const MessageContent: React.FC<MessageContentProps> = ({ content, status, activi
       table({ children }) {
         return (
           <div className="my-4 max-w-full overflow-x-auto rounded-lg border border-[rgba(255,255,255,0.12)] bg-[#202020]">
-            <table className="w-full text-sm text-left border-collapse">
+            <table className="w-full min-w-max text-sm text-left border-collapse">
               {children}
             </table>
           </div>
@@ -864,12 +864,12 @@ const MessageContent: React.FC<MessageContentProps> = ({ content, status, activi
 
       th({ children }) {
         return (
-          <th className="px-4 py-3 text-linear-text-primary font-semibold">{children}</th>
+          <th className="whitespace-nowrap px-4 py-3 text-linear-text-primary font-semibold">{children}</th>
         );
       },
 
       td({ children }) {
-        return <td className="px-4 py-3 text-linear-text-body">{children}</td>;
+        return <td className="whitespace-nowrap px-4 py-3 text-linear-text-body">{children}</td>;
       },
     }),
     []

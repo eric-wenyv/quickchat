@@ -1,5 +1,12 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useLayoutEffect } from 'react';
+import { createPortal } from 'react-dom';
 import type { ConversationSummary } from '@/types/types';
+import { isMobilePlatform } from '@/utils/platform';
+
+const MENU_GAP = 6; // 菜单与会话项边缘的间距
+const VIEWPORT_MARGIN = 8; // 菜单距窗口边缘的最小间距
+const LONG_PRESS_DELAY = 500; // 与 MessageBubble 长按手势保持一致
+const LONG_PRESS_MOVE_TOLERANCE = 12;
 
 interface ConversationItemProps {
   conversation: ConversationSummary;
@@ -12,6 +19,8 @@ interface ConversationItemProps {
 /**
  * B-5: 会话项组件 (Linear-style)
  * 历史列表仅展示标题，并保留固定和删除操作。
+ * 右键/长按菜单：y 轴固定在会话项下方，x 轴对齐指针位置，
+ * 通过 portal 渲染到 body 以突破侧栏宽度限制，并按剩余空间自动换向。
  */
 const ConversationItem: React.FC<ConversationItemProps> = ({
   conversation,
@@ -21,38 +30,129 @@ const ConversationItem: React.FC<ConversationItemProps> = ({
   onPin,
 }) => {
   const [showContextMenu, setShowContextMenu] = useState(false);
-  const [menuPos, setMenuPos] = useState({ x: 0, y: 0 });
+  const [anchor, setAnchor] = useState({ x: 0, y: 0 });
+  const [menuPos, setMenuPos] = useState<{ left: number; top: number } | null>(null);
+  const itemRef = useRef<HTMLDivElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
+  const longPressTimer = useRef<number | null>(null);
+  const longPressStartPos = useRef({ x: 0, y: 0 });
+  const suppressClickUntil = useRef(0);
 
-  const handleContextMenu = (e: React.MouseEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setMenuPos({ x: e.clientX, y: e.clientY });
+  const openMenu = (clientX: number, clientY: number) => {
+    setAnchor({ x: clientX, y: clientY });
+    setMenuPos(null); // 等待挂载后测量真实尺寸再定位
     setShowContextMenu(true);
   };
 
+  const closeMenu = () => setShowContextMenu(false);
+
+  // 菜单挂载后测量真实尺寸再定位：
+  // y 固定锚定会话项下方（底部空间不足时翻转到上方），
+  // x 对齐指针（右侧空间不足时向左展开），始终收敛在窗口内。
+  useLayoutEffect(() => {
+    if (!showContextMenu || !menuRef.current) return;
+    const menu = menuRef.current.getBoundingClientRect();
+    const item = itemRef.current?.getBoundingClientRect();
+    let top = (item ? item.bottom : anchor.y) + MENU_GAP;
+    if (top + menu.height > window.innerHeight - VIEWPORT_MARGIN) {
+      top = (item ? item.top : anchor.y) - MENU_GAP - menu.height;
+    }
+    let left = anchor.x;
+    if (left + menu.width > window.innerWidth - VIEWPORT_MARGIN) {
+      left = anchor.x - menu.width;
+    }
+    top = Math.max(VIEWPORT_MARGIN, top);
+    left = Math.max(VIEWPORT_MARGIN, Math.min(left, window.innerWidth - menu.width - VIEWPORT_MARGIN));
+    setMenuPos({ left, top });
+  }, [showContextMenu, anchor]);
+
   useEffect(() => {
     if (!showContextMenu) return;
-    const handleClick = (e: MouseEvent) => {
+    const handlePointerDown = (e: PointerEvent) => {
       if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
-        setShowContextMenu(false);
+        closeMenu();
       }
     };
-    document.addEventListener('mousedown', handleClick);
-    return () => document.removeEventListener('mousedown', handleClick);
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') closeMenu();
+    };
+    const close = () => closeMenu();
+    document.addEventListener('pointerdown', handlePointerDown);
+    document.addEventListener('keydown', handleKeyDown);
+    // 锚点是打开瞬间的快照，列表滚动或窗口缩放后位置失效，直接关闭
+    document.addEventListener('scroll', close, true);
+    window.addEventListener('resize', close);
+    return () => {
+      document.removeEventListener('pointerdown', handlePointerDown);
+      document.removeEventListener('keydown', handleKeyDown);
+      document.removeEventListener('scroll', close, true);
+      window.removeEventListener('resize', close);
+    };
   }, [showContextMenu]);
+
+  // ── 移动端长按 ──
+  // Android WebView 长按会派发 contextmenu（handleContextMenu 中拦截并取消定时器）；
+  // iOS WKWebView 不派发，触摸定时器兜底，两条路径最终都走 openMenu。
+  const cancelLongPress = () => {
+    if (longPressTimer.current) {
+      window.clearTimeout(longPressTimer.current);
+      longPressTimer.current = null;
+    }
+  };
+
+  // 右键：桌面右键菜单 / 移动端长按派发的 contextmenu
+  const handleContextMenu = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    cancelLongPress();
+    openMenu(e.clientX, e.clientY);
+  };
+
+  const handleTouchStart = (e: React.TouchEvent) => {
+    if (!isMobilePlatform) return;
+    const touch = e.touches[0];
+    longPressStartPos.current = { x: touch.clientX, y: touch.clientY };
+    longPressTimer.current = window.setTimeout(() => {
+      longPressTimer.current = null;
+      // 抑制长按结束后系统合成的 click，避免菜单弹出的同时触发会话选中
+      suppressClickUntil.current = Date.now() + 500;
+      openMenu(touch.clientX, touch.clientY);
+    }, LONG_PRESS_DELAY);
+  };
+
+  const handleTouchMove = (e: React.TouchEvent) => {
+    if (!longPressTimer.current) return;
+    const touch = e.touches[0];
+    const dx = touch.clientX - longPressStartPos.current.x;
+    const dy = touch.clientY - longPressStartPos.current.y;
+    if (dx * dx + dy * dy > LONG_PRESS_MOVE_TOLERANCE * LONG_PRESS_MOVE_TOLERANCE) {
+      cancelLongPress();
+    }
+  };
+
+  const handleClick = () => {
+    if (Date.now() < suppressClickUntil.current) return;
+    onSelect();
+  };
+
+  useEffect(() => () => cancelLongPress(), []);
 
   const handleDelete = (e: React.MouseEvent) => {
     e.stopPropagation();
-    setShowContextMenu(false);
+    closeMenu();
     onDelete();
   };
 
   return (
     <>
       <div
-        onClick={onSelect}
+        ref={itemRef}
+        onClick={handleClick}
         onContextMenu={handleContextMenu}
+        onTouchStart={isMobilePlatform ? handleTouchStart : undefined}
+        onTouchMove={isMobilePlatform ? handleTouchMove : undefined}
+        onTouchEnd={isMobilePlatform ? cancelLongPress : undefined}
+        onTouchCancel={isMobilePlatform ? cancelLongPress : undefined}
         className={`
           group relative flex shrink-0 items-center gap-2 px-2.5 py-2 cursor-pointer rounded-md select-none overflow-hidden
           ${isActive
@@ -102,15 +202,15 @@ const ConversationItem: React.FC<ConversationItemProps> = ({
         </div>
       </div>
 
-      {/* 右键上下文菜单 */}
-      {showContextMenu && (
+      {/* 右键/长按上下文菜单：portal 到 body，不受侧栏 overflow/transform 影响 */}
+      {showContextMenu && createPortal(
         <div
           ref={menuRef}
           className="fixed z-[9999] min-w-[140px] bg-linear-bg-elevated backdrop-blur-xl border border-[rgba(255,255,255,0.08)] shadow-linear-highlight rounded-lg py-1.5 animate-in fade-in zoom-in-95 duration-150"
-          style={{ left: menuPos.x, top: menuPos.y }}
+          style={menuPos ?? { visibility: 'hidden' }}
         >
           <button
-            onClick={(e) => { e.stopPropagation(); onPin?.(); setShowContextMenu(false); }}
+            onClick={(e) => { e.stopPropagation(); onPin?.(); closeMenu(); }}
             className="w-full flex items-center gap-2.5 px-3.5 py-2 text-sm text-linear-text-secondary hover:bg-linear-surface transition-colors cursor-pointer"
           >
             <svg width="14" height="14" viewBox="0 0 24 24" fill={conversation.pinned ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -129,7 +229,8 @@ const ConversationItem: React.FC<ConversationItemProps> = ({
             </svg>
             删除对话
           </button>
-        </div>
+        </div>,
+        document.body
       )}
     </>
   );

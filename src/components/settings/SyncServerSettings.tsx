@@ -63,9 +63,6 @@ export const SyncServerSettings: React.FC = () => {
       <div className="flex items-center justify-between">
         <div>
           <h3 className="text-sm font-bold text-linear-text-primary">设备同步</h3>
-          <p className="text-[11px] text-linear-text-tertiary mt-0.5">
-            移动端经局域网连接本机：接收手机端的对话历史，并向其提供模型配置 / Skills
-          </p>
         </div>
         <button
           onClick={() => info && applyConfig(!info.enabled, Number(portDraft) || info.port)}

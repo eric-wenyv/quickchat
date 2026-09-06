@@ -340,6 +340,9 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
 
     /** 触摸起点位于可横向滚动区域（代码块等）或输入控件内时不启用手势，避免与横滑/文本选择冲突 */
     const gestureBlockedByTarget = (target: EventTarget | null): boolean => {
+      // 存在文本选区时不启用手势：横滑会被识别为拖拽选择手柄
+      const sel = window.getSelection();
+      if (sel && !sel.isCollapsed) return true;
       let node = target as HTMLElement | null;
       while (node && node !== document.body) {
         if (node.scrollWidth > node.clientWidth + 1) {

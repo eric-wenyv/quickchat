@@ -12,6 +12,7 @@ import { parseImageDescriptions } from '@/utils/image-description';
 import { stripSkillContext } from '@/utils/skill-context';
 import { normalizeStreamingMarkdown } from '@/utils/markdown';
 import { isRenderableHtmlArtifact, splitRenderableHtmlArtifacts } from '@/utils/artifacts';
+import useCopy from '@/hooks/useCopy';
 import ArtifactFullscreenShell from './ArtifactFullscreenShell';
 import HtmlArtifact from './HtmlArtifact';
 
@@ -159,27 +160,6 @@ const TreeLine: React.FC<{ line: string }> = ({ line }) => {
   }
 
   return <>{parts}</>;
-};
-
-const useCopy = (text: string) => {
-  const [copied, setCopied] = useState(false);
-
-  const copy = useCallback(async () => {
-    try {
-      await navigator.clipboard.writeText(text);
-    } catch {
-      const ta = document.createElement('textarea');
-      ta.value = text;
-      document.body.appendChild(ta);
-      ta.select();
-      document.execCommand('copy');
-      document.body.removeChild(ta);
-    }
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
-  }, [text]);
-
-  return { copied, copy };
 };
 
 const MERMAID_MIN_SCALE = 0.25;
@@ -588,7 +568,7 @@ const CodeBlock: React.FC<{ code: string; language: string }> = React.memo(
     return (
       <div className="not-prose group relative my-4 max-w-full overflow-hidden rounded-lg border border-[rgba(255,255,255,0.12)] bg-[#202020] shadow-linear-highlight">
         {/* Header */}
-        <div className="flex items-center justify-between px-4 py-2 bg-[#343434] border-b border-[rgba(255,255,255,0.1)]">
+        <div data-no-block-select className="flex items-center justify-between px-4 py-2 bg-[#343434] border-b border-[rgba(255,255,255,0.1)]">
           <div className="flex items-center gap-2">
             <span className="text-xs font-medium text-linear-text-tertiary uppercase tracking-wider">
               {displayLang}

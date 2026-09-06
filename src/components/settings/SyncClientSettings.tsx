@@ -64,9 +64,6 @@ export const SyncClientSettings: React.FC = () => {
     <div className="rounded-lg border border-linear-border bg-linear-surface/60 p-4 space-y-3">
       <div>
         <h3 className="text-sm font-bold text-linear-text-primary">设备同步</h3>
-        <p className="text-[11px] text-linear-text-tertiary mt-0.5">
-          连接同一局域网内的桌面端：推送本机对话历史，并拉取桌面端的模型配置 / Skills 与对话历史
-        </p>
       </div>
 
       <div className="flex gap-2">
@@ -97,7 +94,7 @@ export const SyncClientSettings: React.FC = () => {
       </div>
 
       <div>
-        <label className="block text-[11px] text-linear-text-tertiary mb-1">同步 Token（桌面端设置中查看）</label>
+        <label className="block text-[11px] text-linear-text-tertiary mb-1">同步 Token</label>
         <input
           type="text"
           value={config.token}

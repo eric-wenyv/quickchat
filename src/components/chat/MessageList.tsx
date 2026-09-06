@@ -2,6 +2,7 @@ import { useRef, useEffect, useState, useCallback, useLayoutEffect, forwardRef, 
 import type { Message, UUID } from '@/types/types';
 import { useChatScroll } from '@/hooks/useChatScroll';
 import MessageBubble from './MessageBubble';
+import SelectionCopyBar from './SelectionCopyBar';
 
 interface MessageListProps {
   messages: Message[];
@@ -235,6 +236,9 @@ const MessageList = forwardRef<MessageListHandle, MessageListProps>(
           {/* 底部安全占位 */}
           <div className="h-16 w-full flex-shrink-0" aria-hidden="true" />
         </div>
+
+        {/* 移动端选区悬浮复制条（portal 到 body） */}
+        <SelectionCopyBar messages={messages} />
       </div>
     );
   }

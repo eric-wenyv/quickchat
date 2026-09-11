@@ -128,6 +128,110 @@ const isTreeDiagram = (code: string): boolean => {
   return treeLineCount >= 1 && treeLineCount / lines.length >= 0.3;
 };
 
+// ---------------------------------------------------------------------------
+// 流式 Markdown 分块渲染
+// ---------------------------------------------------------------------------
+
+const REMARK_PLUGINS = [remarkGfm, remarkMath, remarkBreaks];
+const REHYPE_PLUGINS = [rehypeKatex];
+const identityUrlTransform = (url: string) => url;
+
+/**
+ * 将 Markdown 按顶层块边界切分为可独立渲染的段，配合 memo 实现
+ * "只重新解析正在增长的末块"——流式期间正文每次变化只需重跑末块的
+ * remark/rehype 管线，前面的块直接命中缓存，长回复不再随篇幅变卡。
+ *
+ * 只在"安全空行"处切断：不处于代码围栏 / $$ 公式块内，且下一非空行
+ * 不是缩进续行、列表项、引用行或表格行——这些结构与前块可能同属一个
+ * Markdown 块（松散列表、跨段引用等），切开会改变渲染语义。
+ */
+const LIST_MARKER_RE = /^(?:[-*+]|\d{1,9}[.)])(?:\s|$)/;
+
+function splitMarkdownBlocks(content: string): string[] {
+  const lines = content.split('\n');
+  const blocks: string[] = [];
+  let current: string[] = [];
+  let fenceMarker: string | null = null;
+  let inMath = false;
+
+  const trySplit = (blankIndex: number) => {
+    if (fenceMarker !== null || inMath) return;
+    let next = '';
+    for (let j = blankIndex + 1; j < lines.length; j++) {
+      if (lines[j].trim() !== '') {
+        next = lines[j];
+        break;
+      }
+    }
+    if (!next) return; // 末尾空行：保留在块尾即可
+    if (/^[ \t]/.test(next)) return; // 缩进续行（列表延续 / 嵌套内容 / 缩进代码）
+    if (LIST_MARKER_RE.test(next)) return; // 列表延续（含松散列表）
+    if (next.startsWith('>')) return; // 跨段引用
+    if (next.startsWith('|')) return; // 表格延续
+    const joined = current.join('\n');
+    if (joined.trim() !== '') blocks.push(joined);
+    current = [];
+  };
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    const trimmed = line.trim();
+
+    if (trimmed === '') {
+      trySplit(i);
+      current.push(line);
+      continue;
+    }
+
+    const fenceMatch = /^ {0,3}(`{3,}|~{3,})/.exec(line);
+    if (fenceMarker === null) {
+      if (fenceMatch) fenceMarker = fenceMatch[1];
+    } else {
+      // CommonMark：闭合围栏必须是同字符、等长或更长、且不带信息字符串的裸围栏
+      const closing = /^ {0,3}(`{3,}|~{3,})[ \t]*$/.exec(line);
+      if (
+        closing &&
+        closing[1][0] === fenceMarker[0] &&
+        closing[1].length >= fenceMarker.length
+      ) {
+        fenceMarker = null;
+      }
+    }
+
+    if (trimmed.startsWith('$$')) {
+      if (inMath) {
+        inMath = false;
+      } else if (!(trimmed.length >= 4 && trimmed.endsWith('$$'))) {
+        inMath = true; // 单行自闭合的 $$...$$ 不进入公式块状态
+      }
+    }
+
+    current.push(line);
+  }
+
+  const tail = current.join('\n');
+  if (tail.trim() !== '') blocks.push(tail);
+  return blocks.length > 0 ? blocks : [''];
+}
+
+interface MarkdownBlockProps {
+  content: string;
+  components: Components;
+}
+
+const MarkdownBlock = React.memo(function MarkdownBlock({ content, components }: MarkdownBlockProps) {
+  return (
+    <ReactMarkdown
+      remarkPlugins={REMARK_PLUGINS}
+      rehypePlugins={REHYPE_PLUGINS}
+      components={components}
+      urlTransform={identityUrlTransform}
+    >
+      {content}
+    </ReactMarkdown>
+  );
+});
+
 const isMermaidDiagramLanguage = (language: string): boolean =>
   ['mermaid', 'mmd'].includes(language.trim().toLowerCase());
 
@@ -359,6 +463,10 @@ const MermaidFullscreenModal: React.FC<{
   );
 };
 
+// Mermaid 渲染是全量布局计算，成本远高于语法高亮；流式期间图源码
+// 一直在增长，等稳定后再渲染，完成后必定出图。
+const MERMAID_RENDER_DEBOUNCE_MS = 400;
+
 const MermaidBlock: React.FC<{ code: string }> = React.memo(({ code }) => {
   const { copied, copy } = useCopy(code);
   const [svg, setSvg] = useState('');
@@ -386,7 +494,7 @@ const MermaidBlock: React.FC<{ code: string }> = React.memo(({ code }) => {
   useEffect(() => {
     let cancelled = false;
 
-    const renderDiagram = async () => {
+    const timer = window.setTimeout(async () => {
       setError(null);
       try {
         const { default: mermaid } = await import('mermaid');
@@ -435,10 +543,12 @@ const MermaidBlock: React.FC<{ code: string }> = React.memo(({ code }) => {
           setError(e instanceof Error ? e.message : '无法渲染 Mermaid 图表');
         }
       }
-    };
+    }, MERMAID_RENDER_DEBOUNCE_MS);
 
-    renderDiagram();
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
   }, [code, isDark, renderId]);
 
   return (
@@ -522,6 +632,10 @@ const MermaidBlock: React.FC<{ code: string }> = React.memo(({ code }) => {
 });
 MermaidBlock.displayName = 'MermaidBlock';
 
+// 流式期间代码块内容高频增长，每次变化都跑一遍 shiki 高亮纯属浪费；
+// 去抖等源码稳定后再高亮（最后一次变更总会触发，完成后必定着色）。
+const SHIKI_HIGHLIGHT_DEBOUNCE_MS = 200;
+
 const CodeBlock: React.FC<{ code: string; language: string }> = React.memo(
   ({ code, language }) => {
     const { copied, copy } = useCopy(code);
@@ -543,7 +657,7 @@ const CodeBlock: React.FC<{ code: string; language: string }> = React.memo(
 
     useEffect(() => {
       let cancelled = false;
-      const highlight = async () => {
+      const timer = window.setTimeout(async () => {
         try {
           // Dynamic import so shiki's orchestrator + oniguruma WASM engine
           // and the requested grammar chunk load on demand instead of being
@@ -557,9 +671,11 @@ const CodeBlock: React.FC<{ code: string; language: string }> = React.memo(
         } catch (e) {
           console.warn('Shiki highlight failed:', e);
         }
+      }, SHIKI_HIGHLIGHT_DEBOUNCE_MS);
+      return () => {
+        cancelled = true;
+        window.clearTimeout(timer);
       };
-      highlight();
-      return () => { cancelled = true; };
     }, [code, language, isDark]);
 
     const displayLang = language || 'text';
@@ -744,9 +860,18 @@ const ActivityPill: React.FC<{ label: string }> = ({ label }) => (
 
 const MessageContent: React.FC<MessageContentProps> = ({ content, status, activity }) => {
   // 先剥离 Skill 上下文注释（/ 命令注入，UI 不显示），再剥离图片描述注释，最后解析文件附件
-  const contentWithoutSkillCtx = stripSkillContext(content);
-  const { text: contentWithoutImgDesc } = parseImageDescriptions(contentWithoutSkillCtx);
-  const { text: textContent, attachments } = parseAttachments(contentWithoutImgDesc);
+  const contentWithoutSkillCtx = useMemo(() => stripSkillContext(content), [content]);
+  const parsedImageDescriptions = useMemo(
+    () => parseImageDescriptions(contentWithoutSkillCtx),
+    [contentWithoutSkillCtx]
+  );
+  const contentWithoutImgDesc = parsedImageDescriptions.text;
+  const parsedAttachments = useMemo(
+    () => parseAttachments(contentWithoutImgDesc),
+    [contentWithoutImgDesc]
+  );
+  const textContent = parsedAttachments.text;
+  const attachments = parsedAttachments.attachments;
   const hasTextContent = textContent.trim() !== '';
   const activityLabel = activity?.label ?? (status === 'streaming' && !hasTextContent ? '思考中...' : null);
   const showActivityOnly = status === 'streaming' && !hasTextContent && Boolean(activityLabel);
@@ -755,6 +880,17 @@ const MessageContent: React.FC<MessageContentProps> = ({ content, status, activi
   const contentSegments = useMemo(
     () => splitRenderableHtmlArtifacts(normalizedTextContent),
     [normalizedTextContent]
+  );
+  // 流式期间按顶层块切分：每次刷新只需重新解析正在增长的末块，
+  // 已完成的块命中 MarkdownBlock 的 memo 直接跳过 remark/rehype 管线。
+  // 完成态整段渲染（引用式链接等跨块语法以完成态为准）。
+  const markdownSegmentBlocks = useMemo(
+    () => contentSegments.map(segment =>
+      segment.type === 'markdown' && status === 'streaming'
+        ? { type: 'markdown' as const, blocks: splitMarkdownBlocks(segment.content) }
+        : { type: 'markdown' as const, blocks: [segment.content] }
+    ),
+    [contentSegments, status]
   );
   const markdownComponents = useMemo<Components>(
     () => ({
@@ -870,18 +1006,13 @@ const MessageContent: React.FC<MessageContentProps> = ({ content, status, activi
                   language={segment.language}
                 />
               ) : (
-                <ReactMarkdown
-                  key={`markdown-${index}`}
-                  remarkPlugins={[remarkGfm, remarkMath, remarkBreaks]}
-                  rehypePlugins={[rehypeKatex]}
-                  components={markdownComponents}
-                  urlTransform={(url) => {
-                    if (url.startsWith('data:')) return url;
-                    return url;
-                  }}
-                >
-                  {segment.content}
-                </ReactMarkdown>
+                markdownSegmentBlocks[index].blocks.map((block, blockIndex) => (
+                  <MarkdownBlock
+                    key={`markdown-${index}-${blockIndex}`}
+                    content={block}
+                    components={markdownComponents}
+                  />
+                ))
               )
             )}
             {attachments.length > 0 && <AttachmentList attachments={attachments} />}

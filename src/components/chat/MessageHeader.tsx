@@ -41,7 +41,7 @@ function generateDefaultTitle(existingTitles: string[]): string {
  * 集成 Windows 风格窗口控制按钮。
  * 标题可点击编辑重命名。
  */
-export const MessageHeader: React.FC<MessageHeaderProps> = ({
+const MessageHeaderImpl: React.FC<MessageHeaderProps> = ({
   conversation,
   tokenStats,
   onRename,
@@ -409,3 +409,6 @@ export const MessageHeader: React.FC<MessageHeaderProps> = ({
     </>
   );
 };
+
+// memo：流式输出期间 tokenStats/回调已稳定化，头部栏可整体跳过重渲染
+export const MessageHeader = React.memo(MessageHeaderImpl);

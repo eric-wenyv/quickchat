@@ -87,6 +87,8 @@ export interface ChatCompletionParams {
   webSearch?: WebSearchOptions;
   thinkingLevel?: 'LOW' | 'MEDIUM' | 'HIGH' | null;
   signal?: AbortSignal;
+  /** 覆盖模型配置的 max_tokens；传 null 表示本次请求不设上限（思考模型烧尽预算时放开） */
+  maxTokens?: number | null;
 }
 
 export interface TokenUsage {
@@ -109,7 +111,7 @@ export interface UrlCitation {
 }
 
 export type ChatCompletionResult =
-  | { type: 'text'; stream: AsyncGenerator<StreamChunk, void, unknown>; reasoningContent: string; usage: TokenUsage | null; citations?: UrlCitation[]; lateToolCalls?: ToolCall[] }
+  | { type: 'text'; stream: AsyncGenerator<StreamChunk, void, unknown>; reasoningContent: string; usage: TokenUsage | null; citations?: UrlCitation[]; lateToolCalls?: ToolCall[]; finishReason?: string | null }
   | { type: 'tool_calls'; toolCalls: ToolCall[]; assistantMessage: string; reasoningContent: string; usage: TokenUsage | null };
 
 // ---------------------------------------------------------------------------
@@ -301,7 +303,8 @@ function buildRequestBody(
   messages: ChatMessage[],
   tools?: ToolDefinition[],
   webSearch?: WebSearchOptions,
-  thinkingLevel?: 'LOW' | 'MEDIUM' | 'HIGH' | null
+  thinkingLevel?: 'LOW' | 'MEDIUM' | 'HIGH' | null,
+  maxTokens?: number | null
 ): unknown {
   // 思考模型官方建议不干预采样参数（temperature/top_p 固定为 1），由推理力度控制行为
   const thinkingEnabled = thinkingLevel != null;
@@ -310,7 +313,8 @@ function buildRequestBody(
     messages,
     stream: true,
     temperature: thinkingEnabled ? 1.0 : model.temperature,
-    max_tokens: model.max_tokens,
+    // maxTokens === null 表示显式不设上限（JSON.stringify 会丢弃 undefined 字段）
+    max_tokens: maxTokens === null ? undefined : (maxTokens ?? model.max_tokens),
     top_p: thinkingEnabled ? 1.0 : model.top_p,
     stream_options: { include_usage: true },
   };
@@ -484,23 +488,29 @@ function applyParsedEvent(acc: SSEAccumulator, parsed: any): void {
   }
 }
 
+// SSE 规范允许 "data:" 与载荷之间没有空格；只认 "data: " 会静默丢弃整行事件
+function sseDataOf(line: string): string | null {
+  const trimmed = line.trim();
+  if (!trimmed.startsWith('data:')) return null;
+  return trimmed.slice(5).trimStart();
+}
+
 async function readNextSSEData(state: SSEReaderState): Promise<string | null> {
   while (true) {
     const newlineIndex = state.buffer.indexOf('\n');
     if (newlineIndex >= 0) {
       const line = state.buffer.slice(0, newlineIndex);
       state.buffer = state.buffer.slice(newlineIndex + 1);
-      const trimmed = line.trim();
-      if (!trimmed.startsWith('data: ')) continue;
-      const data = trimmed.slice(6);
+      const data = sseDataOf(line);
+      if (data === null) continue;
       return data === '[DONE]' ? null : data;
     }
 
     if (state.done) {
       const trimmed = state.buffer.trim();
       state.buffer = '';
-      if (!trimmed.startsWith('data: ')) return null;
-      const data = trimmed.slice(6);
+      const data = sseDataOf(trimmed);
+      if (data === null) return null;
       return data === '[DONE]' ? null : data;
     }
 
@@ -583,9 +593,8 @@ async function* parseTextStream(stream: ReadableStream<Uint8Array>): AsyncGenera
       buffer = lines.pop() || '';
 
       for (const line of lines) {
-        const trimmed = line.trim();
-        if (!trimmed.startsWith('data: ')) continue;
-        const data = trimmed.slice(6);
+        const data = sseDataOf(line);
+        if (data === null) continue;
         if (data === '[DONE]') return;
         try {
           const parsed = JSON.parse(data);
@@ -612,31 +621,28 @@ async function* parseTextStream(stream: ReadableStream<Uint8Array>): AsyncGenera
     }
 
     if (buffer.trim()) {
-      const trimmed = buffer.trim();
-      if (trimmed.startsWith('data: ')) {
-        const data = trimmed.slice(6);
-        if (data !== '[DONE]') {
-          try {
-            const parsed = JSON.parse(data);
-            const delta = parsed.choices?.[0]?.delta?.content;
-            if (typeof delta === 'string') {
-              accumulated += delta;
-              yield { delta, accumulated };
-            }
-            if (parsed.usage) {
-              yield {
-                delta: '',
-                accumulated,
-                usage: {
-                  prompt_tokens: parsed.usage.prompt_tokens ?? parsed.usage.input_tokens ?? 0,
-                  completion_tokens: parsed.usage.completion_tokens ?? parsed.usage.output_tokens ?? 0,
-                  total_tokens: parsed.usage.total_tokens ?? 0,
-                },
-              };
-            }
-          } catch {
-            // ignore
+      const data = sseDataOf(buffer);
+      if (data !== null && data !== '[DONE]') {
+        try {
+          const parsed = JSON.parse(data);
+          const delta = parsed.choices?.[0]?.delta?.content;
+          if (typeof delta === 'string') {
+            accumulated += delta;
+            yield { delta, accumulated };
           }
+          if (parsed.usage) {
+            yield {
+              delta: '',
+              accumulated,
+              usage: {
+                prompt_tokens: parsed.usage.prompt_tokens ?? parsed.usage.input_tokens ?? 0,
+                completion_tokens: parsed.usage.completion_tokens ?? parsed.usage.output_tokens ?? 0,
+                total_tokens: parsed.usage.total_tokens ?? 0,
+              },
+            };
+          }
+        } catch {
+          // ignore
         }
       }
     }
@@ -673,6 +679,7 @@ async function* continueTextStream(
       result.reasoningContent = acc.reasoningContent;
       result.usage = acc.usage;
       result.citations = acc.citations;
+      result.finishReason = acc.finishReason;
 
       if (mixedToolCalls) continue;
 
@@ -692,6 +699,7 @@ async function* continueTextStream(
     result.reasoningContent = acc.reasoningContent;
     result.usage = acc.usage;
     result.citations = acc.citations;
+    result.finishReason = acc.finishReason;
     if (acc.toolCalls.size > 0) {
       result.lateToolCalls = accumulatorToToolCalls(acc);
     }
@@ -704,12 +712,12 @@ async function* continueTextStream(
 // ---------------------------------------------------------------------------
 
 export async function chatCompletion(params: ChatCompletionParams): Promise<ChatCompletionResult> {
-  const { model, messages, tools, webSearch, thinkingLevel, signal } = params;
+  const { model, messages, tools, webSearch, thinkingLevel, signal, maxTokens } = params;
 
   const endpoint = getApiEndpoint(model);
   const url = `${endpoint.replace(/\/$/, '')}/chat/completions`;
   const headers = buildHeaders(model);
-  const body = buildRequestBody(model, messages, tools, webSearch, thinkingLevel);
+  const body = buildRequestBody(model, messages, tools, webSearch, thinkingLevel, maxTokens);
 
   const response = await fetch(url, {
     method: 'POST',
@@ -751,6 +759,7 @@ export async function chatCompletion(params: ChatCompletionParams): Promise<Chat
           reasoningContent: acc.reasoningContent,
           usage: acc.usage,
           citations: acc.citations,
+          finishReason: acc.finishReason,
         };
       }
 

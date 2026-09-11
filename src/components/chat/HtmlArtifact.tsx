@@ -310,4 +310,5 @@ const HtmlArtifact: React.FC<HtmlArtifactProps> = ({ code }) => {
   );
 };
 
-export default HtmlArtifact;
+// memo：流式期间父级高频重渲染，code 未变化的 artifact（iframe/源码视图）应跳过
+export default React.memo(HtmlArtifact);

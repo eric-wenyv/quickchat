@@ -40,7 +40,7 @@ interface ChatInputFooterProps {
  * - 圆角收敛为 8px
  * - 发送按钮改为小圆圈设计
  */
-export const ChatInputFooter: React.FC<ChatInputFooterProps> = ({
+const ChatInputFooterImpl: React.FC<ChatInputFooterProps> = ({
   onSend,
   disabled,
   models,
@@ -431,4 +431,7 @@ const FileIcon: React.FC<{ type: string }> = ({ type }) => {
   }
 };
 
+// memo：流式输出期间各项 props 已稳定化（App 层 useStableCallback），
+// 输入区（含模型/思考程度选择器）可整体跳过重渲染
+export const ChatInputFooter = React.memo(ChatInputFooterImpl);
 export default ChatInputFooter;

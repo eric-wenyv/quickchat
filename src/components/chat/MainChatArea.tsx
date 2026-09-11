@@ -2,6 +2,7 @@ import React, { Suspense, lazy, useState, useMemo, useRef, useCallback, useEffec
 import type { Conversation, Message, ModelConfig, SystemPrompt, UUID } from '@/types/types';
 import { MessageHeader } from './MessageHeader';
 import { useAutoFocusChatInput } from '@/hooks/useAutoFocusChatInput';
+import { useStableCallback } from '@/hooks/useStableCallback';
 
 interface TokenStats {
   totalTokens: number;
@@ -198,6 +199,12 @@ export const MainChatArea: React.FC<MainChatAreaProps> = ({
   }, [activeMessageIndex, messages, onActiveMessageIdChange]);
 
   // ── 当前对话累计 Token 统计 ──
+  // 依赖压缩为 token 相关字段的签名：流式期间 messages 每次刷新都换引用，
+  // 但 token 数值只在消息完成时变化，签名不变即可让 memo 化的头部跳过重渲染。
+  const tokenStatsKey = messages.reduce(
+    (key, m) => `${key}|${m.token_count ?? ''}/${m.input_tokens ?? ''}/${m.output_tokens ?? ''}`,
+    ''
+  );
   const tokenStats: TokenStats = useMemo(() => {
     let totalTokens = 0;
     let totalInput = 0;
@@ -208,7 +215,13 @@ export const MainChatArea: React.FC<MainChatAreaProps> = ({
       if (msg.output_tokens != null) totalOutput += msg.output_tokens;
     }
     return { totalTokens, totalInput, totalOutput };
-  }, [messages]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tokenStatsKey]);
+
+  // 稳定的重命名转发：避免内联箭头函数让 memo 化的 MessageHeader 每轮都重渲染
+  const handleRenameTitle = useStableCallback((newTitle: string) => {
+    if (conversation) onRenameConversation(conversation.id, newTitle);
+  });
 
   const handleNavClick = (userIdx: number) => {
     let userCount = 0;
@@ -247,7 +260,7 @@ export const MainChatArea: React.FC<MainChatAreaProps> = ({
       <MessageHeader
         conversation={conversation}
         tokenStats={tokenStats}
-        onRename={(newTitle) => onRenameConversation(conversation.id, newTitle)}
+        onRename={handleRenameTitle}
         onUpdateSystemPrompt={onUpdateSystemPrompt}
         savedPrompts={systemPrompts}
         onSavePrompt={onSaveSystemPromptPreset}

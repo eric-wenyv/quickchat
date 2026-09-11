@@ -38,6 +38,7 @@ import {
 } from "./services/globalShortcut";
 import { isThreadSending, markThreadIdle, markThreadSending, type ThreadSendingState } from "./utils/threadState";
 import { isDesktopPlatform } from "./utils/platform";
+import { useStableCallback } from "./hooks/useStableCallback";
 import type {
   ConversationSummary,
   Conversation,
@@ -79,6 +80,10 @@ const BUILT_IN_ARTIFACT_PROMPT = [
 
 const CONVERSATION_LIST_LIMIT = 100;
 const MESSAGE_PAGE_SIZE = 120;
+// 流式正文刷入 React 状态的最小间隔。SSE 分片远快于人眼感知，
+// 每帧都触发整棵消息树重渲 + markdown 重解析是流式卡顿的主因；
+// 按该间隔合并刷入可将重渲染频率降低一个数量级，打字机观感不受影响。
+const STREAM_FLUSH_INTERVAL_MS = 80;
 
 // -----------------------------------------------------------------------------
 // 全局 Error Boundary
@@ -203,6 +208,36 @@ export default function App() {
       setMessages(next);
     }
   }, []);
+
+  // 流式增量刷入：rAF 驱动但按 STREAM_FLUSH_INTERVAL_MS 节流。
+  // 未到间隔时保持 pending 并预约下一帧重试，因此最后一次变更总会被刷出。
+  const lastStreamFlushAtRef = useRef(0);
+  const flushPendingStreamUpdates = useCallback(() => {
+    rafRef.current = null;
+    const pendingEntries = Object.entries(pendingUpdatesRef.current);
+    if (pendingEntries.length === 0) return;
+
+    if (performance.now() - lastStreamFlushAtRef.current < STREAM_FLUSH_INTERVAL_MS) {
+      rafRef.current = window.requestAnimationFrame(flushPendingStreamUpdates);
+      return;
+    }
+    lastStreamFlushAtRef.current = performance.now();
+
+    const conversationIds = new Set(
+      pendingEntries
+        .map(([messageId]) => pendingUpdateThreadsRef.current[messageId])
+        .filter((id): id is UUID => Boolean(id))
+    );
+    for (const pendingConversationId of conversationIds) {
+      updateThreadMessages(pendingConversationId, prev => prev.map(msg => {
+        const pending = pendingUpdatesRef.current[msg.id];
+        if (pending !== undefined) {
+          return { ...msg, content: pending, status: 'streaming' as const, activity: pending.trim() ? null : msg.activity };
+        }
+        return msg;
+      }));
+    }
+  }, [updateThreadMessages]);
 
   // 统一的会话排序：置顶优先，再按最后消息时间降序
   const sortConversations = (convs: ConversationSummary[]) =>
@@ -1147,6 +1182,10 @@ export default function App() {
       }
     };
 
+    // 提到 try 外：中断（AbortError）时 catch 分支需要用已累积的正文兜底，
+    // 避免节流间隔内未刷入 UI/DB 的尾部内容丢失
+    let accumulated = '';
+
     try {
       let result = await chatCompletion({
         model: activeModel,
@@ -1215,113 +1254,136 @@ export default function App() {
       };
 
       let toolLoopCount = 0;
-      let accumulated = '';
       let lastUsage: { prompt_tokens: number; completion_tokens: number; total_tokens: number } | null = null;
 
+      // 空正文自动补发一次：上游瞬时返回空 completion、或思考模型把 max_tokens 全部
+      // 耗在推理阶段（finish_reason=length），都表现为"流正常结束但没有正文"——
+      // 这与 API Key 失效不同（那种会在 HTTP 检查处抛"API 请求失败"）。length 截断的
+      // 补发放开 max_tokens 上限；工具轮次的 assistant/tool 历史已在 chatHistory 中，
+      // 补发等价于带着工具结果再要一次正式回答。
+      let generationAttempt = 0;
       while (true) {
-        // 纯工具调用响应：正文尚未流出，直接进入工具循环
-        if (result.type === 'tool_calls') {
-          if (toolLoopCount >= 5) {
-            throw new Error('模型连续触发工具调用超过限制，请重试。');
-          }
-          toolLoopCount++;
+        generationAttempt++;
 
-          chatHistory.push({
-            role: 'assistant',
-            content: result.assistantMessage || '',
-            tool_calls: result.toolCalls,
-            reasoning_content: result.reasoningContent,
-          });
+        while (true) {
+          // 纯工具调用响应：正文尚未流出，直接进入工具循环
+          if (result.type === 'tool_calls') {
+            if (toolLoopCount >= 5) {
+              throw new Error('模型连续触发工具调用超过限制，请重试。');
+            }
+            toolLoopCount++;
 
-          await runToolCalls(result.toolCalls);
-
-          updateThreadMessages(convId, prev => prev.map(msg =>
-            msg.id === aiMsgId
-              ? { ...msg, activity: { kind: 'thinking' as const, label: '思考中...' }, status: 'streaming' as const }
-              : msg
-          ));
-
-          result = await chatCompletion({
-            model: activeModel,
-            messages: chatHistory,
-            tools,
-            webSearch,
-            thinkingLevel: effectiveThinkingLevel,
-            signal: abortController.signal,
-          });
-          continue;
-        }
-
-        // 流式显示文本回复（增量累加：混合响应跨多轮时正文需要拼接）
-        for await (const chunk of result.stream) {
-          accumulated += chunk.delta;
-          pendingUpdatesRef.current[aiMsgId] = accumulated;
-          pendingUpdateThreadsRef.current[aiMsgId] = convId;
-          if (chunk.usage) {
-            lastUsage = chunk.usage;
-          }
-
-          if (!rafRef.current) {
-            rafRef.current = window.requestAnimationFrame(() => {
-              const pendingEntries = Object.entries(pendingUpdatesRef.current);
-              const conversationIds = new Set(
-                pendingEntries
-                  .map(([messageId]) => pendingUpdateThreadsRef.current[messageId])
-                  .filter((id): id is UUID => Boolean(id))
-              );
-              for (const pendingConversationId of conversationIds) {
-                updateThreadMessages(pendingConversationId, prev => prev.map(msg => {
-                  const pending = pendingUpdatesRef.current[msg.id];
-                  if (pending !== undefined) {
-                    return { ...msg, content: pending, status: 'streaming' as const, activity: pending.trim() ? null : msg.activity };
-                  }
-                  return msg;
-                }));
-              }
-              rafRef.current = null;
+            chatHistory.push({
+              role: 'assistant',
+              content: result.assistantMessage || '',
+              tool_calls: result.toolCalls,
+              reasoning_content: result.reasoningContent,
             });
+
+            await runToolCalls(result.toolCalls);
+
+            updateThreadMessages(convId, prev => prev.map(msg =>
+              msg.id === aiMsgId
+                ? { ...msg, activity: { kind: 'thinking' as const, label: '思考中...' }, status: 'streaming' as const }
+                : msg
+            ));
+
+            result = await chatCompletion({
+              model: activeModel,
+              messages: chatHistory,
+              tools,
+              webSearch,
+              thinkingLevel: effectiveThinkingLevel,
+              signal: abortController.signal,
+            });
+            continue;
           }
+
+          // 流式显示文本回复（增量累加：混合响应跨多轮时正文需要拼接）
+          for await (const chunk of result.stream) {
+            accumulated += chunk.delta;
+            pendingUpdatesRef.current[aiMsgId] = accumulated;
+            pendingUpdateThreadsRef.current[aiMsgId] = convId;
+            if (chunk.usage) {
+              lastUsage = chunk.usage;
+            }
+
+            if (rafRef.current === null) {
+              rafRef.current = window.requestAnimationFrame(flushPendingStreamUpdates);
+            }
+          }
+
+          // 混合响应：正文流出后模型又触发了工具调用（GLM 等思考模型会先输出一段
+          // 前言再调工具）。把已流出的正文连同工具调用写回历史并继续工具循环，
+          // 否则工具调用会被静默丢弃、空回复被误报为"返回了空内容"
+          if (result.lateToolCalls && result.lateToolCalls.length > 0) {
+            if (toolLoopCount >= 5) {
+              throw new Error('模型连续触发工具调用超过限制，请重试。');
+            }
+            toolLoopCount++;
+
+            chatHistory.push({
+              role: 'assistant',
+              content: accumulated,
+              tool_calls: result.lateToolCalls,
+              reasoning_content: result.reasoningContent,
+            });
+
+            await runToolCalls(result.lateToolCalls);
+
+            updateThreadMessages(convId, prev => prev.map(msg =>
+              msg.id === aiMsgId
+                ? { ...msg, activity: { kind: 'thinking' as const, label: '思考中...' }, status: 'streaming' as const }
+                : msg
+            ));
+
+            result = await chatCompletion({
+              model: activeModel,
+              messages: chatHistory,
+              tools,
+              webSearch,
+              thinkingLevel: effectiveThinkingLevel,
+              signal: abortController.signal,
+            });
+            continue;
+          }
+          break;
         }
 
-        // 混合响应：正文流出后模型又触发了工具调用（GLM 等思考模型会先输出一段
-        // 前言再调工具）。把已流出的正文连同工具调用写回历史并继续工具循环，
-        // 否则工具调用会被静默丢弃、空回复被误报为"返回了空内容"
-        if (result.lateToolCalls && result.lateToolCalls.length > 0) {
-          if (toolLoopCount >= 5) {
-            throw new Error('模型连续触发工具调用超过限制，请重试。');
-          }
-          toolLoopCount++;
+        if (accumulated.trim() || generationAttempt > 1) break;
 
-          chatHistory.push({
-            role: 'assistant',
-            content: accumulated,
-            tool_calls: result.lateToolCalls,
-            reasoning_content: result.reasoningContent,
-          });
-
-          await runToolCalls(result.lateToolCalls);
-
-          updateThreadMessages(convId, prev => prev.map(msg =>
-            msg.id === aiMsgId
-              ? { ...msg, activity: { kind: 'thinking' as const, label: '思考中...' }, status: 'streaming' as const }
-              : msg
-          ));
-
-          result = await chatCompletion({
-            model: activeModel,
-            messages: chatHistory,
-            tools,
-            webSearch,
-            thinkingLevel: effectiveThinkingLevel,
-            signal: abortController.signal,
-          });
-          continue;
-        }
-        break;
+        accumulated = '';
+        result = await chatCompletion({
+          model: activeModel,
+          messages: chatHistory,
+          tools,
+          webSearch,
+          thinkingLevel: effectiveThinkingLevel,
+          signal: abortController.signal,
+          maxTokens: result.type === 'text' && result.finishReason === 'length' ? null : undefined,
+        });
       }
 
       if (!accumulated.trim()) {
-        throw new Error(`模型 ${activeModel.model_id} 返回了空内容，请检查 API Key 或模型可用性。`);
+        // 补发后仍为空：报真实原因而不是误导性的"检查 API Key"，
+        // 并把已生成的思考内容落库，避免排障线索直接丢失
+        const finishReason = result.type === 'text' ? (result.finishReason ?? null) : null;
+        const reasoning = result.type === 'text' ? result.reasoningContent : '';
+        const completionTokens = lastUsage?.completion_tokens ?? result.usage?.completion_tokens ?? null;
+        if (reasoning.trim()) {
+          await updateMessage(aiMsgId, { reasoning_content: reasoning, status: 'error' });
+        }
+        let hint: string;
+        if (finishReason === 'length') {
+          hint = '输出被 max_tokens 截断（思考阶段耗尽了 Token 上限，放开上限补发后仍为空），请在模型设置中调大最大 Token。';
+        } else if (reasoning.trim()) {
+          hint = `模型只输出了思考内容（${reasoning.length} 字符）而未生成正文，多为上游瞬时故障，请重试。`;
+        } else if (completionTokens === 0) {
+          hint = '上游返回了空回复（completion_tokens=0），多为瞬时故障，请重试。';
+        } else {
+          hint = `模型未返回任何正文（finish_reason=${finishReason ?? '未知'}，completion_tokens=${completionTokens ?? '未知'}）。`;
+        }
+        throw new Error(`模型 ${activeModel.model_id} 返回了空内容：${hint}`);
       }
 
       // 流式完成，更新最终状态
@@ -1394,9 +1456,12 @@ export default function App() {
     } catch (e: any) {
       clearPendingAssistantUpdate();
       if (e.name === 'AbortError' || e.message?.toLowerCase()?.includes('abort')) {
-        // 用户主动中断，保留当前已生成内容并标记完成
-        updateThreadMessages(convId, prev => prev.map(msg => msg.id === aiMsgId ? { ...msg, status: 'completed' as const, activity: null } : msg));
-        await updateMessage(aiMsgId, { status: 'completed' });
+        // 用户主动中断，保留当前已生成内容并标记完成。
+        // 流式刷入有节流间隔，内存里的 msg.content 可能落后于 accumulated，
+        // 用 accumulated 兜底并持久化，避免中断丢失未刷出的尾部（重启后为空）。
+        const abortContent = accumulated || undefined;
+        updateThreadMessages(convId, prev => prev.map(msg => msg.id === aiMsgId ? { ...msg, ...(abortContent !== undefined ? { content: abortContent } : {}), status: 'completed' as const, activity: null } : msg));
+        await updateMessage(aiMsgId, abortContent !== undefined ? { content: abortContent, status: 'completed' } : { status: 'completed' });
       } else {
         console.error(e);
         showToast('AI 流式错误', e.toString(), 'error');
@@ -1494,6 +1559,24 @@ export default function App() {
     await setConfiguredGlobalShortcut(shortcut);
     setGlobalShortcut(shortcut);
   };
+
+  // --- 稳定回调：流式输出期间 messages 高频变化会让上面依赖闭包的 handler
+  // 每次渲染都拿到新引用，击穿 memo 化子组件（侧栏/头部/输入区）的浅比较。
+  // 这里统一包一层恒定引用的转发器，子组件只在真实数据变化时重渲染。
+  const stableSelectConversation = useStableCallback(handleSelectConversation);
+  const stableCreateConversation = useStableCallback(handleCreateConversation);
+  const stableDeleteConversation = useStableCallback(handleDeleteConversation);
+  const stablePinConversation = useStableCallback(handlePinConversation);
+  const stableRenameConversation = useStableCallback(handleRenameConversation);
+  const stableUpdateSystemPrompt = useStableCallback(handleUpdateSystemPrompt);
+  const stableSaveSystemPromptPreset = useStableCallback(handleSaveSystemPromptPreset);
+  const stableDeleteSystemPromptPreset = useStableCallback(handleDeleteSystemPromptPreset);
+  const stableDeleteMessage = useStableCallback(handleDeleteMessage);
+  const stableSendMessage = useStableCallback(handleSendMessage);
+  const stableStopGeneration = useStableCallback(handleStopGeneration);
+  const stableModelSelect = useStableCallback(handleModelSelect);
+  const stableUpdateThinkingLevel = useStableCallback(handleUpdateThinkingLevel);
+  const stableOpenSettings = useStableCallback(() => setShowSettings(true));
 
   // --- 自动创建空对话（就绪后且无活跃会话时）---
   const didAutoCreateRef = useRef(false);
@@ -1614,27 +1697,27 @@ export default function App() {
         isLoadingMoreMessages={isLoadingMoreMessages}
         isSending={isSending}
         hasMoreMessages={hasMoreMessages}
-        onSelectConversation={handleSelectConversation}
-        onCreateConversation={handleCreateConversation}
-        onDeleteConversation={handleDeleteConversation}
-        onPinConversation={handlePinConversation}
-        onRenameConversation={handleRenameConversation}
+        onSelectConversation={stableSelectConversation}
+        onCreateConversation={stableCreateConversation}
+        onDeleteConversation={stableDeleteConversation}
+        onPinConversation={stablePinConversation}
+        onRenameConversation={stableRenameConversation}
         onSearchConversations={setSearchQuery}
         searchQuery={searchQuery}
-        onSendMessage={handleSendMessage}
+        onSendMessage={stableSendMessage}
         onLoadMoreMessages={handleLoadMoreMessages}
-        onModelSelect={handleModelSelect}
-        onUpdateSystemPrompt={handleUpdateSystemPrompt}
+        onModelSelect={stableModelSelect}
+        onUpdateSystemPrompt={stableUpdateSystemPrompt}
         activeThinkingLevel={activeThinkingLevel}
-        onUpdateThinkingLevel={handleUpdateThinkingLevel}
+        onUpdateThinkingLevel={stableUpdateThinkingLevel}
         scrollRestoreMessageId={scrollRestoreMessageId}
         onActiveMessageIdChange={handleActiveMessageIdChange}
-        onOpenSettings={() => setShowSettings(true)}
+        onOpenSettings={stableOpenSettings}
         systemPrompts={systemPrompts}
-        onSaveSystemPromptPreset={handleSaveSystemPromptPreset}
-        onDeleteSystemPromptPreset={handleDeleteSystemPromptPreset}
-        onDeleteMessage={handleDeleteMessage}
-        onStopGeneration={handleStopGeneration}
+        onSaveSystemPromptPreset={stableSaveSystemPromptPreset}
+        onDeleteSystemPromptPreset={stableDeleteSystemPromptPreset}
+        onDeleteMessage={stableDeleteMessage}
+        onStopGeneration={stableStopGeneration}
         showSkills={showSkills}
         onOpenSkills={handleOpenSkills}
         onUseSkill={handleUseSkill}

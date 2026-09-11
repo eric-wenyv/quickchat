@@ -190,7 +190,11 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({ message, onDelete }) => {
       onTouchCancel={IS_MOBILE ? cancelLongPress : undefined}
       className={`flex w-full group px-4 md:px-8 ${isUser ? 'justify-end py-4' : 'py-6'}`}
       style={{
-        animation: 'message-enter 0.25s var(--ease-snappy) both',
+        // 不能用 fill:both：结束后残留的 transform 会让行永久成为独立
+        // stacking context，后一行会盖住悬浮操作条溢出行外的部分，
+        // 导致按钮下半截 hover/点击全部失效。终帧与静态样式一致，
+        // 去掉 fill 后动画结束时 transform 归为 none，视觉无变化。
+        animation: 'message-enter 0.25s var(--ease-snappy)',
       }}
     >
       <div
@@ -231,7 +235,9 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({ message, onDelete }) => {
         {showActions && (
           <div
             className={`flex items-center gap-0.5 ${isUser ? 'justify-end' : 'justify-start'} ${
-              overlayActions ? 'absolute top-full inset-x-0 mt-1 z-10' : 'mt-1.5'
+              overlayActions
+                ? 'absolute top-full inset-x-0 mt-1 z-10 px-1 -mx-1 pb-1'
+                : 'mt-1.5'
             } ${
               !IS_MOBILE
                 ? // 保持可命中：按钮悬浮在行盒下方的空隙里，需能从下方直接 hover 唤出；
@@ -281,4 +287,7 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({ message, onDelete }) => {
   );
 };
 
-export default MessageBubble;
+// memo：流式输出期间 messages 数组高频更新，但未变化的消息对象保持原引用
+// （updateThreadMessages 只替换目标消息），memo 让历史消息完全跳过重渲染，
+// 避免每轮刷新都对全部历史消息重新执行 markdown 解析。
+export default React.memo(MessageBubble);

@@ -132,4 +132,6 @@ const Sidebar: React.FC<SidebarProps> = ({
   );
 };
 
-export default Sidebar;
+// memo：流式输出期间 App 高频重渲染，但侧栏数据（conversations 等）不变，
+// 配合 App 层稳定化的回调 props，让整个会话列表跳过重渲染。
+export default React.memo(Sidebar);

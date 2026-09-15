@@ -2,7 +2,7 @@
 // Quick-Chat — 统一 AI Service（OpenAI 兼容格式 + Tool Calling）
 // =============================================================================
 
-import type { ModelConfig } from '@/types/types';
+import type { ModelConfig, ThinkingEfforts } from '@/types/types';
 
 // ---------------------------------------------------------------------------
 // 常量
@@ -85,7 +85,8 @@ export interface ChatCompletionParams {
   messages: ChatMessage[];
   tools?: ToolDefinition[];
   webSearch?: WebSearchOptions;
-  thinkingLevel?: 'LOW' | 'MEDIUM' | 'HIGH' | null;
+  /** 思考强度档位（模型支持的档位字符串，如 low/high/max；null 表示不干预） */
+  thinkingLevel?: string | null;
   signal?: AbortSignal;
   /** 覆盖模型配置的 max_tokens；传 null 表示本次请求不设上限（思考模型烧尽预算时放开） */
   maxTokens?: number | null;
@@ -213,6 +214,53 @@ export function getWebSearchOptions(model: ModelConfig): WebSearchOptions {
   return { enabled: false, mode: 'disabled' };
 }
 
+// ---------------------------------------------------------------------------
+// 思考强度元数据（OpenRouter 官方模型接口）
+// ---------------------------------------------------------------------------
+
+/** OpenRouter 拒绝不支持的思考档位时抛出，调用方据此重拉档位并提示用户重新选择 */
+export class ReasoningEffortError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'ReasoningEffortError';
+  }
+}
+
+/** 思考强度缓存的 key：OpenRouter 模型即官方 slug */
+export function thinkingEffortsKey(model: ModelConfig): string {
+  return `${model.provider}:${model.model_id}`;
+}
+
+const OPENROUTER_MODELS_URL = 'https://openrouter.ai/api/v1/models';
+
+/**
+ * 从 OpenRouter 官方模型接口获取指定模型支持的思考强度。
+ * 仅 provider 为 openrouter 的模型可查（model_id 即官方 slug）。
+ * 返回 null 表示 OpenRouter 上不存在该模型；efforts 为空数组表示不支持选择档位。
+ * 两种情况 UI 都应隐藏思考强度选择器。
+ */
+export async function fetchModelThinkingEfforts(model: ModelConfig): Promise<ThinkingEfforts | null> {
+  if (model.provider !== 'openrouter') return null;
+
+  const response = await fetch(OPENROUTER_MODELS_URL);
+  if (!response.ok) {
+    throw new Error(`获取 OpenRouter 模型元数据失败 (${response.status}): ${response.statusText}`);
+  }
+
+  const json = await response.json();
+  const entry = Array.isArray(json?.data) ? json.data.find((m: any) => m?.id === model.model_id) : null;
+  if (!entry) return null;
+
+  const reasoning = entry.reasoning;
+  const efforts = Array.isArray(reasoning?.supported_efforts)
+    ? reasoning.supported_efforts.filter((e: unknown): e is string => typeof e === 'string' && e.length > 0)
+    : [];
+  return {
+    efforts,
+    defaultEffort: typeof reasoning?.default_effort === 'string' ? reasoning.default_effort : null,
+  };
+}
+
 export function buildOpenRouterWebSearchTool(): OpenRouterWebSearchTool {
   return {
     type: 'openrouter:web_search',
@@ -303,7 +351,7 @@ function buildRequestBody(
   messages: ChatMessage[],
   tools?: ToolDefinition[],
   webSearch?: WebSearchOptions,
-  thinkingLevel?: 'LOW' | 'MEDIUM' | 'HIGH' | null,
+  thinkingLevel?: string | null,
   maxTokens?: number | null
 ): unknown {
   // 思考模型官方建议不干预采样参数（temperature/top_p 固定为 1），由推理力度控制行为
@@ -734,7 +782,13 @@ export async function chatCompletion(params: ChatCompletionParams): Promise<Chat
     } catch {
       errorText = await response.text();
     }
-    throw new Error(`API 请求失败 (${response.status}): ${errorText || response.statusText}`);
+    const detail = errorText || response.statusText;
+    // OpenRouter 拒绝不支持的思考档位时返回 400，错误信息会点名 reasoning/effort；
+    // 单独识别出来，调用方据此重拉档位缓存并提示用户重新选择
+    if (response.status === 400 && /reasoning|effort/i.test(detail)) {
+      throw new ReasoningEffortError(`模型 ${model.model_id} 不支持当前思考强度: ${detail}`);
+    }
+    throw new Error(`API 请求失败 (${response.status}): ${detail}`);
   }
 
   if (!response.body) {

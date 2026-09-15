@@ -18,8 +18,12 @@ interface ChatInputFooterProps {
   activeModelId: UUID;
   onModelSelect: (id: UUID) => void;
   /** 当前会话的 thinking_level（per-conversation） */
-  thinkingLevel: 'LOW' | 'MEDIUM' | 'HIGH' | null;
-  onUpdateThinkingLevel: (level: 'LOW' | 'MEDIUM' | 'HIGH' | null) => void;
+  thinkingLevel: string | null;
+  onUpdateThinkingLevel: (level: string | null) => void;
+  /** 当前模型支持的思考强度档位；null/空时隐藏选择器 */
+  thinkingEfforts: string[] | null;
+  /** 模型默认思考强度（未选择时的生效值） */
+  defaultThinkingEffort?: string | null;
   /** 外部拖入的文件 */
   droppedFiles?: File[];
   /** 文件放下版本号（用于触发 useEffect 重新处理） */
@@ -48,6 +52,8 @@ const ChatInputFooterImpl: React.FC<ChatInputFooterProps> = ({
   onModelSelect,
   thinkingLevel,
   onUpdateThinkingLevel,
+  thinkingEfforts,
+  defaultThinkingEffort,
   droppedFiles,
   dropVersion,
   isSending,
@@ -325,9 +331,9 @@ const ChatInputFooterImpl: React.FC<ChatInputFooterProps> = ({
                 onSelect={onModelSelect}
               />
               <ThinkingLevelSelector
-                models={models}
-                activeModelId={activeModelId}
+                efforts={thinkingEfforts}
                 thinkingLevel={thinkingLevel}
+                defaultEffort={defaultThinkingEffort}
                 onUpdateThinkingLevel={onUpdateThinkingLevel}
               />
             </div>

@@ -7,7 +7,9 @@
     "dev": "tauri dev",
     "dev:fresh": "VITE_FRESH_DB=1 QUICK_CHAT_DEV_DB=1 tauri dev",
     "dev:web": "vite",
-    "build": "cd archlinux && makepkg -f --nodeps -si && cd .. && npm run tauri build",
+    "build": "npm run tauri build",
+    "build:android": "tauri android build --apk",
+    "build:arch": "cd archlinux && makepkg -f --nodeps -si && cd ..",
     "build:web": "tsc && vite build",
     "preview": "vite preview",
     "tauri": "tauri"

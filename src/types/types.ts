@@ -48,8 +48,8 @@ export interface Conversation {
   model_id: string;
   /** 系统提示词（可选） */
   system_prompt: string | null;
-  /** 思考模式级别 (Gemini 3.x: LOW/MEDIUM/HIGH)，per-conversation 独立保存 */
-  thinking_level: 'LOW' | 'MEDIUM' | 'HIGH' | null;
+  /** 思考强度（per-conversation 独立保存；取值为模型支持的档位，如 low/high/max，Gemini 为 LOW/MEDIUM/HIGH） */
+  thinking_level: string | null;
   /** 上次查看的消息 ID（用于切换会话时恢复滚动位置） */
   last_viewed_message_id: UUID | null;
   created_at: EpochMillis;
@@ -163,14 +163,22 @@ export interface ModelConfig {
   max_tokens: number;
   /** Top-P 采样参数 0.0 ~ 1.0 */
   top_p: number;
-  /** 思考模式级别 (Gemini 3.x: LOW/MEDIUM/HIGH) */
-  thinking_level: 'LOW' | 'MEDIUM' | 'HIGH' | null;
+  /** 上次使用的思考强度（供新对话继承；取值为模型支持的档位字符串） */
+  thinking_level: string | null;
   /** 是否支持图片输入（vision） */
   supports_vision: boolean;
   /** 是否为当前激活的默认模型 */
   is_default: boolean;
   created_at: EpochMillis;
   updated_at: EpochMillis;
+}
+
+/** 模型支持的思考强度元数据（来自 OpenRouter 官方模型接口，本地持久化缓存） */
+export interface ThinkingEfforts {
+  /** 可选档位列表，如 ["max", "high", "low"]；空数组表示不支持选择档位 */
+  efforts: string[];
+  /** OpenRouter 标注的默认档位（未选择时实际生效的值），可能为 null */
+  defaultEffort: string | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -190,7 +198,7 @@ export interface UpdateConversationPayload {
   title?: string;
   model_id?: string;
   system_prompt?: string | null;
-  thinking_level?: 'LOW' | 'MEDIUM' | 'HIGH' | null;
+  thinking_level?: string | null;
   last_viewed_message_id?: UUID | null;
 }
 

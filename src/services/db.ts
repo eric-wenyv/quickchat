@@ -11,6 +11,7 @@ import type {
   Message,
   ModelConfig,
   SystemPrompt,
+  ThinkingEfforts,
   UUID,
   EpochMillis,
 } from '@/types/types';
@@ -318,6 +319,17 @@ export async function initDatabase(): Promise<void> {
       ON model_configs(provider, model_id);
   `);
   await ensureModelColumns(db);
+
+  // 思考强度缓存表：档位元数据来自 OpenRouter 官方模型接口，变更极少，
+  // 拉取成功后直接持久化；模型档位变化时由 API 报错触发重拉覆盖
+  await db.execute(`
+    CREATE TABLE IF NOT EXISTS thinking_efforts_cache (
+      model_key      TEXT PRIMARY KEY NOT NULL,
+      efforts        TEXT NOT NULL,
+      default_effort TEXT DEFAULT NULL,
+      updated_at     INTEGER NOT NULL
+    );
+  `);
 }
 
 export async function runDatabaseMaintenance(): Promise<void> {
@@ -523,11 +535,10 @@ export async function getModelConfigs(): Promise<ModelConfig[]> {
 
   return rows.map(r => {
     const isGemini3 = r.model_id.includes('gemini-3');
-    // 从 DB 读取 thinking_level；旧数据 fallback 到 Gemini 3.x 默认 MEDIUM
-    let thinkingLevel: 'LOW' | 'MEDIUM' | 'HIGH' | null = null;
-    if (r.thinking_level === 'LOW' || r.thinking_level === 'MEDIUM' || r.thinking_level === 'HIGH') {
-      thinkingLevel = r.thinking_level;
-    } else if (isGemini3) {
+    // 从 DB 读取 thinking_level（动态档位字符串，如 low/high/max）；
+    // 旧数据为空时 Gemini 3.x fallback 到 MEDIUM
+    let thinkingLevel: string | null = r.thinking_level || null;
+    if (!thinkingLevel && isGemini3) {
       thinkingLevel = 'MEDIUM';
     }
     return {
@@ -627,6 +638,46 @@ export async function deleteModelConfig(id: UUID): Promise<void> {
 }
 
 // ---------------------------------------------------------------------------
+// 思考强度缓存（OpenRouter 模型档位元数据）
+// ---------------------------------------------------------------------------
+
+/** 启动时整表加载缓存；model_key 对 OpenRouter 为模型 slug（provider:model_id） */
+export async function getThinkingEffortsCache(): Promise<Record<string, ThinkingEfforts>> {
+  const db = await getDb();
+  const rows = await db.select<{ model_key: string; efforts: string; default_effort: string | null }[]>(
+    'SELECT model_key, efforts, default_effort FROM thinking_efforts_cache'
+  );
+  const cache: Record<string, ThinkingEfforts> = {};
+  for (const row of rows) {
+    try {
+      const efforts = JSON.parse(row.efforts);
+      if (Array.isArray(efforts)) {
+        cache[row.model_key] = {
+          efforts: efforts.filter((e): e is string => typeof e === 'string'),
+          defaultEffort: row.default_effort || null,
+        };
+      }
+    } catch {
+      // 损坏的缓存行直接跳过，下次使用时会重新拉取
+    }
+  }
+  return cache;
+}
+
+export async function saveThinkingEffortsCache(modelKey: string, efforts: ThinkingEfforts): Promise<void> {
+  const db = await getDb();
+  await db.execute(
+    `INSERT INTO thinking_efforts_cache (model_key, efforts, default_effort, updated_at)
+     VALUES (?, ?, ?, ?)
+     ON CONFLICT(model_key) DO UPDATE SET
+       efforts = excluded.efforts,
+       default_effort = excluded.default_effort,
+       updated_at = excluded.updated_at`,
+    [modelKey, JSON.stringify(efforts.efforts), efforts.defaultEffort, Date.now()]
+  );
+}
+
+// ---------------------------------------------------------------------------
 // 会话 (Conversation)
 // ---------------------------------------------------------------------------
 
@@ -654,11 +705,8 @@ export async function getConversation(id: UUID): Promise<Conversation | null> {
 
   if (!rows[0]) return null;
   const r = rows[0];
-  // 验证 thinking_level 值，只接受合法枚举
-  const validLevels = ['LOW', 'MEDIUM', 'HIGH'] as const;
-  const thinkingLevel = r.thinking_level && (validLevels as readonly string[]).includes(r.thinking_level)
-    ? (r.thinking_level as 'LOW' | 'MEDIUM' | 'HIGH')
-    : null;
+  // thinking_level 为动态档位字符串（如 low/high/max），保留任意非空值
+  const thinkingLevel: string | null = r.thinking_level || null;
 
   return {
     id: r.id,

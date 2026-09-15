@@ -37,9 +37,13 @@ interface MainChatAreaProps {
   /** 更新系统提示词回调 */
   onUpdateSystemPrompt: (prompt: string | null) => void;
   /** 当前会话的 thinking_level（per-conversation） */
-  thinkingLevel: 'LOW' | 'MEDIUM' | 'HIGH' | null;
+  thinkingLevel: string | null;
   /** 更新思考程度回调（per-conversation） */
-  onUpdateThinkingLevel: (level: 'LOW' | 'MEDIUM' | 'HIGH' | null) => void;
+  onUpdateThinkingLevel: (level: string | null) => void;
+  /** 当前模型支持的思考强度档位；null/空时隐藏选择器 */
+  thinkingEfforts: string[] | null;
+  /** 模型默认思考强度（未选择时的生效值） */
+  defaultThinkingEffort?: string | null;
   /** 切换会话后需要恢复滚动到的消息 ID */
   scrollRestoreMessageId: UUID | null;
   /** 活跃消息 ID 变化回调（用于保存滚动位置） */
@@ -99,6 +103,8 @@ export const MainChatArea: React.FC<MainChatAreaProps> = ({
   onUpdateSystemPrompt,
   thinkingLevel,
   onUpdateThinkingLevel,
+  thinkingEfforts,
+  defaultThinkingEffort,
   scrollRestoreMessageId,
   onActiveMessageIdChange,
   systemPrompts,
@@ -289,6 +295,8 @@ export const MainChatArea: React.FC<MainChatAreaProps> = ({
                     onModelSelect={onModelSelect}
                     thinkingLevel={thinkingLevel}
                     onUpdateThinkingLevel={onUpdateThinkingLevel}
+                    thinkingEfforts={thinkingEfforts}
+                    defaultThinkingEffort={defaultThinkingEffort}
                     droppedFiles={droppedFiles}
                     dropVersion={dropVersion}
                     isSending={isSending}
@@ -447,6 +455,8 @@ export const MainChatArea: React.FC<MainChatAreaProps> = ({
                   onModelSelect={onModelSelect}
                   thinkingLevel={thinkingLevel}
                   onUpdateThinkingLevel={onUpdateThinkingLevel}
+                  thinkingEfforts={thinkingEfforts}
+                  defaultThinkingEffort={defaultThinkingEffort}
                   droppedFiles={droppedFiles}
                   dropVersion={dropVersion}
                   isSending={isSending}

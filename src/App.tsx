@@ -154,6 +154,8 @@ export default function App() {
   const [toast, setToast] = useState<{ id: number, title: string, desc?: string, type: "error" | "success" } | null>(null);
 
   const pendingUpdatesRef = useRef<Record<UUID, string>>({});
+  // 思考增量与正文增量并行刷入：reasoning 先于 content 到达，正文未流出时也要驱动 rAF
+  const pendingReasoningRef = useRef<Record<UUID, string>>({});
   const pendingUpdateThreadsRef = useRef<Record<UUID, UUID>>({});
   const rafRef = useRef<number | null>(null);
   const abortControllersRef = useRef<Record<UUID, AbortController>>({});
@@ -219,8 +221,9 @@ export default function App() {
   const lastStreamFlushAtRef = useRef(0);
   const flushPendingStreamUpdates = useCallback(() => {
     rafRef.current = null;
-    const pendingEntries = Object.entries(pendingUpdatesRef.current);
-    if (pendingEntries.length === 0) return;
+    const contentEntries = Object.entries(pendingUpdatesRef.current);
+    const reasoningEntries = Object.entries(pendingReasoningRef.current);
+    if (contentEntries.length === 0 && reasoningEntries.length === 0) return;
 
     if (performance.now() - lastStreamFlushAtRef.current < STREAM_FLUSH_INTERVAL_MS) {
       rafRef.current = window.requestAnimationFrame(flushPendingStreamUpdates);
@@ -228,18 +231,23 @@ export default function App() {
     }
     lastStreamFlushAtRef.current = performance.now();
 
-    const conversationIds = new Set(
-      pendingEntries
-        .map(([messageId]) => pendingUpdateThreadsRef.current[messageId])
-        .filter((id): id is UUID => Boolean(id))
-    );
+    const conversationIds = new Set<UUID>();
+    for (const messageId of [...contentEntries, ...reasoningEntries].map(([id]) => id)) {
+      const convId = pendingUpdateThreadsRef.current[messageId];
+      if (convId) conversationIds.add(convId);
+    }
     for (const pendingConversationId of conversationIds) {
       updateThreadMessages(pendingConversationId, prev => prev.map(msg => {
-        const pending = pendingUpdatesRef.current[msg.id];
-        if (pending !== undefined) {
-          return { ...msg, content: pending, status: 'streaming' as const, activity: pending.trim() ? null : msg.activity };
-        }
-        return msg;
+        const pendingContent = pendingUpdatesRef.current[msg.id];
+        const pendingReasoning = pendingReasoningRef.current[msg.id];
+        if (pendingContent === undefined && pendingReasoning === undefined) return msg;
+        return {
+          ...msg,
+          ...(pendingContent !== undefined
+            ? { content: pendingContent, status: 'streaming' as const, activity: pendingContent.trim() ? null : msg.activity }
+            : {}),
+          ...(pendingReasoning !== undefined ? { reasoning_content: pendingReasoning } : {}),
+        };
       }));
     }
   }, [updateThreadMessages]);
@@ -1089,6 +1097,7 @@ export default function App() {
       role: 'assistant',
       content: '',
       reasoning_content: null,
+      thinking_ms: null,
       status: 'streaming',
       token_count: null,
       input_tokens: null,
@@ -1225,8 +1234,9 @@ export default function App() {
     abortControllersRef.current[convId] = abortController;
     const clearPendingAssistantUpdate = () => {
       delete pendingUpdatesRef.current[aiMsgId];
+      delete pendingReasoningRef.current[aiMsgId];
       delete pendingUpdateThreadsRef.current[aiMsgId];
-      if (rafRef.current !== null && Object.keys(pendingUpdatesRef.current).length === 0) {
+      if (rafRef.current !== null && Object.keys(pendingUpdatesRef.current).length === 0 && Object.keys(pendingReasoningRef.current).length === 0) {
         window.cancelAnimationFrame(rafRef.current);
         rafRef.current = null;
       }
@@ -1235,6 +1245,24 @@ export default function App() {
     // 提到 try 外：中断（AbortError）时 catch 分支需要用已累积的正文兜底，
     // 避免节流间隔内未刷入 UI/DB 的尾部内容丢失
     let accumulated = '';
+    // 思考内容追踪：跨工具轮次累计（每轮 chatCompletion 的 reasoning 分片都经
+    // onReasoningDelta 汇入），耗时取"首个思考分片 → 首个正文分片"的间隔
+    let accumulatedReasoning = '';
+    let reasoningStartAt: number | null = null;
+    let thinkingMs: number | null = null;
+    const handleReasoningDelta = (delta: string) => {
+      if (!delta) return;
+      if (reasoningStartAt === null) reasoningStartAt = performance.now();
+      accumulatedReasoning += delta;
+      pendingReasoningRef.current[aiMsgId] = accumulatedReasoning;
+      pendingUpdateThreadsRef.current[aiMsgId] = convId;
+      if (rafRef.current === null) {
+        rafRef.current = window.requestAnimationFrame(flushPendingStreamUpdates);
+      }
+    };
+    // 思考结束兜底：正文从未流出（空回复/中断）时按"首个思考分片 → 当前"计耗时
+    const resolveThinkingMs = (): number | null =>
+      thinkingMs ?? (reasoningStartAt !== null ? performance.now() - reasoningStartAt : null);
 
     try {
       let result = await chatCompletion({
@@ -1244,6 +1272,7 @@ export default function App() {
         webSearch,
         thinkingLevel: effectiveThinkingLevel,
         signal: abortController.signal,
+        onReasoningDelta: handleReasoningDelta,
       });
 
       const TOOL_LABELS: Record<string, string> = {
@@ -1345,6 +1374,7 @@ export default function App() {
               webSearch,
               thinkingLevel: effectiveThinkingLevel,
               signal: abortController.signal,
+              onReasoningDelta: handleReasoningDelta,
             });
             continue;
           }
@@ -1352,6 +1382,13 @@ export default function App() {
           // 流式显示文本回复（增量累加：混合响应跨多轮时正文需要拼接）
           for await (const chunk of result.stream) {
             accumulated += chunk.delta;
+            // 首个正文分片到达即思考阶段结束：固化耗时供 ThinkingBlock 展示
+            if (chunk.delta && thinkingMs === null && reasoningStartAt !== null) {
+              thinkingMs = performance.now() - reasoningStartAt;
+              updateThreadMessages(convId, prev => prev.map(msg =>
+                msg.id === aiMsgId ? { ...msg, thinking_ms: thinkingMs } : msg
+              ));
+            }
             pendingUpdatesRef.current[aiMsgId] = accumulated;
             pendingUpdateThreadsRef.current[aiMsgId] = convId;
             if (chunk.usage) {
@@ -1394,6 +1431,7 @@ export default function App() {
               webSearch,
               thinkingLevel: effectiveThinkingLevel,
               signal: abortController.signal,
+              onReasoningDelta: handleReasoningDelta,
             });
             continue;
           }
@@ -1411,6 +1449,7 @@ export default function App() {
           thinkingLevel: effectiveThinkingLevel,
           signal: abortController.signal,
           maxTokens: result.type === 'text' && result.finishReason === 'length' ? null : undefined,
+          onReasoningDelta: handleReasoningDelta,
         });
       }
 
@@ -1418,10 +1457,16 @@ export default function App() {
         // 补发后仍为空：报真实原因而不是误导性的"检查 API Key"，
         // 并把已生成的思考内容落库，避免排障线索直接丢失
         const finishReason = result.type === 'text' ? (result.finishReason ?? null) : null;
-        const reasoning = result.type === 'text' ? result.reasoningContent : '';
+        const reasoning = accumulatedReasoning || (result.type === 'text' ? result.reasoningContent : '');
         const completionTokens = lastUsage?.completion_tokens ?? result.usage?.completion_tokens ?? null;
         if (reasoning.trim()) {
-          await updateMessage(aiMsgId, { reasoning_content: reasoning, status: 'error' });
+          const emptyReplyThinkingMs = resolveThinkingMs();
+          await updateMessage(aiMsgId, { reasoning_content: reasoning, thinking_ms: emptyReplyThinkingMs, status: 'error' });
+          updateThreadMessages(convId, prev => prev.map(msg =>
+            msg.id === aiMsgId
+              ? { ...msg, reasoning_content: reasoning, thinking_ms: emptyReplyThinkingMs, status: 'error' as const, activity: null }
+              : msg
+          ));
         }
         let hint: string;
         if (finishReason === 'length') {
@@ -1442,10 +1487,13 @@ export default function App() {
       const inputTokens = lastUsage?.prompt_tokens ?? result.usage?.prompt_tokens ?? null;
       const outputTokens = lastUsage?.completion_tokens ?? result.usage?.completion_tokens ?? null;
       const finalContent = appendCitationList(accumulated, result.citations);
+      const finalReasoning = accumulatedReasoning || (result.type === 'text' ? result.reasoningContent : '') || null;
+      const finalThinkingMs = resolveThinkingMs();
       const finalMsg: Message = {
         ...aiMsg,
         content: finalContent,
-        reasoning_content: result.reasoningContent,
+        reasoning_content: finalReasoning,
+        thinking_ms: finalThinkingMs,
         status: 'completed',
         token_count: tokenCount,
         input_tokens: inputTokens,
@@ -1456,7 +1504,8 @@ export default function App() {
       updateThreadMessages(convId, prev => prev.map(msg => msg.id === aiMsgId ? finalMsg : msg));
       await updateMessage(aiMsgId, {
         content: finalContent,
-        reasoning_content: result.reasoningContent,
+        reasoning_content: finalReasoning,
+        thinking_ms: finalThinkingMs,
         status: 'completed',
         token_count: tokenCount,
         input_tokens: inputTokens,
@@ -1510,8 +1559,17 @@ export default function App() {
         // 流式刷入有节流间隔，内存里的 msg.content 可能落后于 accumulated，
         // 用 accumulated 兜底并持久化，避免中断丢失未刷出的尾部（重启后为空）。
         const abortContent = accumulated || undefined;
-        updateThreadMessages(convId, prev => prev.map(msg => msg.id === aiMsgId ? { ...msg, ...(abortContent !== undefined ? { content: abortContent } : {}), status: 'completed' as const, activity: null } : msg));
-        await updateMessage(aiMsgId, abortContent !== undefined ? { content: abortContent, status: 'completed' } : { status: 'completed' });
+        const abortReasoning = accumulatedReasoning || null;
+        const abortThinkingMs = resolveThinkingMs();
+        const abortPatch = {
+          ...(abortContent !== undefined ? { content: abortContent } : {}),
+          ...(abortReasoning !== null ? { reasoning_content: abortReasoning } : {}),
+          ...(abortThinkingMs !== null ? { thinking_ms: abortThinkingMs } : {}),
+        };
+        updateThreadMessages(convId, prev => prev.map(msg =>
+          msg.id === aiMsgId ? { ...msg, ...abortPatch, status: 'completed' as const, activity: null } : msg
+        ));
+        await updateMessage(aiMsgId, { ...abortPatch, status: 'completed' });
       } else if (e instanceof ReasoningEffortError) {
         clearPendingAssistantUpdate();
         console.error(e);
@@ -1544,8 +1602,17 @@ export default function App() {
       } else {
         console.error(e);
         showToast('AI 流式错误', e.toString(), 'error');
-        updateThreadMessages(convId, prev => prev.map(msg => msg.id === aiMsgId ? { ...msg, status: 'error' as const, activity: null } : msg));
-        await updateMessage(aiMsgId, { status: 'error' });
+        // 已生成的思考内容同样兜底落库，便于排障与回看
+        const errorReasoning = accumulatedReasoning || null;
+        const errorThinkingMs = resolveThinkingMs();
+        const errorPatch = {
+          ...(errorReasoning !== null ? { reasoning_content: errorReasoning } : {}),
+          ...(errorThinkingMs !== null ? { thinking_ms: errorThinkingMs } : {}),
+        };
+        updateThreadMessages(convId, prev => prev.map(msg =>
+          msg.id === aiMsgId ? { ...msg, ...errorPatch, status: 'error' as const, activity: null } : msg
+        ));
+        await updateMessage(aiMsgId, { ...errorPatch, status: 'error' });
       }
     } finally {
       setSendingByConversationId(prev => markThreadIdle(prev, convId));

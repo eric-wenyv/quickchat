@@ -90,6 +90,8 @@ export interface ChatCompletionParams {
   signal?: AbortSignal;
   /** 覆盖模型配置的 max_tokens；传 null 表示本次请求不设上限（思考模型烧尽预算时放开） */
   maxTokens?: number | null;
+  /** 思考增量回调：reasoning 分片到达即触发（先于首个正文分片返回），用于 UI 实时展示思考内容 */
+  onReasoningDelta?: (delta: string, accumulated: string) => void;
 }
 
 export interface TokenUsage {
@@ -370,6 +372,12 @@ function buildRequestBody(
   if (thinkingEnabled) {
     // OpenAI 风格的 reasoning_effort；OpenRouter 会将其归一化（两种格式只能发其一）
     body.reasoning_effort = thinkingLevel.toLowerCase();
+    // Gemini 的 OpenAI 兼容层必须显式 include_thoughts 才返回思考摘要（流式分片走
+    // delta.reasoning 字段）；thinking_config 内的 level/budget 与顶层 reasoning_effort
+    // 互斥，因此这里只传 include_thoughts，档位继续由 reasoning_effort 映射
+    if (model.provider === 'google_gemini') {
+      body.google = { thinking_config: { include_thoughts: true } };
+    }
   }
 
   if (model.provider === 'openrouter' && webSearch?.enabled) {
@@ -405,10 +413,13 @@ interface SSEAccumulator {
   finishReason: string | null;
   usage: TokenUsage | null;
   citations: UrlCitation[];
+  /** 思考增量透传回调：挂到累加器上，所有读流路径（首个分片前的等待循环、
+   *  continueTextStream、tool_calls 的收尾消费）都经 mergeDelta 统一触发 */
+  onReasoningDelta?: (delta: string, accumulated: string) => void;
 }
 
-function createAccumulator(): SSEAccumulator {
-  return { text: '', reasoningContent: '', toolCalls: new Map(), finishReason: null, usage: null, citations: [] };
+function createAccumulator(onReasoningDelta?: (delta: string, accumulated: string) => void): SSEAccumulator {
+  return { text: '', reasoningContent: '', toolCalls: new Map(), finishReason: null, usage: null, citations: [], onReasoningDelta };
 }
 
 interface SSEReaderState {
@@ -486,9 +497,11 @@ function mergeDelta(acc: SSEAccumulator, delta: any): void {
 
   if (typeof delta.reasoning_content === 'string') {
     acc.reasoningContent += delta.reasoning_content;
+    acc.onReasoningDelta?.(delta.reasoning_content, acc.reasoningContent);
   } else if (typeof delta.reasoning === 'string') {
     // OpenRouter 归一化的思考分片使用 delta.reasoning 字段
     acc.reasoningContent += delta.reasoning;
+    acc.onReasoningDelta?.(delta.reasoning, acc.reasoningContent);
   }
 
   if (delta.tool_calls && Array.isArray(delta.tool_calls)) {
@@ -760,7 +773,7 @@ async function* continueTextStream(
 // ---------------------------------------------------------------------------
 
 export async function chatCompletion(params: ChatCompletionParams): Promise<ChatCompletionResult> {
-  const { model, messages, tools, webSearch, thinkingLevel, signal, maxTokens } = params;
+  const { model, messages, tools, webSearch, thinkingLevel, signal, maxTokens, onReasoningDelta } = params;
 
   const endpoint = getApiEndpoint(model);
   const url = `${endpoint.replace(/\/$/, '')}/chat/completions`;
@@ -796,7 +809,7 @@ export async function chatCompletion(params: ChatCompletionParams): Promise<Chat
   }
 
   const state = createReaderState(response.body);
-  const acc = createAccumulator();
+  const acc = createAccumulator(onReasoningDelta);
 
   try {
     while (true) {

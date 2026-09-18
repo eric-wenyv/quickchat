@@ -226,6 +226,7 @@ export async function initDatabase(): Promise<void> {
       role            TEXT    NOT NULL CHECK (role IN ('user', 'assistant', 'system')),
       content         TEXT    NOT NULL DEFAULT '',
       reasoning_content TEXT  DEFAULT NULL,
+      thinking_ms     INTEGER DEFAULT NULL,
       status          TEXT    NOT NULL DEFAULT 'completed' CHECK (status IN ('pending', 'streaming', 'completed', 'error')),
       token_count     INTEGER DEFAULT NULL,
       input_tokens    INTEGER DEFAULT NULL,
@@ -385,6 +386,10 @@ async function ensureMessageColumns(db: Database): Promise<void> {
     if (!colNames.has('reasoning_content')) {
       await db.execute('ALTER TABLE messages ADD COLUMN reasoning_content TEXT DEFAULT NULL;');
       console.log('[DB] Added column: reasoning_content');
+    }
+    if (!colNames.has('thinking_ms')) {
+      await db.execute('ALTER TABLE messages ADD COLUMN thinking_ms INTEGER DEFAULT NULL;');
+      console.log('[DB] Added column: thinking_ms');
     }
     if (!colNames.has('input_tokens')) {
       await db.execute('ALTER TABLE messages ADD COLUMN input_tokens INTEGER DEFAULT NULL;');
@@ -963,8 +968,8 @@ export async function saveMessage(msg: Message): Promise<void> {
   const db = await getDb();
   try {
     await db.execute(
-      'INSERT INTO messages (id, conversation_id, role, content, reasoning_content, status, token_count, input_tokens, output_tokens, model_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-      [msg.id, msg.conversation_id, msg.role, msg.content, msg.reasoning_content ?? null, msg.status, msg.token_count, msg.input_tokens, msg.output_tokens, msg.model_id, msg.created_at, msg.updated_at]
+      'INSERT INTO messages (id, conversation_id, role, content, reasoning_content, thinking_ms, status, token_count, input_tokens, output_tokens, model_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      [msg.id, msg.conversation_id, msg.role, msg.content, msg.reasoning_content ?? null, msg.thinking_ms ?? null, msg.status, msg.token_count, msg.input_tokens, msg.output_tokens, msg.model_id, msg.created_at, msg.updated_at]
     );
   } catch (e: any) {
     // Fallback: 如果新列不存在，使用旧版 SQL
@@ -982,7 +987,7 @@ export async function saveMessage(msg: Message): Promise<void> {
 
 export async function updateMessage(
   id: UUID,
-  updates: Partial<Pick<Message, 'content' | 'reasoning_content' | 'status' | 'token_count' | 'input_tokens' | 'output_tokens' | 'updated_at'>>
+  updates: Partial<Pick<Message, 'content' | 'reasoning_content' | 'thinking_ms' | 'status' | 'token_count' | 'input_tokens' | 'output_tokens' | 'updated_at'>>
 ): Promise<void> {
   const db = await getDb();
   const sets: string[] = [];
@@ -990,6 +995,7 @@ export async function updateMessage(
 
   if (updates.content !== undefined) { sets.push('content = ?'); vals.push(updates.content); }
   if (updates.reasoning_content !== undefined) { sets.push('reasoning_content = ?'); vals.push(updates.reasoning_content); }
+  if (updates.thinking_ms !== undefined) { sets.push('thinking_ms = ?'); vals.push(updates.thinking_ms); }
   if (updates.status !== undefined) { sets.push('status = ?'); vals.push(updates.status); }
   if (updates.token_count !== undefined) { sets.push('token_count = ?'); vals.push(updates.token_count); }
   if (updates.input_tokens !== undefined) { sets.push('input_tokens = ?'); vals.push(updates.input_tokens); }
@@ -1222,6 +1228,7 @@ export interface SyncMessageRow {
   role: string;
   content: string;
   reasoning_content: string | null;
+  thinking_ms: number | null;
   status: string;
   token_count: number | null;
   input_tokens: number | null;
@@ -1244,7 +1251,7 @@ export async function getConversationsUpdatedSince(since: number): Promise<SyncC
 export async function getMessagesUpdatedSince(since: number): Promise<SyncMessageRow[]> {
   const db = await getDb();
   return db.select<SyncMessageRow[]>(
-    `SELECT id, conversation_id, role, content, reasoning_content, status,
+    `SELECT id, conversation_id, role, content, reasoning_content, thinking_ms, status,
             token_count, input_tokens, output_tokens, model_id, created_at, updated_at
      FROM messages WHERE updated_at > ?`,
     [since]
@@ -1310,12 +1317,13 @@ export async function mergeSyncedConversations(
     try {
       const res = await db.execute(
         `INSERT INTO messages
-           (id, conversation_id, role, content, reasoning_content, status,
+           (id, conversation_id, role, content, reasoning_content, thinking_ms, status,
             token_count, input_tokens, output_tokens, model_id, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT(id) DO UPDATE SET
            content = excluded.content,
            reasoning_content = excluded.reasoning_content,
+           thinking_ms = excluded.thinking_ms,
            status = excluded.status,
            token_count = excluded.token_count,
            input_tokens = excluded.input_tokens,
@@ -1329,6 +1337,7 @@ export async function mergeSyncedConversations(
           m.role,
           m.content ?? '',
           m.reasoning_content ?? null,
+          m.thinking_ms ?? null,
           m.status || 'completed',
           m.token_count ?? null,
           m.input_tokens ?? null,

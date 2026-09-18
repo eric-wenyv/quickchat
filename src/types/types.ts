@@ -104,8 +104,10 @@ export interface Message {
   role: MessageRole;
   /** 纯文本内容（Markdown 格式） */
   content: string;
-  /** 思考模型返回的推理内容（不展示给用户，但需要回传给 API） */
+  /** 思考模型返回的推理内容（需要回传给 API，UI 以可折叠区块展示） */
   reasoning_content?: string | null;
+  /** 思考阶段耗时（毫秒，仅 assistant 消息；首个推理分片到首个正文分片的间隔） */
+  thinking_ms?: number | null;
   /** 消息状态 */
   status: MessageStatus;
   /** Token 用量（仅 assistant 消息有值，总 token 数） */
@@ -217,6 +219,7 @@ export interface SaveMessagePayload {
   role: MessageRole;
   content: string;
   reasoning_content?: string | null;
+  thinking_ms?: number | null;
   status: MessageStatus;
   token_count: number | null;
   input_tokens: number | null;
@@ -229,6 +232,7 @@ export interface UpdateMessagePayload {
   id: UUID;
   content?: string;
   reasoning_content?: string | null;
+  thinking_ms?: number | null;
   status?: MessageStatus;
   token_count?: number | null;
   input_tokens?: number | null;

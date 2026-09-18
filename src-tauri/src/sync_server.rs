@@ -219,6 +219,7 @@ async fn ensure_schema(db: &SqlitePool) -> Result<(), String> {
             role TEXT NOT NULL CHECK (role IN ('user', 'assistant', 'system')),
             content TEXT NOT NULL DEFAULT '',
             reasoning_content TEXT DEFAULT NULL,
+            thinking_ms INTEGER DEFAULT NULL,
             status TEXT NOT NULL DEFAULT 'completed' CHECK (status IN ('pending', 'streaming', 'completed', 'error')),
             token_count INTEGER DEFAULT NULL,
             input_tokens INTEGER DEFAULT NULL,
@@ -286,6 +287,13 @@ async fn ensure_schema(db: &SqlitePool) -> Result<(), String> {
         "messages",
         "reasoning_content",
         "ALTER TABLE messages ADD COLUMN reasoning_content TEXT DEFAULT NULL",
+    )
+    .await?;
+    ensure_column(
+        db,
+        "messages",
+        "thinking_ms",
+        "ALTER TABLE messages ADD COLUMN thinking_ms INTEGER DEFAULT NULL",
     )
     .await?;
     ensure_column(
@@ -420,6 +428,7 @@ fn message_from_row(row: &sqlx::sqlite::SqliteRow) -> Value {
         "role": row.get::<String, _>("role"),
         "content": row.get::<String, _>("content"),
         "reasoning_content": row.get::<Option<String>, _>("reasoning_content"),
+        "thinking_ms": row.get::<Option<i64>, _>("thinking_ms"),
         "status": row.get::<String, _>("status"),
         "token_count": row.get::<Option<i64>, _>("token_count"),
         "input_tokens": row.get::<Option<i64>, _>("input_tokens"),
@@ -661,12 +670,13 @@ async fn upsert_message(db: &SqlitePool, v: &Value) -> Result<bool, String> {
     let Some(updated_at) = ji64(v, "updated_at") else { return Ok(false) };
     let result = sqlx::query(
         "INSERT INTO messages
-            (id, conversation_id, role, content, reasoning_content, status,
+            (id, conversation_id, role, content, reasoning_content, thinking_ms, status,
              token_count, input_tokens, output_tokens, model_id, created_at, updated_at)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)
          ON CONFLICT(id) DO UPDATE SET
             content = excluded.content,
             reasoning_content = excluded.reasoning_content,
+            thinking_ms = excluded.thinking_ms,
             status = excluded.status,
             token_count = excluded.token_count,
             input_tokens = excluded.input_tokens,
@@ -680,6 +690,7 @@ async fn upsert_message(db: &SqlitePool, v: &Value) -> Result<bool, String> {
     .bind(jstr(v, "role").unwrap_or_else(|| "user".into()))
     .bind(jstr(v, "content").unwrap_or_default())
     .bind(jstr_null(v, "reasoning_content"))
+    .bind(ji64_null(v, "thinking_ms"))
     .bind(jstr(v, "status").unwrap_or_else(|| "completed".into()))
     .bind(ji64_null(v, "token_count"))
     .bind(ji64_null(v, "input_tokens"))

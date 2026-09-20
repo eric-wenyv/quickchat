@@ -151,17 +151,48 @@ const ArtifactControls: React.FC<{
   </div>
 );
 
+// 流式期间 srcDoc 随每个 flush 增长，去抖等稳定后再让 iframe 重导航：
+// 高频 srcdoc 变更在 WebKitGTK 上会触发不可靠的连发导航，且每次都重执行演示脚本
+const ARTIFACT_SRCDOC_DEBOUNCE_MS = 300;
+// 兜底：个别情况下 load 事件不派发时超时撤下遮罩——内容多半已渲染，
+// 不能让 loading 遮罩永久挡住交互
+const ARTIFACT_LOAD_TIMEOUT_MS = 4000;
+
 const ArtifactFrame: React.FC<{
   srcDoc: string;
   title: string;
   reloadKey: number;
   className?: string;
 }> = ({ srcDoc, title, reloadKey, className = '' }) => {
-  const [loading, setLoading] = useState(true);
+  const [displayedSrcDoc, setDisplayedSrcDoc] = useState(srcDoc);
+  const [generation, setGeneration] = useState(0);
+  // loading 由「当前 (generation, reloadKey) 是否已确认加载」推导，而不是
+  // effect 置位再等 onLoad 翻转布尔：两个异步信号的先后在 WebKitGTK 上不确定，
+  // onLoad 先于最后一次提交到达时布尔会永久卡在 true，演示只能手动刷新才可交互
+  const [loadedFrame, setLoadedFrame] = useState<{ generation: number; reloadKey: number } | null>(null);
 
   useEffect(() => {
-    setLoading(true);
-  }, [srcDoc, reloadKey]);
+    if (srcDoc === displayedSrcDoc) return;
+    const timer = window.setTimeout(() => {
+      setDisplayedSrcDoc(srcDoc);
+      setGeneration((current) => current + 1);
+    }, ARTIFACT_SRCDOC_DEBOUNCE_MS);
+    return () => window.clearTimeout(timer);
+  }, [srcDoc, displayedSrcDoc]);
+
+  const loading =
+    !loadedFrame ||
+    loadedFrame.generation !== generation ||
+    loadedFrame.reloadKey !== reloadKey;
+
+  useEffect(() => {
+    if (!loading) return;
+    const timer = window.setTimeout(
+      () => setLoadedFrame({ generation, reloadKey }),
+      ARTIFACT_LOAD_TIMEOUT_MS
+    );
+    return () => window.clearTimeout(timer);
+  }, [loading, generation, reloadKey]);
 
   return (
     <div className={`relative min-w-0 max-w-full overflow-hidden bg-transparent ${className}`}>
@@ -171,14 +202,14 @@ const ArtifactFrame: React.FC<{
         </div>
       )}
       <iframe
-        key={reloadKey}
+        key={`${reloadKey}-${generation}`}
         title={title}
-        srcDoc={srcDoc}
+        srcDoc={displayedSrcDoc}
         className="block h-full w-full max-w-full border-0 bg-transparent"
         sandbox="allow-scripts allow-forms"
         scrolling="no"
         referrerPolicy="no-referrer"
-        onLoad={() => setLoading(false)}
+        onLoad={() => setLoadedFrame({ generation, reloadKey })}
       />
     </div>
   );

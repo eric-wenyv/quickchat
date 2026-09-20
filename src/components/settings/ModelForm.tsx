@@ -39,7 +39,8 @@ export const ModelForm: React.FC<ModelFormProps> = ({ initial, onSave, onCancel 
   const [apiKey, setApiKey] = useState(initial?.api_key || '');
   const [apiEndpoint, setApiEndpoint] = useState(initial?.api_endpoint || '');
   const [temperature, setTemperature] = useState(initial?.temperature ?? 0.6);
-  const [maxTokens, setMaxTokens] = useState(initial?.max_tokens ?? 16384);
+  // null = 不限制（请求不发 max_tokens，由 provider 取模型默认最大输出）；新模型默认不限制
+  const [maxTokens, setMaxTokens] = useState<number | null>(initial?.max_tokens ?? null);
   const [topP, setTopP] = useState(initial?.top_p ?? 1.0);
   const [isDefault, setIsDefault] = useState(initial?.is_default || false);
   const [supportsVision, setSupportsVision] = useState(initial?.supports_vision ?? false);
@@ -79,7 +80,8 @@ export const ModelForm: React.FC<ModelFormProps> = ({ initial, onSave, onCancel 
       api_key: apiKey.trim(),
       api_endpoint: apiEndpoint.trim() || null,
       temperature: Math.max(0, Math.min(2, temperature)),
-      max_tokens: Math.max(1, maxTokens),
+      // 非正数或留空一律归一化为 null（不限制）
+      max_tokens: maxTokens != null && maxTokens > 0 ? Math.floor(maxTokens) : null,
       top_p: Math.max(0, Math.min(1, topP)),
       thinking_level: modelId.includes('gemini-3') ? 'MEDIUM' : null,
       supports_vision: supportsVision,
@@ -192,10 +194,16 @@ export const ModelForm: React.FC<ModelFormProps> = ({ initial, onSave, onCancel 
             type="number"
             min={1}
             step={1}
-            value={maxTokens}
-            onChange={e => setMaxTokens(parseInt(e.target.value) || 1)}
-            className="w-full bg-linear-surface text-linear-text-secondary text-sm px-3 py-2.5 rounded-lg border border-linear-border focus:border-linear-border-hover outline-none transition-all"
+            value={maxTokens ?? ''}
+            placeholder="不限制"
+            onChange={e => {
+              const raw = e.target.value.trim();
+              const parsed = parseInt(raw, 10);
+              setMaxTokens(raw === '' || Number.isNaN(parsed) ? null : parsed);
+            }}
+            className="w-full bg-linear-surface text-linear-text-secondary text-sm placeholder:text-linear-text-muted px-3 py-2.5 rounded-lg border border-linear-border focus:border-linear-border-hover outline-none transition-all"
           />
+          <p className="mt-1 text-[11px] text-linear-text-muted">留空 = 不限制，跟随模型最大输出</p>
         </div>
         <div>
           <label className="block text-xs font-bold text-linear-text-secondary mb-1.5">Top-P</label>

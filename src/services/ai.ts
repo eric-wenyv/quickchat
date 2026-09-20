@@ -366,8 +366,9 @@ function buildRequestBody(
     messages,
     stream: true,
     temperature: thinkingEnabled ? 1.0 : model.temperature,
-    // maxTokens === null 表示显式不设上限（JSON.stringify 会丢弃 undefined 字段）
-    max_tokens: maxTokens === null ? undefined : (maxTokens ?? model.max_tokens),
+    // 优先级：请求级 maxTokens（null = 本次显式不设上限）> 模型级 max_tokens（null = 不限制）；
+    // 最终为空时整个字段不发（JSON.stringify 会丢弃 undefined），provider 语义为"取模型默认最大输出"
+    max_tokens: (maxTokens === null ? null : maxTokens ?? model.max_tokens) ?? undefined,
     top_p: thinkingEnabled ? 1.0 : model.top_p,
     stream_options: { include_usage: true },
   };

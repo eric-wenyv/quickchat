@@ -8,7 +8,6 @@ import {
   clearSelectionIfInside,
 } from '@/utils/textSelection';
 import MessageContent from './MessageContent';
-import MessageMeta from './MessageMeta';
 
 const IS_MOBILE = isMobilePlatform;
 

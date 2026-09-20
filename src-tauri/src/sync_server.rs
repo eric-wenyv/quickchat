@@ -244,7 +244,7 @@ async fn ensure_schema(db: &SqlitePool) -> Result<(), String> {
             api_key TEXT NOT NULL,
             api_endpoint TEXT DEFAULT NULL,
             temperature REAL NOT NULL DEFAULT 0.6,
-            max_tokens INTEGER NOT NULL DEFAULT 16384,
+            max_tokens INTEGER DEFAULT NULL CHECK (max_tokens IS NULL OR max_tokens > 0),
             top_p REAL NOT NULL DEFAULT 1.0,
             thinking_level TEXT DEFAULT NULL,
             supports_vision INTEGER NOT NULL DEFAULT 0,
@@ -325,6 +325,62 @@ async fn ensure_schema(db: &SqlitePool) -> Result<(), String> {
     )
     .await?;
 
+    ensure_model_max_tokens_nullable(db).await?;
+
+    Ok(())
+}
+
+/// 与前端 db.ts 的 relaxModelMaxTokensConstraint 对称的迁移：max_tokens 旧 schema 为
+/// NOT NULL DEFAULT 16384，无法表达"不限制"（NULL）。SQLite 不能就地改列约束，
+/// 整表重建并把存量行迁为 NULL。以 PRAGMA table_info 的 notnull 标记识别旧表，幂等。
+async fn ensure_model_max_tokens_nullable(db: &SqlitePool) -> Result<(), String> {
+    let rows = sqlx::query("PRAGMA table_info(model_configs)")
+        .fetch_all(db)
+        .await
+        .map_err(|e| e.to_string())?;
+    let is_old = rows.iter().any(|r| {
+        r.get::<String, _>("name") == "max_tokens" && r.get::<i64, _>("notnull") == 1
+    });
+    if !is_old {
+        return Ok(());
+    }
+
+    let statements = [
+        "CREATE TABLE model_configs_new (
+            id TEXT PRIMARY KEY NOT NULL,
+            provider TEXT NOT NULL CHECK (provider IN ('google_gemini', 'openrouter', 'openai_compatible')),
+            model_id TEXT NOT NULL,
+            display_name TEXT NOT NULL,
+            api_key TEXT NOT NULL,
+            api_endpoint TEXT DEFAULT NULL,
+            temperature REAL NOT NULL DEFAULT 0.6,
+            max_tokens INTEGER DEFAULT NULL CHECK (max_tokens IS NULL OR max_tokens > 0),
+            top_p REAL NOT NULL DEFAULT 1.0,
+            thinking_level TEXT DEFAULT NULL,
+            supports_vision INTEGER NOT NULL DEFAULT 0,
+            is_default INTEGER NOT NULL DEFAULT 0,
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL
+        );",
+        "INSERT INTO model_configs_new
+            (id, provider, model_id, display_name, api_key, api_endpoint,
+             temperature, max_tokens, top_p, thinking_level, supports_vision, is_default,
+             created_at, updated_at)
+         SELECT id, provider, model_id, display_name, api_key, api_endpoint,
+                temperature, NULL, top_p, thinking_level, supports_vision, is_default,
+                created_at, updated_at
+         FROM model_configs;",
+        "DROP TABLE model_configs;",
+        "ALTER TABLE model_configs_new RENAME TO model_configs;",
+        "CREATE UNIQUE INDEX IF NOT EXISTS idx_model_configs_provider_model ON model_configs(provider, model_id);",
+    ];
+    for statement in statements {
+        sqlx::query(statement)
+            .execute(db)
+            .await
+            .map_err(|e| format!("迁移 model_configs.max_tokens 为可空失败: {e}"))?;
+    }
+    eprintln!("[quick-chat] sync server migrated model_configs.max_tokens to nullable/unlimited");
     Ok(())
 }
 
@@ -448,7 +504,7 @@ fn model_from_row(row: &sqlx::sqlite::SqliteRow) -> Value {
         "api_key": row.get::<String, _>("api_key"),
         "api_endpoint": row.get::<Option<String>, _>("api_endpoint"),
         "temperature": row.get::<f64, _>("temperature"),
-        "max_tokens": row.get::<i64, _>("max_tokens"),
+        "max_tokens": row.get::<Option<i64>, _>("max_tokens"),
         "top_p": row.get::<f64, _>("top_p"),
         "thinking_level": row.get::<Option<String>, _>("thinking_level"),
         "supports_vision": row.get::<i64, _>("supports_vision"),

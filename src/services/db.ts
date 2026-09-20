@@ -306,7 +306,7 @@ export async function initDatabase(): Promise<void> {
       api_key       TEXT    NOT NULL,
       api_endpoint  TEXT    DEFAULT NULL,
       temperature   REAL    NOT NULL DEFAULT 0.6 CHECK (temperature >= 0.0 AND temperature <= 2.0),
-      max_tokens    INTEGER NOT NULL DEFAULT 16384 CHECK (max_tokens > 0),
+      max_tokens    INTEGER DEFAULT NULL CHECK (max_tokens IS NULL OR max_tokens > 0),
       top_p         REAL    NOT NULL DEFAULT 1.0 CHECK (top_p >= 0.0 AND top_p <= 1.0),
       thinking_level TEXT    DEFAULT NULL,
       supports_vision INTEGER NOT NULL DEFAULT 0 CHECK (supports_vision IN (0, 1)),
@@ -320,6 +320,7 @@ export async function initDatabase(): Promise<void> {
       ON model_configs(provider, model_id);
   `);
   await ensureModelColumns(db);
+  await relaxModelMaxTokensConstraint(db);
 
   // 思考强度缓存表：档位元数据来自 OpenRouter 官方模型接口，变更极少，
   // 拉取成功后直接持久化；模型档位变化时由 API 报错触发重拉覆盖
@@ -472,6 +473,60 @@ async function ensureModelColumns(db: Database): Promise<void> {
   }
 }
 
+/**
+ * max_tokens 旧 schema 为 NOT NULL DEFAULT 16384 CHECK(max_tokens > 0)，无法表达"不限制"。
+ * SQLite 不能就地修改列约束，需整表重建；存量行一并迁移为 NULL（不限制），
+ * 与"新模型默认不限制"的行为保持一致。以 PRAGMA table_info 的 notnull 标记识别旧表，
+ * 迁移幂等：新表（notnull=0）直接跳过。
+ */
+async function relaxModelMaxTokensConstraint(db: Database): Promise<void> {
+  try {
+    const columns = await db.select<{ name: string; notnull: number }[]>('PRAGMA table_info(model_configs);');
+    const maxTokensCol = columns.find((c: any) => c.name === 'max_tokens');
+    if (!maxTokensCol || maxTokensCol.notnull === 0) return;
+
+    console.log('[DB] Rebuilding model_configs: max_tokens -> nullable/unlimited');
+    await db.execute(`
+      CREATE TABLE model_configs_new (
+        id            TEXT    PRIMARY KEY NOT NULL,
+        provider      TEXT    NOT NULL CHECK (provider IN ('google_gemini', 'openrouter', 'openai_compatible')),
+        model_id      TEXT    NOT NULL,
+        display_name  TEXT    NOT NULL,
+        api_key       TEXT    NOT NULL,
+        api_endpoint  TEXT    DEFAULT NULL,
+        temperature   REAL    NOT NULL DEFAULT 0.6 CHECK (temperature >= 0.0 AND temperature <= 2.0),
+        max_tokens    INTEGER DEFAULT NULL CHECK (max_tokens IS NULL OR max_tokens > 0),
+        top_p         REAL    NOT NULL DEFAULT 1.0 CHECK (top_p >= 0.0 AND top_p <= 1.0),
+        thinking_level TEXT    DEFAULT NULL,
+        supports_vision INTEGER NOT NULL DEFAULT 0 CHECK (supports_vision IN (0, 1)),
+        is_default    INTEGER NOT NULL DEFAULT 0 CHECK (is_default IN (0, 1)),
+        created_at    INTEGER NOT NULL,
+        updated_at    INTEGER NOT NULL
+      );
+    `);
+    await db.execute(`
+      INSERT INTO model_configs_new
+        (id, provider, model_id, display_name, api_key, api_endpoint,
+         temperature, max_tokens, top_p, thinking_level, supports_vision, is_default,
+         created_at, updated_at)
+      SELECT id, provider, model_id, display_name, api_key, api_endpoint,
+             temperature, NULL, top_p, thinking_level, supports_vision, is_default,
+             created_at, updated_at
+      FROM model_configs;
+    `);
+    await db.execute('DROP TABLE model_configs;');
+    await db.execute('ALTER TABLE model_configs_new RENAME TO model_configs;');
+    // 旧表索引随 DROP 一并删除，重建唯一索引
+    await db.execute(`
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_model_configs_provider_model
+        ON model_configs(provider, model_id);
+    `);
+    console.log('[DB] model_configs rebuilt; existing rows migrated to unlimited max_tokens');
+  } catch (e) {
+    console.error('[DB] relaxModelMaxTokensConstraint failed:', e);
+  }
+}
+
 // ---------------------------------------------------------------------------
 // 系统提示词预设 (System Prompt Preset)
 // ---------------------------------------------------------------------------
@@ -529,7 +584,7 @@ export async function getModelConfigs(): Promise<ModelConfig[]> {
     api_key: string;
     api_endpoint: string | null;
     temperature: number;
-    max_tokens: number;
+    max_tokens: number | null;
     top_p: number;
     thinking_level: string | null;
     supports_vision: number;
@@ -1140,7 +1195,7 @@ export async function migrateFromLocalStorage(): Promise<boolean> {
           m.api_key,
           m.api_endpoint ?? null,
           m.temperature ?? 0.6,
-          m.max_tokens ?? 16384,
+          m.max_tokens ?? null,
           m.top_p ?? 1.0,
           m.is_default ? 1 : 0,
           m.created_at ?? Date.now(),
@@ -1365,7 +1420,7 @@ export interface SyncModelRow {
   api_key: string;
   api_endpoint: string | null;
   temperature: number;
-  max_tokens: number;
+  max_tokens: number | null;
   top_p: number;
   thinking_level: string | null;
   supports_vision: number;
@@ -1430,7 +1485,7 @@ export async function mergeSyncedModels(models: SyncModelRow[]): Promise<{ appli
           m.api_key ?? '',
           m.api_endpoint ?? null,
           m.temperature ?? 0.6,
-          m.max_tokens ?? 16384,
+          m.max_tokens ?? null,
           m.top_p ?? 1.0,
           m.thinking_level ?? null,
           m.supports_vision ? 1 : 0,

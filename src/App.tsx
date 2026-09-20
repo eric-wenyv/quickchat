@@ -390,7 +390,7 @@ export default function App() {
         api_key: geminiKey,
         api_endpoint: null,
         temperature: 0.7,
-        max_tokens: 8192,
+        max_tokens: null,
         top_p: 0.95,
         thinking_level: 'MEDIUM',
         supports_vision: true,
@@ -410,7 +410,7 @@ export default function App() {
         api_key: orKey,
         api_endpoint: null,
         temperature: 0.7,
-        max_tokens: 8192,
+        max_tokens: null,
         top_p: 0.95,
         thinking_level: null,
         supports_vision: true,
@@ -1470,7 +1470,7 @@ export default function App() {
         }
         let hint: string;
         if (finishReason === 'length') {
-          hint = '输出被 max_tokens 截断（思考阶段耗尽了 Token 上限，放开上限补发后仍为空），请在模型设置中调大最大 Token。';
+          hint = '输出被长度截断（思考阶段耗尽了输出上限，不设上限补发后仍为空），多为模型自身的最大输出限制，请重试或换用输出上限更高的模型。';
         } else if (reasoning.trim()) {
           hint = `模型只输出了思考内容（${reasoning.length} 字符）而未生成正文，多为上游瞬时故障，请重试。`;
         } else if (completionTokens === 0) {

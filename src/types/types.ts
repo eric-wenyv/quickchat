@@ -161,8 +161,8 @@ export interface ModelConfig {
   api_endpoint: string | null;
   /** 温度参数 0.0 ~ 2.0 */
   temperature: number;
-  /** 最大输出 Token 数 */
-  max_tokens: number;
+  /** 最大输出 Token 数；null = 不限制（请求不发 max_tokens 字段，由 provider 取模型默认最大输出） */
+  max_tokens: number | null;
   /** Top-P 采样参数 0.0 ~ 1.0 */
   top_p: number;
   /** 上次使用的思考强度（供新对话继承；取值为模型支持的档位字符串） */
@@ -276,7 +276,7 @@ export interface SaveModelConfigPayload {
   api_key: string;
   api_endpoint: string | null;
   temperature: number;
-  max_tokens: number;
+  max_tokens: number | null;
   top_p: number;
   supports_vision: boolean;
   is_default: boolean;
@@ -288,7 +288,7 @@ export interface UpdateModelConfigPayload {
   api_key?: string;
   api_endpoint?: string | null;
   temperature?: number;
-  max_tokens?: number;
+  max_tokens?: number | null;
   top_p?: number;
   supports_vision?: boolean;
   is_default?: boolean;

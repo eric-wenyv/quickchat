@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import type { Components } from 'react-markdown';
 import { splitMarkdownBlocks, MarkdownBlock } from './markdown-blocks';
 import { normalizeStreamingMarkdown } from '@/utils/markdown';
@@ -8,7 +8,9 @@ import { normalizeStreamingMarkdown } from '@/utils/markdown';
 // =============================================================================
 // 布局仿照主流思考型产品的两态样式，视觉语言遵循应用本身的 graphite 主题：
 //
-// 1. 思考中（isLive）：spinner + “正在思考”，内容默认展开、实时流式渲染；
+// 1. 思考中（isLive）：与完成态一致的 💡 左置 + “正在思考”，文字以
+//    从左到右循环高亮的 shimmer 指示流式进行中（ThinkingIndicator），
+//    内容默认展开、实时流式渲染，限高滚动并贴底跟随；
 // 2. 已完成：可点击头部「已思考(用时 X 秒)」+ chevron 折叠展开，
 //    自动收起（用户手动操作优先于自动行为），内容以弱化 tertiary 排版展示。
 // =============================================================================
@@ -43,6 +45,20 @@ const ChevronIcon: React.FC<{ className?: string }> = ({ className }) => (
   <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
     <path d="M6 9l6 6 6-6" />
   </svg>
+);
+
+/**
+ * 流式思考的统一指示器：等待首个思考分片与思考流式输出共用同一动画。
+ * 与完成态一致的 💡 左置，“正在思考”文字从左到右循环高亮；
+ * 字号比思考正文（13px）略大，作为流式期间的主视觉锚点。
+ */
+export const ThinkingIndicator: React.FC = () => (
+  <div className="flex items-center gap-2 py-1 select-none">
+    <LightbulbIcon className="w-4 h-4 flex-shrink-0 text-linear-accent" aria-hidden="true" />
+    <span className="thinking-shimmer-text text-[14px] font-medium tracking-wide">
+      正在思考
+    </span>
+  </div>
 );
 
 const ThinkingMarkdown: React.FC<{ reasoning: string; isLive: boolean }> = React.memo(({ reasoning, isLive }) => {
@@ -102,6 +118,22 @@ export const ThinkingBlock: React.FC<ThinkingBlockProps> = ({ reasoning, isLive,
   const [manualExpanded, setManualExpanded] = useState<boolean | null>(null);
   const expanded = manualExpanded ?? isLive;
 
+  // 思考内容限高滚动：流式期间贴底跟随最新内容，用户上翻阅读时不打扰
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const stickToBottomRef = useRef(true);
+
+  const handleScroll = () => {
+    const el = scrollRef.current;
+    if (!el) return;
+    stickToBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 48;
+  };
+
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el || !isLive) return;
+    if (stickToBottomRef.current) el.scrollTop = el.scrollHeight;
+  }, [reasoning, isLive]);
+
   const headerLabel = isLive
     ? '正在思考'
     : durationMs != null
@@ -113,21 +145,18 @@ export const ThinkingBlock: React.FC<ThinkingBlockProps> = ({ reasoning, isLive,
   return (
     <div className="w-full min-w-0 max-w-full">
       {isLive ? (
-        <div className="flex items-center gap-2 py-1 select-none">
-          <span className="h-3 w-3 flex-shrink-0 rounded-full border-2 border-linear-border border-t-linear-accent animate-spin" aria-hidden="true" />
-          <span className="text-[12px] font-medium tracking-wide text-linear-text-secondary">{headerLabel}</span>
-        </div>
+        <ThinkingIndicator />
       ) : (
         <button
           type="button"
           onClick={toggle}
           aria-expanded={expanded}
-          className="-ml-1 flex items-center gap-1.5 rounded-md px-1 py-1 text-[12px] font-medium text-linear-text-tertiary hover:text-linear-text-secondary transition-colors select-none cursor-pointer"
+          className="-ml-1 flex items-center gap-1.5 rounded-md px-1 py-1 text-[14px] font-medium text-linear-text-tertiary hover:text-linear-text-secondary transition-colors select-none cursor-pointer"
         >
           <ChevronIcon
-            className={`w-3.5 h-3.5 flex-shrink-0 transition-transform duration-200 ${expanded ? '' : '-rotate-90'}`}
+            className={`w-4 h-4 flex-shrink-0 transition-transform duration-200 ${expanded ? '' : '-rotate-90'}`}
           />
-          <LightbulbIcon className="w-3.5 h-3.5 flex-shrink-0 text-linear-accent" />
+          <LightbulbIcon className="w-4 h-4 flex-shrink-0 text-linear-accent" />
           <span>{headerLabel}</span>
         </button>
       )}
@@ -137,8 +166,14 @@ export const ThinkingBlock: React.FC<ThinkingBlockProps> = ({ reasoning, isLive,
         style={{ transitionTimingFunction: 'var(--ease-snappy)' }}
       >
         <div className="min-h-0 overflow-hidden">
-          <div className="mt-1 mb-2 border-l border-linear-border pl-3.5 text-[13px] text-linear-text-tertiary">
-            <ThinkingMarkdown reasoning={reasoning} isLive={isLive} />
+          <div
+            ref={scrollRef}
+            onScroll={handleScroll}
+            className="custom-scrollbar max-h-[280px] overflow-y-auto overscroll-contain"
+          >
+            <div className="mt-1 mb-2 border-l border-linear-border pl-3.5 text-[13px] text-linear-text-tertiary">
+              <ThinkingMarkdown reasoning={reasoning} isLive={isLive} />
+            </div>
           </div>
         </div>
       </div>

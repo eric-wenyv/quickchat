@@ -103,6 +103,39 @@ html[data-platform='ios'] .app-window-shell {
   }
 }
 
+/* Thinking-in-progress label: gradient clipped to the glyphs, so the bright
+   band sweeps across the text from left to right in a seamless loop. */
+.thinking-shimmer-text {
+  background-image: linear-gradient(
+    90deg,
+    var(--color-linear-text-tertiary) 0%,
+    var(--color-linear-text-tertiary) 38%,
+    var(--color-linear-text-primary) 50%,
+    var(--color-linear-text-tertiary) 62%,
+    var(--color-linear-text-tertiary) 100%
+  );
+  background-size: 200% 100%;
+  background-repeat: repeat;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  -webkit-text-fill-color: transparent;
+  animation: thinking-text-sweep 2.2s linear infinite;
+}
+
+/* One full period of the repeating gradient per cycle (200% travel, not 100%):
+   the band exits fully off the right edge while the next band enters from the
+   left, so the loop point is rendered identically and the sweep never jumps. */
+@keyframes thinking-text-sweep {
+  0% {
+    background-position: 200% 0;
+  }
+
+  100% {
+    background-position: 0% 0;
+  }
+}
+
 /* Terminal cursor blink: slow, deliberate breathing */
 @keyframes terminal-blink {
 

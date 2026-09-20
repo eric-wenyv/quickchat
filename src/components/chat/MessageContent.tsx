@@ -10,7 +10,7 @@ import { isRenderableHtmlArtifact, splitRenderableHtmlArtifacts } from '@/utils/
 import useCopy from '@/hooks/useCopy';
 import ArtifactFullscreenShell from './ArtifactFullscreenShell';
 import HtmlArtifact from './HtmlArtifact';
-import ThinkingBlock from './ThinkingBlock';
+import ThinkingBlock, { ThinkingIndicator } from './ThinkingBlock';
 import { splitMarkdownBlocks, MarkdownBlock } from './markdown-blocks';
 
 interface MessageContentProps {
@@ -776,8 +776,8 @@ const MessageContent: React.FC<MessageContentProps> = ({ content, status, activi
   const hasTextContent = textContent.trim() !== '';
   const hasReasoning = Boolean(reasoning?.trim());
   const isStreamingNoText = status === 'streaming' && !hasTextContent;
-  // 思考内容存在时由 ThinkingBlock 接管"思考中"指示，默认 pill 仅在
-  // 尚未收到任何思考分片时出现；工具调用提示始终浮在思考区块上方
+  // 思考分片尚未到达的等待期与流式思考期共用 ThinkingIndicator 统一动画；
+  // ActivityPill 仅保留给工具调用等活动提示
   const activityLabel = activity?.label ?? (isStreamingNoText && !hasReasoning ? '思考中...' : null);
   const showActivityOnly = isStreamingNoText && !hasReasoning && Boolean(activityLabel);
   const showToolPill = isStreamingNoText && hasReasoning && activity?.kind === 'tool';
@@ -902,7 +902,11 @@ const MessageContent: React.FC<MessageContentProps> = ({ content, status, activi
     <div className="w-full min-w-0 max-w-full text-linear-text-body selection:bg-linear-surface-hover selection:text-linear-text-primary">
       <article className="w-full min-w-0 max-w-full">
         {showActivityOnly && activityLabel ? (
-          <ActivityPill label={activityLabel} />
+          activity?.kind === 'tool' ? (
+            <ActivityPill label={activityLabel} />
+          ) : (
+            <ThinkingIndicator />
+          )
         ) : (
           <>
             {showToolPill && activityLabel && <ActivityPill label={activityLabel} />}

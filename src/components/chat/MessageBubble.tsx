@@ -115,9 +115,9 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({ message, onDelete }) => {
     const ok = isUser
       ? selectElementContents(root)
       : (() => {
-          const block = findSelectableBlock(target, root);
-          return block ? selectElementContents(block) : false;
-        })();
+        const block = findSelectableBlock(target, root);
+        return block ? selectElementContents(block) : false;
+      })();
     if (ok && isUser) setShowMobileActions(true);
   };
 
@@ -200,21 +200,6 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({ message, onDelete }) => {
       <div
         className={`flex flex-col relative min-w-0 ${isUser ? 'items-end max-w-[85%] md:max-w-[70%]' : 'flex-1'}`}
       >
-        {/* 身份行 */}
-        <div className={`flex items-center gap-2 ${isUser ? 'mb-1.5' : 'mb-2.5'}`}>
-          <span className="text-[12px] font-medium text-linear-text-secondary">
-            {isUser ? 'You' : 'Assistant'}
-          </span>
-          <MessageMeta
-            createdAt={message.created_at}
-            tokenCount={message.token_count}
-            inputTokens={message.input_tokens}
-            outputTokens={message.output_tokens}
-            modelId={message.model_id}
-            role={message.role}
-          />
-        </div>
-
         {/* 消息正文：用户气泡靠右 / AI 全宽靠左 */}
         <div
           ref={contentRef}
@@ -236,17 +221,15 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({ message, onDelete }) => {
         {/* 消息操作行：复制 / 删除 */}
         {showActions && (
           <div
-            className={`flex items-center gap-0.5 ${isUser ? 'justify-end' : 'justify-start'} ${
-              overlayActions
-                ? 'absolute top-full inset-x-0 mt-1 z-10 px-1 -mx-1 pb-1'
-                : 'mt-1.5'
-            } ${
-              !IS_MOBILE
+            className={`flex items-center gap-0.5 ${isUser ? 'justify-end' : 'justify-start'} ${overlayActions
+              ? 'absolute top-full inset-x-0 mt-1 z-10 px-1 -mx-1 pb-1'
+              : 'mt-1.5'
+              } ${!IS_MOBILE
                 ? // 保持可命中：按钮悬浮在行盒下方的空隙里，需能从下方直接 hover 唤出；
-                  // 该区域仅覆盖消息间空白 padding，不会遮挡内容
-                  'opacity-0 hover:opacity-100 group-hover:opacity-100 group-focus-within:opacity-100'
+                // 该区域仅覆盖消息间空白 padding，不会遮挡内容
+                'opacity-0 hover:opacity-100 group-hover:opacity-100 group-focus-within:opacity-100'
                 : ''
-            }`}
+              }`}
             style={{
               // menu-enter 终帧为 opacity:1，fill:both 会永久压过 opacity-0，
               // 因此仅用于"挂载即应可见"的移动端用户悬浮条；桌面 hover 淡入靠 transition

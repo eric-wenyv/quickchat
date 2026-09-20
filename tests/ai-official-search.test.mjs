@@ -1,26 +1,7 @@
 import assert from 'node:assert/strict';
-import { readFile, writeFile, mkdir } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
 import test from 'node:test';
-import ts from 'typescript';
 
-async function importAiService() {
-  const source = await readFile(new URL('../src/services/ai.ts', import.meta.url), 'utf8');
-  const transformed = ts.transpileModule(source, {
-    compilerOptions: {
-      module: ts.ModuleKind.ESNext,
-      target: ts.ScriptTarget.ES2022,
-      verbatimModuleSyntax: true,
-    },
-  }).outputText;
-
-  const dir = join(tmpdir(), 'quick-chat-tests');
-  await mkdir(dir, { recursive: true });
-  const modulePath = join(dir, `ai-official-search-${Date.now()}-${Math.random().toString(36).slice(2)}.mjs`);
-  await writeFile(modulePath, transformed);
-  return import(`file:///${modulePath.replaceAll('\\', '/')}`);
-}
+import { importAiService } from './lib/import-ai.mjs';
 
 function sse(events) {
   const body = events.map((event) => `data: ${JSON.stringify(event)}\n\n`).join('') + 'data: [DONE]\n\n';
@@ -57,12 +38,16 @@ async function readAll(stream) {
   return chunks;
 }
 
-test('web search routing keeps OpenRouter official and Gemini/OpenAI-compatible on local Tavily', async () => {
+test('web search is disabled by default to preserve streaming reasoning', async () => {
   const { getWebSearchOptions } = await importAiService();
 
-  assert.deepEqual(getWebSearchOptions(modelConfig('openrouter')), { enabled: true, mode: 'official' });
-  assert.deepEqual(getWebSearchOptions(modelConfig('google_gemini')), { enabled: true, mode: 'legacy_tavily' });
-  assert.deepEqual(getWebSearchOptions(modelConfig('openai_compatible')), { enabled: true, mode: 'legacy_tavily' });
+  // 2026-09-18 定案：附带 openrouter:web_search 工具时，OpenRouter 会把思考模型
+  // 的整段 reasoning 在思考阶段结束后作为单一事件下发（对照实验证实），破坏流式
+  // 思考展示。因此所有 provider 默认禁用官方搜索；显式传 webSearch.enabled 的
+  // 路径仍保留（见下方 official 注入用例）。
+  assert.deepEqual(getWebSearchOptions(modelConfig('openrouter')), { enabled: false, mode: 'disabled' });
+  assert.deepEqual(getWebSearchOptions(modelConfig('google_gemini')), { enabled: false, mode: 'disabled' });
+  assert.deepEqual(getWebSearchOptions(modelConfig('openai_compatible')), { enabled: false, mode: 'disabled' });
 });
 
 test('OpenRouter official search injects server tool alongside local function tools', async () => {

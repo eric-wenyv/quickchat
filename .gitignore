@@ -40,3 +40,6 @@ archlinux/pkg
 
 # Local design docs (superpowers)
 superpowers/
+
+# Node 测试的 TS 转译产物
+tests/.transpiled/

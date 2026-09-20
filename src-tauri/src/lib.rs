@@ -19,6 +19,7 @@ use tauri_plugin_global_shortcut::{Code, Modifiers, ShortcutState};
 
 #[cfg(target_os = "linux")]
 mod linux_blur;
+mod http_stream;
 mod skills;
 mod sync_server;
 
@@ -563,6 +564,8 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         // SQLite plugin
         .plugin(tauri_plugin_sql::Builder::default().build())
+        // SSE 流式传输：复用的 reqwest Client + 取消注册表（见 http_stream.rs）
+        .manage(http_stream::HttpStreamState::new())
         // Invoke handler
         .invoke_handler(tauri::generate_handler![
             fetch_url,
@@ -570,6 +573,8 @@ pub fn run() {
             get_sync_info,
             set_sync_config,
             regenerate_sync_token,
+            http_stream::stream_http_sse,
+            http_stream::cancel_http_stream,
             skills::list_skills,
             skills::read_skill,
             skills::create_skill,

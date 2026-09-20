@@ -3,6 +3,7 @@
 // =============================================================================
 
 import type { ModelConfig, ThinkingEfforts } from '@/types/types';
+import { openSseStream } from './sse-transport';
 
 // ---------------------------------------------------------------------------
 // 常量
@@ -209,10 +210,12 @@ function buildHeaders(model: ModelConfig): Record<string, string> {
   return headers;
 }
 
-export function getWebSearchOptions(model: ModelConfig): WebSearchOptions {
-  if (model.provider === 'openrouter') {
-    return { enabled: true, mode: 'official' };
-  }
+export function getWebSearchOptions(_model: ModelConfig): WebSearchOptions {
+  // 2026-09-18 定案：OpenRouter 对附带 openrouter:web_search 工具的请求，会把
+  // 思考模型（如 z-ai/glm-5.3）的整段 reasoning 在思考阶段结束后作为单一事件
+  // 下发（同 key/同代理/同时段的裸请求与 function tools 请求均为逐片渐进，
+  // 已对照实验证实），导致思考内容无法流式展示。因此默认不附加该工具；
+  // 显式传 webSearch.enabled 仍可启用（后续可接 UI 开关）。
   return { enabled: false, mode: 'disabled' };
 }
 
@@ -423,19 +426,28 @@ function createAccumulator(onReasoningDelta?: (delta: string, accumulated: strin
 }
 
 interface SSEReaderState {
-  reader: ReadableStreamDefaultReader<Uint8Array>;
-  decoder: TextDecoder;
+  /** 传输层文本分片迭代器（Tauri 走 Rust reqwest，浏览器走 fetch，见 sse-transport.ts）。
+   *  分片已是完整 UTF-8 文本（多字节跨块边界在传输层处理），可能含不完整行。 */
+  iterator: AsyncGenerator<string, void, unknown>;
   buffer: string;
   done: boolean;
 }
 
-function createReaderState(stream: ReadableStream<Uint8Array>): SSEReaderState {
+function createReaderState(chunks: AsyncGenerator<string, void, unknown>): SSEReaderState {
   return {
-    reader: stream.getReader(),
-    decoder: new TextDecoder('utf-8'),
+    iterator: chunks,
     buffer: '',
     done: false,
   };
+}
+
+/** 关闭传输层迭代器（触发其 finally：取消 Rust 侧下载 / 释放 fetch reader） */
+async function closeReaderState(state: SSEReaderState): Promise<void> {
+  try {
+    await state.iterator.return(undefined as unknown as void);
+  } catch {
+    // 传输层已关闭时 return() 可能拒绝，忽略
+  }
 }
 
 function parseUsage(usage: any): TokenUsage {
@@ -575,12 +587,11 @@ async function readNextSSEData(state: SSEReaderState): Promise<string | null> {
       return data === '[DONE]' ? null : data;
     }
 
-    const { done, value } = await state.reader.read();
-    if (done) {
+    const next = await state.iterator.next();
+    if (next.done) {
       state.done = true;
-      state.buffer += state.decoder.decode();
     } else {
-      state.buffer += state.decoder.decode(value, { stream: true });
+      state.buffer += next.value;
     }
   }
 }
@@ -638,80 +649,6 @@ function accumulatorToToolCalls(acc: SSEAccumulator): ToolCall[] {
 // 对外暴露的文本流式生成器（用于第二轮无 tool 的回复）
 // ---------------------------------------------------------------------------
 
-async function* parseTextStream(stream: ReadableStream<Uint8Array>): AsyncGenerator<StreamChunk, void, unknown> {
-  const reader = stream.getReader();
-  const decoder = new TextDecoder('utf-8');
-  let buffer = '';
-  let accumulated = '';
-
-  try {
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-
-      buffer += decoder.decode(value, { stream: true });
-      const lines = buffer.split('\n');
-      buffer = lines.pop() || '';
-
-      for (const line of lines) {
-        const data = sseDataOf(line);
-        if (data === null) continue;
-        if (data === '[DONE]') return;
-        try {
-          const parsed = JSON.parse(data);
-          const delta = parsed.choices?.[0]?.delta?.content;
-          if (typeof delta === 'string') {
-            accumulated += delta;
-            yield { delta, accumulated };
-          }
-          if (parsed.usage) {
-            yield {
-              delta: '',
-              accumulated,
-              usage: {
-                prompt_tokens: parsed.usage.prompt_tokens ?? parsed.usage.input_tokens ?? 0,
-                completion_tokens: parsed.usage.completion_tokens ?? parsed.usage.output_tokens ?? 0,
-                total_tokens: parsed.usage.total_tokens ?? 0,
-              },
-            };
-          }
-        } catch {
-          // ignore
-        }
-      }
-    }
-
-    if (buffer.trim()) {
-      const data = sseDataOf(buffer);
-      if (data !== null && data !== '[DONE]') {
-        try {
-          const parsed = JSON.parse(data);
-          const delta = parsed.choices?.[0]?.delta?.content;
-          if (typeof delta === 'string') {
-            accumulated += delta;
-            yield { delta, accumulated };
-          }
-          if (parsed.usage) {
-            yield {
-              delta: '',
-              accumulated,
-              usage: {
-                prompt_tokens: parsed.usage.prompt_tokens ?? parsed.usage.input_tokens ?? 0,
-                completion_tokens: parsed.usage.completion_tokens ?? parsed.usage.output_tokens ?? 0,
-                total_tokens: parsed.usage.total_tokens ?? 0,
-              },
-            };
-          }
-        } catch {
-          // ignore
-        }
-      }
-    }
-  } finally {
-    reader.releaseLock();
-  }
-}
-
 async function* continueTextStream(
   state: SSEReaderState,
   acc: SSEAccumulator,
@@ -764,7 +701,7 @@ async function* continueTextStream(
     if (acc.toolCalls.size > 0) {
       result.lateToolCalls = accumulatorToToolCalls(acc);
     }
-    state.reader.releaseLock();
+    await closeReaderState(state);
   }
 }
 
@@ -780,42 +717,34 @@ export async function chatCompletion(params: ChatCompletionParams): Promise<Chat
   const headers = buildHeaders(model);
   const body = buildRequestBody(model, messages, tools, webSearch, thinkingLevel, maxTokens);
 
-  const response = await fetch(url, {
-    method: 'POST',
-    headers,
-    body: JSON.stringify(body),
-    signal,
-  });
+  const stream = await openSseStream(url, headers, JSON.stringify(body), signal);
 
-  if (!response.ok) {
+  if (!stream.ok) {
     let errorText = '';
     try {
-      const errorJson = await response.json();
+      errorText = await stream.readAllText();
+      const errorJson = JSON.parse(errorText);
       errorText = errorJson.error?.message || JSON.stringify(errorJson);
     } catch {
-      errorText = await response.text();
+      // 非法 JSON：readAllText 已给出原始文本，保持 errorText 不变
     }
-    const detail = errorText || response.statusText;
+    const detail = errorText || stream.statusText;
     // OpenRouter 拒绝不支持的思考档位时返回 400，错误信息会点名 reasoning/effort；
     // 单独识别出来，调用方据此重拉档位缓存并提示用户重新选择
-    if (response.status === 400 && /reasoning|effort/i.test(detail)) {
+    if (stream.status === 400 && /reasoning|effort/i.test(detail)) {
       throw new ReasoningEffortError(`模型 ${model.model_id} 不支持当前思考强度: ${detail}`);
     }
-    throw new Error(`API 请求失败 (${response.status}): ${detail}`);
+    throw new Error(`API 请求失败 (${stream.status}): ${detail}`);
   }
 
-  if (!response.body) {
-    throw new Error('API 返回了空的响应体');
-  }
-
-  const state = createReaderState(response.body);
+  const state = createReaderState(stream.chunks());
   const acc = createAccumulator(onReasoningDelta);
 
   try {
     while (true) {
       const parsed = await readNextParsedEvent(state);
       if (parsed === null) {
-        state.reader.releaseLock();
+        await closeReaderState(state);
         return {
           type: 'text',
           stream: (async function* () {
@@ -834,7 +763,7 @@ export async function chatCompletion(params: ChatCompletionParams): Promise<Chat
 
       if (hasToolCallDelta(parsed) || acc.finishReason === 'tool_calls' || acc.toolCalls.size > 0) {
         await consumeRemainingParsedStream(state, acc);
-        state.reader.releaseLock();
+        await closeReaderState(state);
 
         const toolCalls = accumulatorToToolCalls(acc);
         if (toolCalls.length > 0) {
@@ -867,48 +796,9 @@ export async function chatCompletion(params: ChatCompletionParams): Promise<Chat
       }
     }
   } catch (error) {
-    state.reader.releaseLock();
+    await closeReaderState(state);
     throw error;
   }
-}
-
-// ---------------------------------------------------------------------------
-// 纯文本流式对话（不带 tools，用于显示最终结果）
-// ---------------------------------------------------------------------------
-
-export async function streamTextCompletion(
-  params: Omit<ChatCompletionParams, 'tools'>
-): Promise<AsyncGenerator<StreamChunk, void, unknown>> {
-  const { model, messages, thinkingLevel, signal } = params;
-
-  const endpoint = getApiEndpoint(model);
-  const url = `${endpoint.replace(/\/$/, '')}/chat/completions`;
-  const headers = buildHeaders(model);
-  const body = buildRequestBody(model, messages, undefined, undefined, thinkingLevel);
-
-  const response = await fetch(url, {
-    method: 'POST',
-    headers,
-    body: JSON.stringify(body),
-    signal,
-  });
-
-  if (!response.ok) {
-    let errorText = '';
-    try {
-      const errorJson = await response.json();
-      errorText = errorJson.error?.message || JSON.stringify(errorJson);
-    } catch {
-      errorText = await response.text();
-    }
-    throw new Error(`API 请求失败 (${response.status}): ${errorText || response.statusText}`);
-  }
-
-  if (!response.body) {
-    throw new Error('API 返回了空的响应体');
-  }
-
-  return parseTextStream(response.body);
 }
 
 // ---------------------------------------------------------------------------

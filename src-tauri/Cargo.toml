@@ -36,6 +36,9 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 base64 = "0.22"
 
+# text_stream() 的 StreamExt（SSE 流式转发用）
+futures-util = "0.3"
+
 # 桌面端同步服务：移动端通过局域网推送/拉取配置与对话历史
 axum = "0.8"
 tokio = { version = "1", features = ["rt", "net", "macros", "time", "sync"] }

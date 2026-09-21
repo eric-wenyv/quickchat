@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import Sidebar from '../sidebar/Sidebar';
 import { MainChatArea } from '../chat/MainChatArea';
 import SkillManager from '../skills/SkillManager';
+import ModelSettings from '../settings/ModelSettings';
 import type { SkillMeta } from '@/services/skills';
 import { listen } from '@tauri-apps/api/event';
 import { getCurrentWindow } from '@tauri-apps/api/window';
@@ -85,6 +86,23 @@ interface AppLayoutProps {
   /** 活跃消息 ID 变化回调（用于保存滚动位置） */
   onActiveMessageIdChange?: (messageId: UUID | null) => void;
   onOpenSettings?: () => void;
+  /** --- 设置页（全页面替代侧栏 + 聊天区） --- */
+  /** 是否显示设置页 */
+  showSettings: boolean;
+  /** 返回主界面（关闭设置页） */
+  onCloseSettings: () => void;
+  /** 图片解析模型 ID（null = 自动选择） */
+  visionModelId: string | null;
+  /** 选择图片解析模型 */
+  onSelectVisionModel: (id: string | null) => void;
+  /** 全局快速打开快捷键 */
+  globalShortcut: string | null;
+  /** 更新全局快捷键 */
+  onGlobalShortcutChange: (shortcut: string | null) => Promise<void>;
+  /** 保存模型配置 */
+  onSaveModel: (config: ModelConfig) => void;
+  /** 删除模型配置 */
+  onDeleteModel: (id: UUID) => void;
   /** 已保存的系统提示词预设列表 */
   systemPrompts: SystemPrompt[];
   /** 保存系统提示词预设 */
@@ -113,11 +131,17 @@ const SIDEBAR_WIDTH_KEY = 'quick_chat_sidebar_width';
 interface CodexMenuBarProps {
   isSidebarOpen: boolean;
   onToggleSidebar: () => void;
+  /** 设置页打开时，左侧按钮切换为"返回" */
+  isSettingsOpen: boolean;
+  /** 从设置页返回主界面 */
+  onExitSettings: () => void;
 }
 
 const CodexMenuBar: React.FC<CodexMenuBarProps> = ({
   isSidebarOpen,
   onToggleSidebar,
+  isSettingsOpen,
+  onExitSettings,
 }) => {
   const [isWindowMaximized, setIsWindowMaximized] = useState(false);
   const [hoveredWindowButton, setHoveredWindowButton] = useState<'minimize' | 'maximize' | 'close' | null>(null);
@@ -144,17 +168,30 @@ const CodexMenuBar: React.FC<CodexMenuBarProps> = ({
         className="flex h-full items-center px-2"
         style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
       >
-        <button
-          onClick={onToggleSidebar}
-          className="flex h-6 w-6 items-center justify-center rounded-md text-linear-text-tertiary hover:bg-linear-surface hover:text-linear-text-primary transition-colors"
-          title={isSidebarOpen ? '收起侧栏' : '展开侧栏'}
-          aria-label={isSidebarOpen ? 'Collapse sidebar' : 'Expand sidebar'}
-        >
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-            <rect x="4" y="4" width="19" height="19" rx="3" />
-            <path d="M9 5v14" />
-          </svg>
-        </button>
+        {isSettingsOpen ? (
+          <button
+            onClick={onExitSettings}
+            className="flex h-6 w-6 items-center justify-center rounded-md text-linear-text-tertiary hover:bg-linear-surface hover:text-linear-text-primary transition-colors"
+            title="返回对话"
+            aria-label="返回对话"
+          >
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M15 18l-6-6 6-6" />
+            </svg>
+          </button>
+        ) : (
+          <button
+            onClick={onToggleSidebar}
+            className="flex h-6 w-6 items-center justify-center rounded-md text-linear-text-tertiary hover:bg-linear-surface hover:text-linear-text-primary transition-colors"
+            title={isSidebarOpen ? '收起侧栏' : '展开侧栏'}
+            aria-label={isSidebarOpen ? 'Collapse sidebar' : 'Expand sidebar'}
+          >
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+              <rect x="4" y="4" width="19" height="19" rx="3" />
+              <path d="M9 5v14" />
+            </svg>
+          </button>
+        )}
       </div>
 
       <div
@@ -259,6 +296,14 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
   scrollRestoreMessageId,
   onActiveMessageIdChange,
   onOpenSettings,
+  showSettings,
+  onCloseSettings,
+  visionModelId,
+  onSelectVisionModel,
+  globalShortcut,
+  onGlobalShortcutChange,
+  onSaveModel,
+  onDeleteModel,
   systemPrompts,
   onSaveSystemPromptPreset,
   onDeleteSystemPromptPreset,
@@ -322,6 +367,11 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
     onOpenSkills();
     if (isMobilePlatform) setIsSidebarOpen(false);
   }, [onOpenSkills]);
+  // 移动端：进入设置页同样收起抽屉（设置页全屏覆盖内容区）
+  const handleOpenSettingsFromSidebar = useCallback(() => {
+    onOpenSettings?.();
+    if (isMobilePlatform) setIsSidebarOpen(false);
+  }, [onOpenSettings]);
 
   // ── 移动端抽屉手势：跟手拖拽，松手按展开比例落位（>50% 展开，否则收回）──
   // 不要求从屏幕边缘起始：Android 12+ 系统手势导航占据左右边缘，边缘横滑
@@ -484,7 +534,8 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
       shell.removeEventListener('touchcancel', onTouchCancel);
       window.clearTimeout(settleTimer);
     };
-  }, [isMobilePlatform, sidebarPx]);
+    // showSettings 切换会卸载/重建 aside 与遮罩，需重新绑定引用
+  }, [isMobilePlatform, sidebarPx, showSettings]);
 
   // 直接操作 DOM 的拖拽实现，绕过 React 渲染周期以避免卡顿
   const startResize = useCallback((e: React.MouseEvent) => {
@@ -623,6 +674,8 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
         <CodexMenuBar
           isSidebarOpen={isSidebarOpen}
           onToggleSidebar={toggleSidebar}
+          isSettingsOpen={showSettings}
+          onExitSettings={onCloseSettings}
         />
       )}
       <div
@@ -638,6 +691,24 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
         }}
       >
 
+        {/*
+          设置页：全页面占据整个内容区（替代侧栏 + 聊天区），
+          col-span-full 跨越全部 Grid 列，无需改动列宽定义与过渡动画。
+          返回入口：桌面端在顶部菜单栏左侧，移动端在设置页头部。
+        */}
+        {showSettings ? (
+          <ModelSettings
+            models={models}
+            visionModelId={visionModelId}
+            onSelectVisionModel={onSelectVisionModel}
+            globalShortcut={globalShortcut}
+            onGlobalShortcutChange={onGlobalShortcutChange}
+            onSave={onSaveModel}
+            onDelete={onDeleteModel}
+            onClose={onCloseSettings}
+          />
+        ) : (
+        <>
         {/*
           移动端抽屉背景遮罩：点击关闭侧栏。
           常驻渲染，供手势跟手时按比例渐显；透明度走 class 驱动，
@@ -680,7 +751,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
               isLoading={isLoadingConversations}
               isSearching={isSearchingConversations}
               searchQuery={searchQuery}
-              onOpenSettings={onOpenSettings}
+              onOpenSettings={handleOpenSettingsFromSidebar}
               onOpenSkills={handleOpenSkillsFromSidebar}
               isSkillsActive={showSkills}
               theme={theme}
@@ -766,6 +837,8 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
           />
           )}
         </main>
+        </>
+        )}
 
       </div>
     </div>

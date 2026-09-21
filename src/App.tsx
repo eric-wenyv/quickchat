@@ -2,7 +2,6 @@ import React, { useState, useEffect, useRef, useCallback } from "react";
 import { listen } from "@tauri-apps/api/event";
 import AppLayout from "./components/layout/AppLayout";
 import { useTheme } from "./hooks/useTheme";
-import ModelSettings from "./components/settings/ModelSettings";
 import {
   initDatabase,
   migrateFromLocalStorage,
@@ -1723,6 +1722,15 @@ export default function App() {
   const stableModelSelect = useStableCallback(handleModelSelect);
   const stableUpdateThinkingLevel = useStableCallback(handleUpdateThinkingLevel);
   const stableOpenSettings = useStableCallback(() => setShowSettings(true));
+  const stableCloseSettings = useStableCallback(() => setShowSettings(false));
+  const stableSelectVisionModel = useStableCallback((id: string | null) => {
+    setVisionModelId(id);
+    if (id) localStorage.setItem('quick_chat_vision_model_id', id);
+    else localStorage.removeItem('quick_chat_vision_model_id');
+  });
+  const stableSaveModel = useStableCallback(handleSaveModel);
+  const stableDeleteModel = useStableCallback(handleDeleteModel);
+  const stableSaveGlobalShortcut = useStableCallback(handleSaveGlobalShortcut);
 
   // --- 自动创建空对话（就绪后且无活跃会话时）---
   const didAutoCreateRef = useRef(false);
@@ -1810,23 +1818,7 @@ export default function App() {
         </div>
       )}
 
-      {/* 模型设置面板 */}
-      {showSettings && (
-        <ModelSettings
-          models={models}
-          visionModelId={visionModelId}
-          globalShortcut={globalShortcut}
-          onGlobalShortcutChange={handleSaveGlobalShortcut}
-          onSelectVisionModel={(id) => {
-            setVisionModelId(id);
-            if (id) localStorage.setItem('quick_chat_vision_model_id', id);
-            else localStorage.removeItem('quick_chat_vision_model_id');
-          }}
-          onSave={handleSaveModel}
-          onDelete={handleDeleteModel}
-          onClose={() => setShowSettings(false)}
-        />
-      )}
+      {/* 设置页由 AppLayout 渲染为全页面视图 */}
 
       <AppLayout
         theme={theme}
@@ -1861,6 +1853,14 @@ export default function App() {
         scrollRestoreMessageId={scrollRestoreMessageId}
         onActiveMessageIdChange={handleActiveMessageIdChange}
         onOpenSettings={stableOpenSettings}
+        showSettings={showSettings}
+        onCloseSettings={stableCloseSettings}
+        visionModelId={visionModelId}
+        onSelectVisionModel={stableSelectVisionModel}
+        globalShortcut={globalShortcut}
+        onGlobalShortcutChange={stableSaveGlobalShortcut}
+        onSaveModel={stableSaveModel}
+        onDeleteModel={stableDeleteModel}
         systemPrompts={systemPrompts}
         onSaveSystemPromptPreset={stableSaveSystemPromptPreset}
         onDeleteSystemPromptPreset={stableDeleteSystemPromptPreset}

@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import type { ModelConfig, UUID } from '@/types/types';
 import { ModelForm } from './ModelForm';
 import { DEFAULT_GLOBAL_SHORTCUT } from '@/services/globalShortcut';
-import { isDesktopPlatform } from '@/utils/platform';
+import { isDesktopPlatform, isMobilePlatform } from '@/utils/platform';
 import { SyncServerSettings } from './SyncServerSettings';
 import { SyncClientSettings } from './SyncClientSettings';
 
@@ -236,7 +236,7 @@ const VisionModelSelector: React.FC<VisionModelSelectorProps> = ({
       {isOpen && (
         <div
           role="menu"
-          className="absolute bottom-full left-0 z-50 mb-2 w-full min-w-[280px] rounded-lg bg-linear-bg-elevated/98 p-1.5 shadow-[0_18px_45px_rgba(0,0,0,0.32)] backdrop-blur-xl origin-bottom"
+          className="absolute top-full left-0 z-50 mt-2 w-full min-w-[280px] rounded-lg bg-linear-bg-elevated/98 p-1.5 shadow-[0_18px_45px_rgba(0,0,0,0.32)] backdrop-blur-xl origin-top"
           style={{ animation: 'menu-enter 0.2s var(--ease-snappy) forwards' }}
         >
           <button
@@ -303,6 +303,12 @@ const CheckIcon: React.FC<{ className?: string }> = ({ className }) => (
     <path d="M20 6 9 17l-5-5" />
   </svg>
 );
+/**
+ * 设置页（全页面，占据主界面整个内容区，替代侧栏 + 聊天区）
+ *
+ * - 桌面端返回入口在顶部菜单栏左侧；移动端无菜单栏，头部自带返回按钮
+ * - 单列窄栏内容流：快捷键 / 同步 / 模型管理 / 图片解析模型
+ */
 export const ModelSettings: React.FC<ModelSettingsProps> = ({
   models,
   visionModelId,
@@ -334,33 +340,42 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({
   };
 
   return (
-    <div role="dialog" aria-modal="true" className="fixed inset-0 z-[200] flex items-center justify-center bg-black/40 backdrop-blur-sm" onClick={onClose}>
-      <div
-        className="bg-linear-bg backdrop-blur-xl border border-linear-border rounded-xl shadow-2xl w-full max-w-xl mx-4 max-h-[85vh] flex flex-col animate-in fade-in zoom-in-95 duration-200"
-        onClick={e => e.stopPropagation()}
-      >
-        {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-linear-border flex-shrink-0">
-          <div className="flex items-center gap-2">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-linear-text-secondary">
-              <path d="M12 20h9" /><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z" />
-            </svg>
-            <h2 className="text-base font-bold text-linear-text-primary">模型与全局设置</h2>
-          </div>
-          <button
-            onClick={onClose}
-            className="p-1.5 text-linear-text-tertiary hover:text-linear-text-secondary hover:bg-linear-surface rounded-lg transition-colors cursor-pointer"
-          >
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M18 6 6 18" /><path d="m6 6 12 12" />
-            </svg>
-          </button>
+    <div className="col-span-full relative z-0 flex h-full min-w-0 flex-col overflow-hidden bg-linear-bg">
+      {/* 页面头部：移动端带返回按钮（桌面端返回在顶部菜单栏左侧） */}
+      <header className="flex h-12 flex-shrink-0 items-center justify-between border-b border-linear-border px-4">
+        <div className="flex min-w-0 items-center gap-2.5">
+          {isMobilePlatform && (
+            <button
+              onClick={onClose}
+              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-linear-text-tertiary transition-colors hover:bg-linear-surface hover:text-linear-text-primary cursor-pointer"
+              title="返回对话"
+              aria-label="返回对话"
+            >
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M15 18l-6-6 6-6" />
+              </svg>
+            </button>
+          )}
+          <h1 className="text-[15px] font-semibold text-linear-text-primary">设置</h1>
         </div>
+        {!showForm && (
+          <button
+            onClick={handleAdd}
+            className="flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-[13px] font-semibold text-linear-text-secondary transition-colors hover:bg-linear-surface hover:text-linear-text-primary cursor-pointer"
+          >
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M12 5v14" /><path d="M5 12h14" />
+            </svg>
+            添加模型
+          </button>
+        )}
+      </header>
 
-        {/* Content */}
-        <div className="flex-1 overflow-y-auto custom-scrollbar p-6">
+      {/* 内容区：单列滚动窄栏 */}
+      <div className="min-h-0 flex-1 overflow-y-auto custom-scrollbar">
+        <div className="mx-auto w-full max-w-2xl space-y-4 px-6 py-6">
           {showForm ? (
-            <div>
+            <section className="rounded-lg border border-linear-border bg-linear-surface p-4">
               <h3 className="text-sm font-bold text-linear-text-primary mb-4">
                 {editing ? '编辑模型' : '添加新模型'}
               </h3>
@@ -372,110 +387,104 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({
                   setEditing(null);
                 }}
               />
-            </div>
+            </section>
           ) : (
-            <div className="space-y-3">
-              {isDesktopPlatform && <GlobalShortcutSettings value={globalShortcut} onChange={onGlobalShortcutChange}/>}
+            <>
+              {isDesktopPlatform && <GlobalShortcutSettings value={globalShortcut} onChange={onGlobalShortcutChange} />}
               {isDesktopPlatform ? <SyncServerSettings /> : <SyncClientSettings />}
-              <h3 className="text-sm font-bold text-linear-text-primary mb-2">模型管理</h3>
-              {models.length === 0 && (
-                <div className="text-center py-12 text-linear-text-tertiary text-sm">
-                  还没有配置任何模型，点击下方按钮添加。
-                </div>
-              )}
-              {models.map(model => {
-                return (
-                  <div
-                    key={model.id}
-                    className="flex items-center gap-3 px-4 py-3 rounded-lg bg-linear-surface border border-linear-border hover:border-linear-border-hover transition-all"
-                  >
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2">
-                        <span className="text-sm font-bold text-linear-text-primary truncate">{model.display_name}</span>
-                        {model.is_default && (
-                          <span className="flex-shrink-0 text-[10px] bg-emerald-500/10 text-emerald-400 px-1.5 py-0.5 rounded-md font-bold">
-                            默认
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-1 flex-shrink-0">
-                      <button
-                        onClick={() => handleEdit(model)}
-                        className="p-1.5 text-linear-text-tertiary hover:text-linear-text-secondary hover:bg-linear-surface rounded-lg transition-colors cursor-pointer"
-                        title="编辑"
-                      >
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                          <path d="M12 20h9" /><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z" />
-                        </svg>
-                      </button>
-                      {deleteConfirm === model.id ? (
-                        <div className="flex items-center gap-1">
-                          <button
-                            onClick={() => {
-                              onDelete(model.id);
-                              setDeleteConfirm(null);
-                            }}
-                            className="px-2 py-1 text-[11px] font-bold text-white bg-red-500 rounded-md hover:bg-red-600 transition-colors cursor-pointer"
-                          >
-                            确认
-                          </button>
-                          <button
-                            onClick={() => setDeleteConfirm(null)}
-                            className="px-2 py-1 text-[11px] font-bold text-linear-text-secondary bg-linear-surface rounded-md hover:bg-linear-surface-hover transition-colors cursor-pointer"
-                          >
-                            取消
-                          </button>
-                        </div>
-                      ) : (
-                        <button
-                          onClick={() => setDeleteConfirm(model.id)}
-                          className="p-1.5 text-linear-text-tertiary hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-colors cursor-pointer"
-                          title="删除"
-                        >
-                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                            <path d="M3 6h18" /><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6" /><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2" />
-                          </svg>
-                        </button>
-                      )}
-                    </div>
+
+              <section className="rounded-lg border border-linear-border bg-linear-surface p-4">
+                <h3 className="text-sm font-bold text-linear-text-primary">模型管理</h3>
+                {models.length === 0 && (
+                  <div className="py-8 text-center text-linear-text-tertiary text-sm">
+                    还没有配置任何模型，点击右上角「添加模型」按钮添加。
                   </div>
-                );
-              })}
-            </div>
+                )}
+                <div className="mt-3 space-y-2">
+                  {models.map(model => {
+                    return (
+                      <div
+                        key={model.id}
+                        className="flex items-center gap-3 px-4 py-3 rounded-lg bg-linear-bg border border-linear-border hover:border-linear-border-hover transition-all"
+                      >
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2">
+                            <span className="text-sm font-bold text-linear-text-primary truncate">{model.display_name}</span>
+                            {model.is_default && (
+                              <span className="flex-shrink-0 text-[10px] bg-emerald-500/10 text-emerald-400 px-1.5 py-0.5 rounded-md font-bold">
+                                默认
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-1 flex-shrink-0">
+                          <button
+                            onClick={() => handleEdit(model)}
+                            className="p-1.5 text-linear-text-tertiary hover:text-linear-text-secondary hover:bg-linear-surface rounded-lg transition-colors cursor-pointer"
+                            title="编辑"
+                          >
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                              <path d="M12 20h9" /><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z" />
+                            </svg>
+                          </button>
+                          {deleteConfirm === model.id ? (
+                            <div className="flex items-center gap-1">
+                              <button
+                                onClick={() => {
+                                  onDelete(model.id);
+                                  setDeleteConfirm(null);
+                                }}
+                                className="px-2 py-1 text-[11px] font-bold text-white bg-red-500 rounded-md hover:bg-red-600 transition-colors cursor-pointer"
+                              >
+                                确认
+                              </button>
+                              <button
+                                onClick={() => setDeleteConfirm(null)}
+                                className="px-2 py-1 text-[11px] font-bold text-linear-text-secondary bg-linear-surface rounded-md hover:bg-linear-surface-hover transition-colors cursor-pointer"
+                              >
+                                取消
+                              </button>
+                            </div>
+                          ) : (
+                            <button
+                              onClick={() => setDeleteConfirm(model.id)}
+                              className="p-1.5 text-linear-text-tertiary hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-colors cursor-pointer"
+                              title="删除"
+                            >
+                              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                <path d="M3 6h18" /><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6" /><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2" />
+                              </svg>
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </section>
+
+              {/* 图片解析模型选择器 */}
+              {models.filter(m => m.supports_vision).length > 0 && (
+                <section className="rounded-lg border border-linear-border bg-linear-surface p-4">
+                  <h3 className="text-sm font-bold text-linear-text-primary">图片解析模型</h3>
+                  <p className="mt-1 text-xs text-linear-text-tertiary">
+                    当前对话模型不支持图片输入时，使用它解析图片内容。
+                  </p>
+                  <div className="mt-3">
+                    <VisionModelSelector
+                      models={models}
+                      value={visionModelId}
+                      onChange={onSelectVisionModel}
+                    />
+                  </div>
+                </section>
+              )}
+            </>
           )}
         </div>
-
-        {/* Footer — 图片解析模型选择 + 添加按钮 */}
-        {!showForm && (
-          <div className="flex-shrink-0 px-6 py-4 border-t border-linear-border space-y-3">
-            {/* 图片解析模型选择器 */}
-            {models.filter(m => m.supports_vision).length > 0 && (
-              <div>
-                <label className="block text-xs font-bold text-linear-text-secondary mb-1.5">
-                  图片解析模型
-                </label>
-                <VisionModelSelector
-                  models={models}
-                  value={visionModelId}
-                  onChange={onSelectVisionModel}
-                />
-              </div>
-            )}
-            <button
-              onClick={handleAdd}
-              className="w-full flex items-center justify-center gap-2 px-4 py-2.5 text-sm font-semibold text-linear-text-primary bg-linear-surface hover:bg-linear-surface-hover rounded-lg transition-colors cursor-pointer border border-linear-border"
-            >
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M12 5v14" /><path d="M5 12h14" />
-              </svg>
-              添加模型
-            </button>
-          </div>
-        )}
       </div>
     </div>
   );
 };
 
-export default ModelSettings;
+export default React.memo(ModelSettings);

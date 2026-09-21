@@ -289,9 +289,12 @@ html[data-platform='ios'] .app-window-shell {
 }
 
 .qc-mermaid-pan-viewport {
-  overflow: auto;
+  /* translate 会产生 scrollable overflow，auto 会在拖动中弹出滚动条并反复触发布局；
+     平移由拖拽 + transform 负责，这里必须裁剪 */
+  overflow: hidden;
   cursor: grab;
   overscroll-behavior: contain;
+  touch-action: none;
 }
 
 .qc-mermaid-pan-viewport.is-dragging {
@@ -316,6 +319,17 @@ html[data-platform='ios'] .app-window-shell {
 .qc-mermaid-pan-content {
   transform-origin: 0 0;
   will-change: transform;
+}
+
+.qc-mermaid-pan-canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.qc-mermaid-pan-vector {
+  width: 100%;
+  height: 100%;
 }
 
 .qc-mermaid-pan-content svg {

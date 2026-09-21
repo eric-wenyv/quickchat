@@ -175,6 +175,13 @@ const DEFAULT_MERMAID_SVG_SIZE = { width: 960, height: 640 };
 const clampMermaidScale = (scale: number): number =>
   Math.min(MERMAID_MAX_SCALE, Math.max(MERMAID_MIN_SCALE, scale));
 
+// 全屏位图单边上限：WebKit 分块合成层超过纹理上限会退化成逐帧重绘，
+// 复杂矢量图拖动时每个新露出的分块都要重新光栅化，是全屏卡顿的主因。
+const MERMAID_RASTER_MAX_EDGE = 4096;
+
+// 拖动限位：内容大于视口时至少保留这么多像素在屏内，防止图被拖丢找不回来
+const MERMAID_MIN_OVERLAP_PX = 32;
+
 const parseMermaidSvgSize = (svg: string): { width: number; height: number } => {
   const viewBox = /viewBox=["']([^"']+)["']/i.exec(svg)?.[1];
   const viewBoxParts = viewBox
@@ -202,13 +209,79 @@ const parseMermaidSvgSize = (svg: string): { width: number; height: number } => 
   return DEFAULT_MERMAID_SVG_SIZE;
 };
 
+// 把 mermaid 输出的 SVG 光栅化成位图金字塔（原始层 + 1/4、1/16 降采样层）：
+// 全屏视口画布按当前缩放选层 blit，保证任何缩放下每帧读取的源像素量都有界。
+// 失败时调用方回退矢量渲染。
+const buildMermaidRaster = (
+  svg: string,
+  size: { width: number; height: number }
+): Promise<HTMLCanvasElement[]> =>
+  new Promise((resolve, reject) => {
+    // SVG 作为独立图片加载时根节点必须有确定的像素尺寸，否则 drawImage 可能拿到空图
+    const sized = svg.replace(/<svg([^>]*)>/i, (_match, attrs: string) => {
+      const cleaned = attrs
+        .replace(/\s(width|height)=["'][^"']*["']/gi, '')
+        .replace(/\sstyle=["'][^"']*["']/i, '');
+      return `<svg${cleaned} width="${size.width}" height="${size.height}">`;
+    });
+
+    const blob = new Blob([sized], { type: 'image/svg+xml;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const img = new Image();
+
+    const cleanup = () => URL.revokeObjectURL(url);
+    img.onload = () => {
+      try {
+        const rasterScale = Math.min(
+          MERMAID_MAX_SCALE,
+          MERMAID_RASTER_MAX_EDGE / Math.max(size.width, size.height)
+        );
+        const base = document.createElement('canvas');
+        base.width = Math.max(1, Math.round(size.width * rasterScale));
+        base.height = Math.max(1, Math.round(size.height * rasterScale));
+        const ctx = base.getContext('2d');
+        if (!ctx) throw new Error('canvas 2d context unavailable');
+        ctx.drawImage(img, 0, 0, base.width, base.height);
+
+        const levels = [base];
+        let current = base;
+        while (current.width > 512 && current.height > 512 && levels.length < 3) {
+          const down = document.createElement('canvas');
+          down.width = Math.max(1, Math.round(current.width / 4));
+          down.height = Math.max(1, Math.round(current.height / 4));
+          const downCtx = down.getContext('2d');
+          if (!downCtx) break;
+          downCtx.imageSmoothingEnabled = true;
+          downCtx.imageSmoothingQuality = 'high';
+          downCtx.drawImage(current, 0, 0, down.width, down.height);
+          levels.push(down);
+          current = down;
+        }
+
+        cleanup();
+        resolve(levels);
+      } catch (e) {
+        cleanup();
+        reject(e);
+      }
+    };
+    img.onerror = () => {
+      cleanup();
+      reject(new Error('mermaid svg image decode failed'));
+    };
+    img.src = url;
+  });
+
 const MermaidFullscreenModal: React.FC<{
   svg: string;
   copied: boolean;
   onCopy: () => void;
   onClose: () => void;
 }> = ({ svg, copied, onCopy, onClose }) => {
-  const diagramRef = useRef<HTMLDivElement>(null);
+  const viewportRef = useRef<HTMLDivElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const layerRef = useRef<HTMLDivElement>(null);
+  const contentRef = useRef<HTMLDivElement>(null);
   const dragRef = useRef<{
     pointerId: number;
     startX: number;
@@ -216,71 +289,266 @@ const MermaidFullscreenModal: React.FC<{
     originX: number;
     originY: number;
   } | null>(null);
-  const [scale, setScale] = useState(1);
-  const [offset, setOffset] = useState({ x: 0, y: 0 });
+  // 平移/缩放只存 ref，rAF 统一应用：pointermove 不触发 React 渲染
+  const transformRef = useRef({ scale: 1, x: 0, y: 0 });
+  const viewRef = useRef({ width: 0, height: 0 });
+  const rafRef = useRef(0);
   const [isDragging, setIsDragging] = useState(false);
+  const [rasterLevels, setRasterLevels] = useState<HTMLCanvasElement[] | null>(null);
   const svgSize = useMemo(() => parseMermaidSvgSize(svg), [svg]);
 
-  useEffect(() => {
-    dragRef.current = null;
-    setScale(1);
-    setOffset({ x: 0, y: 0 });
-    setIsDragging(false);
-  }, [svg]);
+  // draw / resetView 在 rAF 里跑，读最新值用 latest-ref
+  const svgSizeRef = useRef(svgSize);
+  svgSizeRef.current = svgSize;
+  const rasterRef = useRef<HTMLCanvasElement[] | null>(rasterLevels);
+  rasterRef.current = rasterLevels;
 
-  const handleWheel = useCallback((event: React.WheelEvent<HTMLDivElement>) => {
-    if (!event.ctrlKey) return;
+  // 矢量兜底路径：CSS transform 直写（光栅化失败时才走）
+  const applyVectorTransform = useCallback(() => {
+    rafRef.current = 0;
+    const { scale, x, y } = transformRef.current;
+    if (layerRef.current) {
+      layerRef.current.style.transform = `translate(${x}px, ${y}px)`;
+    }
+    if (contentRef.current) {
+      contentRef.current.style.transform = `scale(${scale})`;
+    }
+  }, []);
 
-    event.preventDefault();
-    event.stopPropagation();
+  // 视口画布：每帧只把可见区域从金字塔位图 blit 到与视口同尺寸的 canvas。
+  // 画布自身永远全可见，合成器没有"懒光栅化新区域"一说，
+  // 第一次拖动和之后的每帧成本完全一致。
+  const draw = useCallback(() => {
+    rafRef.current = 0;
+    const canvas = canvasRef.current;
+    const levels = rasterRef.current;
+    const ctx = canvas?.getContext('2d');
+    if (!canvas || !ctx || !levels?.length) return;
 
-    const nextScale = clampMermaidScale(
-      scale * (event.deltaY < 0 ? MERMAID_ZOOM_FACTOR : 1 / MERMAID_ZOOM_FACTOR)
-    );
-    if (nextScale === scale) return;
+    const { width: vw, height: vh } = viewRef.current;
+    const { width: W, height: H } = svgSizeRef.current;
+    let { scale, x, y } = transformRef.current;
 
-    const diagram = diagramRef.current;
-    if (!diagram) {
-      setScale(nextScale);
-      return;
+    // 小于视口居中；大于视口时至少保留一角在屏内，防止图被拖丢
+    const cw = W * scale;
+    const ch = H * scale;
+    x = cw <= vw ? (vw - cw) / 2 : Math.min(Math.max(x, vw - cw - MERMAID_MIN_OVERLAP_PX), MERMAID_MIN_OVERLAP_PX);
+    y = ch <= vh ? (vh - ch) / 2 : Math.min(Math.max(y, vh - ch - MERMAID_MIN_OVERLAP_PX), MERMAID_MIN_OVERLAP_PX);
+    transformRef.current.x = x;
+    transformRef.current.y = y;
+
+    ctx.clearRect(0, 0, vw, vh);
+
+    // 选层：从最小层开始，找到源采样率仍 >= 屏幕像素密度的最小层
+    const dpr = vw > 0 ? canvas.width / vw : 1;
+    let level = levels[0];
+    for (let i = levels.length - 1; i >= 0; i--) {
+      level = levels[i];
+      if (levels[i].width / W / scale >= dpr) break;
     }
 
-    const rect = diagram.getBoundingClientRect();
-    const localX = (event.clientX - rect.left) / scale;
-    const localY = (event.clientY - rect.top) / scale;
+    // 位图整体映射到屏幕后的可见裁剪，保证 drawImage 源矩形始终在界内
+    const k = level.width / W;
+    const srcPerScreen = k / scale;
+    const clipX = Math.max(x, 0);
+    const clipY = Math.max(y, 0);
+    const clipR = Math.min(x + cw, vw);
+    const clipB = Math.min(y + ch, vh);
+    if (clipR <= clipX || clipB <= clipY) return;
 
-    setOffset({
-      x: offset.x - localX * (nextScale - scale),
-      y: offset.y - localY * (nextScale - scale),
-    });
-    setScale(nextScale);
-  }, [offset, scale]);
-
-  const handlePointerDown = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
-    if (event.button !== 0) return;
-
-    event.preventDefault();
-    event.currentTarget.setPointerCapture(event.pointerId);
-    dragRef.current = {
-      pointerId: event.pointerId,
-      startX: event.clientX,
-      startY: event.clientY,
-      originX: offset.x,
-      originY: offset.y,
-    };
-    setIsDragging(true);
-  }, [offset]);
-
-  const handlePointerMove = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
-    const drag = dragRef.current;
-    if (!drag || drag.pointerId !== event.pointerId) return;
-
-    event.preventDefault();
-    setOffset({
-      x: drag.originX + event.clientX - drag.startX,
-      y: drag.originY + event.clientY - drag.startY,
-    });
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
+    ctx.drawImage(
+      level,
+      (clipX - x) * srcPerScreen,
+      (clipY - y) * srcPerScreen,
+      (clipR - clipX) * srcPerScreen,
+      (clipB - clipY) * srcPerScreen,
+      clipX,
+      clipY,
+      clipR - clipX,
+      clipB - clipY
+    );
   }, []);
+
+  const scheduleApply = useCallback(() => {
+    if (!rafRef.current) {
+      rafRef.current = requestAnimationFrame(() => {
+        if (rasterRef.current) draw();
+        else applyVectorTransform();
+      });
+    }
+  }, [draw, applyVectorTransform]);
+
+  // 同步 flush 未应用的变换，保证随后的锚点计算与 ref 一致
+  const flushApply = useCallback(() => {
+    if (!rafRef.current) return;
+    cancelAnimationFrame(rafRef.current);
+    if (rasterRef.current) draw();
+    else applyVectorTransform();
+  }, [draw, applyVectorTransform]);
+
+  const syncCanvasSize = useCallback(() => {
+    const viewport = viewportRef.current;
+    if (!viewport) return;
+    const rect = viewport.getBoundingClientRect();
+    viewRef.current = { width: rect.width, height: rect.height };
+    const canvas = canvasRef.current;
+    if (canvas && rect.width > 0 && rect.height > 0) {
+      const dpr = Math.min(window.devicePixelRatio || 1, 2);
+      canvas.width = Math.round(rect.width * dpr);
+      canvas.height = Math.round(rect.height * dpr);
+      canvas.getContext('2d')?.setTransform(dpr, 0, 0, dpr, 0, 0);
+    }
+  }, []);
+
+  const resetView = useCallback(() => {
+    if (rasterRef.current) {
+      // 视口画布模式居中要自己算（矢量模式由 flex stage 居中）
+      const { width: vw, height: vh } = viewRef.current;
+      const { width: W, height: H } = svgSizeRef.current;
+      transformRef.current = { scale: 1, x: (vw - W) / 2, y: (vh - H) / 2 };
+    } else {
+      transformRef.current = { scale: 1, x: 0, y: 0 };
+    }
+    dragRef.current = null;
+    setIsDragging(false);
+  }, []);
+
+  // 视口尺寸跟踪（声明在最前：后续 effect 依赖 viewRef 已就绪）
+  useEffect(() => {
+    const viewport = viewportRef.current;
+    if (!viewport) return;
+    const onResize = () => {
+      syncCanvasSize();
+      scheduleApply();
+    };
+    syncCanvasSize();
+    const observer = new ResizeObserver(onResize);
+    observer.observe(viewport);
+    return () => observer.disconnect();
+  }, [syncCanvasSize, scheduleApply]);
+
+  useEffect(() => {
+    let cancelled = false;
+    setRasterLevels(null);
+    buildMermaidRaster(svg, svgSize).then(
+      (levels) => {
+        if (!cancelled) setRasterLevels(levels);
+      },
+      () => {
+        // 光栅化失败则一直用矢量兜底（rasterLevels 保持 null）
+      }
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, [svg, svgSize]);
+
+  // 位图就绪/换图：canvas 挂载后重新量尺寸并复位视图
+  useEffect(() => {
+    if (!rasterLevels) return;
+    syncCanvasSize();
+    resetView();
+    scheduleApply();
+  }, [rasterLevels, syncCanvasSize, resetView, scheduleApply]);
+
+  // 换图复位（svg 变化 = 主题切换重渲染）
+  useEffect(() => {
+    if (rafRef.current) cancelAnimationFrame(rafRef.current);
+    resetView();
+    scheduleApply();
+  }, [svg, resetView, scheduleApply]);
+
+  useEffect(
+    () => () => {
+      if (rafRef.current) cancelAnimationFrame(rafRef.current);
+    },
+    []
+  );
+
+  // ctrl+滚轮缩放：React 的 onWheel 是 passive 监听，preventDefault 无效，
+  // 必须用原生非 passive 监听才能拦下浏览器缩放
+  useEffect(() => {
+    const viewport = viewportRef.current;
+    if (!viewport) return;
+
+    const onWheel = (event: WheelEvent) => {
+      if (!event.ctrlKey) return;
+
+      event.preventDefault();
+      event.stopPropagation();
+
+      flushApply();
+      const { scale, x, y } = transformRef.current;
+      const nextScale = clampMermaidScale(
+        scale * (event.deltaY < 0 ? MERMAID_ZOOM_FACTOR : 1 / MERMAID_ZOOM_FACTOR)
+      );
+      if (nextScale === scale) return;
+
+      if (rasterRef.current) {
+        const rect = viewport.getBoundingClientRect();
+        const px = event.clientX - rect.left;
+        const py = event.clientY - rect.top;
+        transformRef.current = {
+          scale: nextScale,
+          x: px - ((px - x) / scale) * nextScale,
+          y: py - ((py - y) / scale) * nextScale,
+        };
+      } else {
+        const content = contentRef.current;
+        if (!content) {
+          transformRef.current = { ...transformRef.current, scale: nextScale };
+          scheduleApply();
+          return;
+        }
+        const rect = content.getBoundingClientRect();
+        const localX = (event.clientX - rect.left) / scale;
+        const localY = (event.clientY - rect.top) / scale;
+        transformRef.current = {
+          scale: nextScale,
+          x: x - localX * (nextScale - scale),
+          y: y - localY * (nextScale - scale),
+        };
+      }
+      scheduleApply();
+    };
+
+    viewport.addEventListener('wheel', onWheel, { passive: false });
+    return () => viewport.removeEventListener('wheel', onWheel);
+  }, [flushApply, scheduleApply]);
+
+  const handlePointerDown = useCallback(
+    (event: React.PointerEvent<HTMLDivElement>) => {
+      if (event.button !== 0) return;
+
+      event.preventDefault();
+      flushApply();
+      event.currentTarget.setPointerCapture(event.pointerId);
+      dragRef.current = {
+        pointerId: event.pointerId,
+        startX: event.clientX,
+        startY: event.clientY,
+        originX: transformRef.current.x,
+        originY: transformRef.current.y,
+      };
+      setIsDragging(true);
+    },
+    [flushApply]
+  );
+
+  const handlePointerMove = useCallback(
+    (event: React.PointerEvent<HTMLDivElement>) => {
+      const drag = dragRef.current;
+      if (!drag || drag.pointerId !== event.pointerId) return;
+
+      event.preventDefault();
+      transformRef.current.x = drag.originX + event.clientX - drag.startX;
+      transformRef.current.y = drag.originY + event.clientY - drag.startY;
+      scheduleApply();
+    },
+    [scheduleApply]
+  );
 
   const stopDragging = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
     const drag = dragRef.current;
@@ -334,30 +602,31 @@ const MermaidFullscreenModal: React.FC<{
       contentClassName="overflow-hidden"
     >
       <div
-        className={`qc-mermaid-pan-viewport custom-scrollbar h-full ${isDragging ? 'is-dragging' : ''}`}
-        onWheel={handleWheel}
+        ref={viewportRef}
+        className={`qc-mermaid-pan-viewport h-full ${isDragging ? 'is-dragging' : ''}`}
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}
         onPointerUp={stopDragging}
         onPointerCancel={stopDragging}
       >
-        <div className="qc-mermaid-pan-stage">
-          <div
-            className="qc-mermaid-pan-layer"
-            style={{ transform: `translate(${offset.x}px, ${offset.y}px)` }}
-          >
-            <div
-              ref={diagramRef}
-              className="qc-mermaid-pan-content"
-              style={{
-                width: svgSize.width,
-                height: svgSize.height,
-                transform: `scale(${scale})`,
-              }}
-              dangerouslySetInnerHTML={{ __html: svg }}
-            />
+        {rasterLevels ? (
+          <canvas ref={canvasRef} className="qc-mermaid-pan-canvas" />
+        ) : (
+          <div className="qc-mermaid-pan-stage">
+            <div ref={layerRef} className="qc-mermaid-pan-layer">
+              <div
+                ref={contentRef}
+                className="qc-mermaid-pan-content"
+                style={{ width: svgSize.width, height: svgSize.height }}
+              >
+                <div
+                  className="qc-mermaid-pan-vector"
+                  dangerouslySetInnerHTML={{ __html: svg }}
+                />
+              </div>
+            </div>
           </div>
-        </div>
+        )}
       </div>
     </ArtifactFullscreenShell>,
     document.body

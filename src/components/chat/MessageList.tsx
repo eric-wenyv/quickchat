@@ -233,8 +233,9 @@ const MessageList = forwardRef<MessageListHandle, MessageListProps>(
             ))}
           </div>
 
-          {/* 底部安全占位 */}
-          <div className="h-16 w-full flex-shrink-0" aria-hidden="true" />
+          {/* 底部安全占位：需容纳最后一条消息悬浮的复制/删除按钮（约 34px，
+              行内 py-6 已覆盖 24px，这里补足剩余空间即可） */}
+          <div className="h-6 w-full flex-shrink-0" aria-hidden="true" />
         </div>
 
         {/* 移动端选区悬浮复制条（portal 到 body） */}

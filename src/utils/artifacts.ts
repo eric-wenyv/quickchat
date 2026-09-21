@@ -352,10 +352,10 @@ body :where(.qc-step-controls button svg, .qc-step-button svg, .qc-artifact:not(
   height: 16px !important;
   flex: none !important;
 }
-body :where(.qc-artifact:not([data-allow-inputs="true"]) input, .qc-artifact:not([data-allow-inputs="true"]) select, .qc-artifact:not([data-allow-inputs="true"]) textarea, .qc-artifact:not([data-allow-inputs="true"]) .source-input, .qc-artifact:not([data-allow-inputs="true"]) .custom-input, .qc-artifact:not([data-allow-inputs="true"]) .program-input, .qc-artifact:not([data-allow-inputs="true"]) .input-editor, .qc-artifact:not([data-allow-inputs="true"]) .input-panel) {
+body :where(.qc-artifact[data-allow-inputs="false"] input, .qc-artifact[data-allow-inputs="false"] select, .qc-artifact[data-allow-inputs="false"] textarea, .qc-artifact[data-allow-inputs="false"] .source-input, .qc-artifact[data-allow-inputs="false"] .custom-input, .qc-artifact[data-allow-inputs="false"] .program-input, .qc-artifact[data-allow-inputs="false"] .input-editor, .qc-artifact[data-allow-inputs="false"] .input-panel) {
   display: none !important;
 }
-body :where(.qc-artifact:not([data-allow-autoplay="true"]) input[type="range"], .qc-artifact:not([data-allow-autoplay="true"]) .speed-control, .qc-artifact:not([data-allow-autoplay="true"]) .speed-row, .qc-artifact:not([data-allow-autoplay="true"]) .autoplay, .qc-artifact:not([data-allow-autoplay="true"]) .auto-run, .qc-artifact:not([data-allow-autoplay="true"]) .playback-controls, .qc-artifact:not([data-allow-autoplay="true"]) [data-role="speed-control"], .qc-artifact:not([data-allow-autoplay="true"]) [data-role="autoplay"], .qc-artifact:not([data-allow-autoplay="true"]) button[aria-label*="自动"], .qc-artifact:not([data-allow-autoplay="true"]) button[title*="自动"], .qc-artifact:not([data-allow-autoplay="true"]) button[aria-label*="autoplay" i], .qc-artifact:not([data-allow-autoplay="true"]) button[title*="autoplay" i], .qc-artifact:not([data-allow-autoplay="true"]) button[aria-label*="speed" i], .qc-artifact:not([data-allow-autoplay="true"]) button[title*="speed" i]) {
+body :where(.qc-artifact[data-allow-autoplay="false"] input[type="range"], .qc-artifact[data-allow-autoplay="false"] .speed-control, .qc-artifact[data-allow-autoplay="false"] .speed-row, .qc-artifact[data-allow-autoplay="false"] .autoplay, .qc-artifact[data-allow-autoplay="false"] .auto-run, .qc-artifact[data-allow-autoplay="false"] .playback-controls, .qc-artifact[data-allow-autoplay="false"] [data-role="speed-control"], .qc-artifact[data-allow-autoplay="false"] [data-role="autoplay"], .qc-artifact[data-allow-autoplay="false"] button[aria-label*="自动"], .qc-artifact[data-allow-autoplay="false"] button[title*="自动"], .qc-artifact[data-allow-autoplay="false"] button[aria-label*="autoplay" i], .qc-artifact[data-allow-autoplay="false"] button[title*="autoplay" i], .qc-artifact[data-allow-autoplay="false"] button[aria-label*="speed" i], .qc-artifact[data-allow-autoplay="false"] button[title*="speed" i]) {
   display: none !important;
 }
 body :where(table) {
@@ -407,6 +407,7 @@ function artifactRuntimeScript(artifactId: string): string {
   const isElement = (value) => value instanceof HTMLElement;
   const getRoot = () => document.querySelector('.qc-artifact') || document.body;
   const optedIn = (root, attr) => isElement(root) && root.getAttribute(attr) === 'true';
+  const optedOut = (root, attr) => isElement(root) && root.getAttribute(attr) === 'false';
   const signatureOf = (element) => {
     if (!isElement(element)) return '';
     const className = typeof element.className === 'string' ? element.className : '';
@@ -473,12 +474,13 @@ function artifactRuntimeScript(artifactId: string): string {
       });
     }
 
-    if (!optedIn(root, 'data-allow-inputs')) {
+    // 交互控件默认可见（完整小程序），仅当 artifact 显式声明 data-allow-*="false" 时才隐藏
+    if (optedOut(root, 'data-allow-inputs')) {
       root.querySelectorAll('input:not([type="range"]), select, textarea').forEach((control) => hideNearestControl(control, root));
       root.querySelectorAll('.source-input, .custom-input, .program-input, .input-editor, .input-panel').forEach(hideElement);
     }
 
-    if (!optedIn(root, 'data-allow-autoplay')) {
+    if (optedOut(root, 'data-allow-autoplay')) {
       root.querySelectorAll('input[type="range"], .speed-control, .speed-row, .autoplay, .auto-run, .playback-controls, [data-role="speed-control"], [data-role="autoplay"]').forEach((control) => hideNearestControl(control, root));
       root.querySelectorAll('button').forEach((button) => {
         const label = cleanText([button.textContent, button.getAttribute('aria-label'), button.getAttribute('title')].join(' '));

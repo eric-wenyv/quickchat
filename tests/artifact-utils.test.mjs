@@ -128,3 +128,30 @@ test('injects frame bounds that prevent fixed-width artifacts from leaking out',
   assert.match(srcDoc, /body :where\(\.qc-artifact-canvas\) \{[\s\S]*overflow: hidden;/);
   assert.match(srcDoc, /body :where\(svg, canvas, img, video\) \{[\s\S]*max-width: 100% !important;/);
 });
+
+test('keeps interactive controls visible by default and hides them only on opt-out', async () => {
+  const { buildArtifactSrcDoc } = await importArtifactUtils();
+  const srcDoc = buildArtifactSrcDoc('<main class="qc-artifact"><input type="range"><select></select></main>');
+
+  // 旧的"默认隐藏、opt-in 才显示"选择器不应再出现
+  assert.doesNotMatch(srcDoc, /:not\(\[data-allow-inputs="true"\]\)/);
+  assert.doesNotMatch(srcDoc, /:not\(\[data-allow-autoplay="true"\]\)/);
+  // 交互控件默认可见，仅在 artifact 显式声明 ="false" 时隐藏
+  assert.match(srcDoc, /\.qc-artifact\[data-allow-inputs="false"\] input/);
+  assert.match(srcDoc, /\.qc-artifact\[data-allow-inputs="false"\] select/);
+  assert.match(srcDoc, /\.qc-artifact\[data-allow-autoplay="false"\] input\[type="range"\]/);
+  // 注入的 runtime 策略脚本与 CSS 语义一致
+  assert.match(srcDoc, /optedOut\(root, 'data-allow-inputs'\)/);
+  assert.match(srcDoc, /optedOut\(root, 'data-allow-autoplay'\)/);
+  assert.doesNotMatch(srcDoc, /!optedIn\(root, 'data-allow-inputs'\)/);
+  assert.doesNotMatch(srcDoc, /!optedIn\(root, 'data-allow-autoplay'\)/);
+});
+
+test('keeps execution logs hidden unless the artifact opts in', async () => {
+  const { buildArtifactSrcDoc } = await importArtifactUtils();
+  const srcDoc = buildArtifactSrcDoc('<main class="qc-artifact"><div class="log"></div></main>');
+
+  assert.match(srcDoc, /body :where\(\.qc-artifact-log\),\s*body :where\(\.log, \.logs, \.execution-log, \.console-log, \[data-role="log"\], \[data-qc-policy-hidden="true"\]\) \{[\s\S]*display: none !important;/);
+  assert.match(srcDoc, /\.qc-artifact\[data-allow-logs="true"\] \.qc-artifact-log/);
+  assert.match(srcDoc, /optedIn\(root, 'data-allow-logs'\)/);
+});

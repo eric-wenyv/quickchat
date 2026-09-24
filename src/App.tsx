@@ -1340,7 +1340,6 @@ export default function App() {
         }
       };
 
-      let toolLoopCount = 0;
       let lastUsage: { prompt_tokens: number; completion_tokens: number; total_tokens: number } | null = null;
 
       // 空正文自动补发一次：上游瞬时返回空 completion、或思考模型把 max_tokens 全部
@@ -1355,11 +1354,6 @@ export default function App() {
         while (true) {
           // 纯工具调用响应：正文尚未流出，直接进入工具循环
           if (result.type === 'tool_calls') {
-            if (toolLoopCount >= 5) {
-              throw new Error('模型连续触发工具调用超过限制，请重试。');
-            }
-            toolLoopCount++;
-
             chatHistory.push({
               role: 'assistant',
               content: result.assistantMessage || '',
@@ -1424,11 +1418,6 @@ export default function App() {
           // 前言再调工具）。把已流出的正文连同工具调用写回历史并继续工具循环，
           // 否则工具调用会被静默丢弃、空回复被误报为"返回了空内容"
           if (result.lateToolCalls && result.lateToolCalls.length > 0) {
-            if (toolLoopCount >= 5) {
-              throw new Error('模型连续触发工具调用超过限制，请重试。');
-            }
-            toolLoopCount++;
-
             chatHistory.push({
               role: 'assistant',
               content: accumulated,

@@ -1049,8 +1049,10 @@ const MessageContent: React.FC<MessageContentProps> = ({ content, status, activi
   // ActivityPill 仅保留给工具调用等活动提示
   const activityLabel = activity?.label ?? (isStreamingNoText && !hasReasoning ? '思考中...' : null);
   const showActivityOnly = isStreamingNoText && !hasReasoning && Boolean(activityLabel);
-  const showToolPill = isStreamingNoText && hasReasoning && activity?.kind === 'tool';
-  const isThinkingLive = isStreamingNoText && activity?.kind !== 'tool';
+  const showToolPill = status === 'streaming' && activity?.kind === 'tool';
+  // 思考是否进行中由 activity 显式标记（每轮工具调用后都会重新置为 thinking），
+  // 不限定"尚无正文"——混合响应里上一轮已流出前言正文，新一轮思考仍要 live 展示
+  const isThinkingLive = status === 'streaming' && activity?.kind === 'thinking';
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const normalizedTextContent = useMemo(() => normalizeStreamingMarkdown(textContent), [textContent]);
   const contentSegments = useMemo(

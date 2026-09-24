@@ -242,10 +242,13 @@ export default function App() {
         const pendingContent = pendingUpdatesRef.current[msg.id];
         const pendingReasoning = pendingReasoningRef.current[msg.id];
         if (pendingContent === undefined && pendingReasoning === undefined) return msg;
+        // activity 不在这里派生：pending 正文跨工具轮次保留，若据其清空 activity，
+        // 会把工具调用后重新置为 thinking 的状态立刻抹掉。activity 由流式循环在
+        // 本轮首个可见正文分片到达时显式清空（见 handleSendMessage）
         return {
           ...msg,
           ...(pendingContent !== undefined
-            ? { content: pendingContent, status: 'streaming' as const, activity: pendingContent.trim() ? null : msg.activity }
+            ? { content: pendingContent, status: 'streaming' as const }
             : {}),
           ...(pendingReasoning !== undefined ? { reasoning_content: pendingReasoning } : {}),
         };
@@ -1246,6 +1249,10 @@ export default function App() {
     // 提到 try 外：中断（AbortError）时 catch 分支需要用已累积的正文兜底，
     // 避免节流间隔内未刷入 UI/DB 的尾部内容丢失
     let accumulated = '';
+    // 当前轮次是否已流出可见正文：每个工具轮次开始时重置，本轮首个可见正文分片
+    // 到达时才清空 activity（结束本轮思考展示）。跨轮次判定必须按轮重置——
+    // 上一轮的前言正文不能阻止新一轮思考区块进入 live 状态
+    let currentRoundTextStarted = false;
     // 思考内容追踪：跨工具轮次累计（每轮 chatCompletion 的 reasoning 分片都经
     // onReasoningDelta 汇入），耗时取"首个思考分片 → 首个正文分片"的间隔
     let accumulatedReasoning = '';
@@ -1362,6 +1369,7 @@ export default function App() {
 
             await runToolCalls(result.toolCalls);
 
+            currentRoundTextStarted = false;
             updateThreadMessages(convId, prev => prev.map(msg =>
               msg.id === aiMsgId
                 ? { ...msg, activity: { kind: 'thinking' as const, label: '思考中...' }, status: 'streaming' as const }
@@ -1383,12 +1391,23 @@ export default function App() {
           // 流式显示文本回复（增量累加：混合响应跨多轮时正文需要拼接）
           for await (const chunk of result.stream) {
             accumulated += chunk.delta;
-            // 首个正文分片到达即思考阶段结束：固化耗时供 ThinkingBlock 展示
-            if (chunk.delta && thinkingMs === null && reasoningStartAt !== null) {
-              thinkingMs = performance.now() - reasoningStartAt;
-              updateThreadMessages(convId, prev => prev.map(msg =>
-                msg.id === aiMsgId ? { ...msg, thinking_ms: thinkingMs } : msg
-              ));
+            if (chunk.delta) {
+              // 首个正文分片到达即思考阶段结束：固化耗时供 ThinkingBlock 展示
+              if (thinkingMs === null && reasoningStartAt !== null) {
+                thinkingMs = performance.now() - reasoningStartAt;
+                updateThreadMessages(convId, prev => prev.map(msg =>
+                  msg.id === aiMsgId ? { ...msg, thinking_ms: thinkingMs } : msg
+                ));
+              }
+              // 本轮首个可见正文分片到达：结束本轮思考展示（清空 activity，
+              // ThinkingBlock 由 live 转为完成态）。用 trim 后的累计正文判定，
+              // 纯空白分片（如引用占位）不提前结束思考展示
+              if (!currentRoundTextStarted && accumulated.trim()) {
+                currentRoundTextStarted = true;
+                updateThreadMessages(convId, prev => prev.map(msg =>
+                  msg.id === aiMsgId ? { ...msg, activity: null } : msg
+                ));
+              }
             }
             pendingUpdatesRef.current[aiMsgId] = accumulated;
             pendingUpdateThreadsRef.current[aiMsgId] = convId;
@@ -1419,6 +1438,7 @@ export default function App() {
 
             await runToolCalls(result.lateToolCalls);
 
+            currentRoundTextStarted = false;
             updateThreadMessages(convId, prev => prev.map(msg =>
               msg.id === aiMsgId
                 ? { ...msg, activity: { kind: 'thinking' as const, label: '思考中...' }, status: 'streaming' as const }
@@ -1442,6 +1462,7 @@ export default function App() {
         if (accumulated.trim() || generationAttempt > 1) break;
 
         accumulated = '';
+        currentRoundTextStarted = false;
         result = await chatCompletion({
           model: activeModel,
           messages: chatHistory,

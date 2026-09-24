@@ -262,6 +262,11 @@ html[data-platform='ios'] .app-window-shell {
   max-width: 100%;
 }
 
+/* Skill 命令着色：注入成功（或输入中命中）的 /skill-id 仅改字体颜色，不加任何 UI */
+.qc-skill-command {
+  color: #b3b8ff;
+}
+
 /* Mermaid diagram surfaces */
 .qc-mermaid {
   color: #dedee3;

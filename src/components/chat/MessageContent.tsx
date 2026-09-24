@@ -4,7 +4,7 @@ import type { Components } from 'react-markdown';
 import type { MessageActivity, MessageStatus, FileAttachment } from '@/types/types';
 import { parseAttachments, formatFileSize, getFileIcon } from '@/utils/file';
 import { parseImageDescriptions } from '@/utils/image-description';
-import { stripSkillContext } from '@/utils/skill-context';
+import { stripSkillContext, getSkillContextId, parseSkillInvocation } from '@/utils/skill-context';
 import { normalizeStreamingMarkdown } from '@/utils/markdown';
 import { isRenderableHtmlArtifact, splitRenderableHtmlArtifacts } from '@/utils/artifacts';
 import useCopy from '@/hooks/useCopy';
@@ -1043,6 +1043,14 @@ const MessageContent: React.FC<MessageContentProps> = ({ content, status, activi
   const textContent = parsedAttachments.text;
   const attachments = parsedAttachments.attachments;
   const hasTextContent = textContent.trim() !== '';
+  // 斜杠命令成功注入 skill（消息含 skill-context 注释块）时，正文开头的
+  // /skill-id 以着色字体渲染（仅改字体颜色，不加 UI），正文保持原样
+  const skillInvocation = useMemo(() => {
+    const contextId = getSkillContextId(content);
+    if (!contextId) return null;
+    const invocation = parseSkillInvocation(textContent);
+    return invocation && invocation.id === contextId ? invocation : null;
+  }, [content, textContent]);
   const hasReasoning = Boolean(reasoning?.trim());
   const isStreamingNoText = status === 'streaming' && !hasTextContent;
   // 思考分片尚未到达的等待期与流式思考期共用 ThinkingIndicator 统一动画；
@@ -1072,6 +1080,25 @@ const MessageContent: React.FC<MessageContentProps> = ({ content, status, activi
   );
   const markdownComponents = useMemo<Components>(
     () => ({
+      p({ children }) {
+        // 首个纯文本子节点开头的 /skill-id 仅做着色处理，其余内容原样渲染
+        if (skillInvocation) {
+          const command = `/${skillInvocation.id}`;
+          children = React.Children.map(children, (child, index) => {
+            if (index === 0 && typeof child === 'string' && child.startsWith(command)) {
+              return (
+                <React.Fragment>
+                  <span className="qc-skill-command">{command}</span>
+                  {child.slice(command.length)}
+                </React.Fragment>
+              );
+            }
+            return child;
+          });
+        }
+        return <p>{children}</p>;
+      },
+
       pre({ children }) {
         return <>{children}</>;
       },
@@ -1166,7 +1193,7 @@ const MessageContent: React.FC<MessageContentProps> = ({ content, status, activi
         return <td className="whitespace-nowrap px-4 py-3 text-linear-text-body">{children}</td>;
       },
     }),
-    []
+    [skillInvocation]
   );
 
   return (

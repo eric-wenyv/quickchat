@@ -13,12 +13,12 @@ function sse(events) {
   });
 }
 
-function openRouterModel() {
+function testModel() {
   return {
     id: 'model-1',
-    provider: 'openrouter',
+    provider: 'openai_compatible',
     model_id: 'openai/gpt-4o-mini',
-    display_name: 'OpenRouter model',
+    display_name: 'Test model',
     api_key: 'test-key',
     api_endpoint: 'https://example.test/v1',
     temperature: 0.7,
@@ -67,9 +67,8 @@ test('chatCompletion maps OpenRouter url_citation annotations to citations', asy
   ]));
 
   const result = await chatCompletion({
-    model: openRouterModel(),
+    model: testModel(),
     messages: [{ role: 'user', content: 'Search this.' }],
-    webSearch: { enabled: true, mode: 'official' },
   });
   const chunks = await readAll(result.stream);
 

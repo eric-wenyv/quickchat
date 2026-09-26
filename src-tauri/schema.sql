@@ -142,7 +142,8 @@ END;
 CREATE TABLE IF NOT EXISTS model_configs (
     -- 主键：UUIDv4
     id TEXT PRIMARY KEY NOT NULL,
-    -- AI 供应商：'google_gemini'
+    -- AI 供应商：已统一为 'openai_compatible'（历史数据由前端 migrateModelProviders 迁移；
+    -- CHECK 保留三值以兼容旧库与 sync_server，勿收紧）
     provider TEXT NOT NULL CHECK (
         provider IN (
             'google_gemini',

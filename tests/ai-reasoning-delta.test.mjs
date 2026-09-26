@@ -15,7 +15,7 @@ function sse(events) {
 
 function modelConfig() {
   return {
-    provider: 'google_gemini',
+    provider: 'openai_compatible',
     model_id: 'gemini-3-flash-preview',
     api_key: 'test-key',
     api_endpoint: 'https://example.test/v1',
@@ -60,23 +60,23 @@ test('onReasoningDelta streams reasoning increments before the first text delta 
   }
 });
 
-test('onReasoningDelta also fires for OpenRouter-normalized delta.reasoning fragments', async () => {
+test('onReasoningDelta also fires for normalized delta.reasoning fragments', async () => {
   const { chatCompletion } = await importAiService();
   const deltas = [];
 
   globalThis.fetch = async () => new Response(sse([
-    { choices: [{ delta: { reasoning: 'thinking via openrouter' } }] },
+    { choices: [{ delta: { reasoning: 'thinking via delta.reasoning' } }] },
     { choices: [{ delta: { content: 'answer' } }] },
   ]));
 
   const result = await chatCompletion({
-    model: { ...modelConfig(), provider: 'openrouter', model_id: 'glm-4.6' },
+    model: { ...modelConfig(), model_id: 'glm-4.6' },
     messages: [{ role: 'user', content: 'hi' }],
     onReasoningDelta: (delta) => deltas.push(delta),
   });
 
   assert.equal(result.type, 'text');
-  assert.deepEqual(deltas, ['thinking via openrouter']);
+  assert.deepEqual(deltas, ['thinking via delta.reasoning']);
 });
 
 test('onReasoningDelta fires for reasoning streamed ahead of tool_calls responses', async () => {
@@ -115,9 +115,7 @@ test('onReasoningDelta fires for reasoning streamed ahead of tool_calls response
   assert.deepEqual(deltas, ['需要先查资料。']);
 });
 
-// Gemini 的 OpenAI 兼容层必须显式 include_thoughts 才会在流中返回思考摘要；
-// 缺失该参数时思考阶段完全没有 reasoning 分片，UI 只能显示等待动画。
-async function captureRequestBody(provider, modelId, thinkingLevel) {
+async function captureRequestBody(modelId, thinkingLevel) {
   const { chatCompletion } = await importAiService();
   let capturedBody = null;
   globalThis.fetch = async (_url, init) => {
@@ -125,30 +123,21 @@ async function captureRequestBody(provider, modelId, thinkingLevel) {
     return new Response(sse([{ choices: [{ delta: { content: 'ok' } }] }]));
   };
   await chatCompletion({
-    model: { ...modelConfig(), provider, model_id: modelId },
+    model: { ...modelConfig(), model_id: modelId },
     messages: [{ role: 'user', content: 'hi' }],
     ...(thinkingLevel !== undefined ? { thinkingLevel } : {}),
   });
   return capturedBody;
 }
 
-test('google_gemini with thinking level requests thought summaries via include_thoughts', async () => {
-  const body = await captureRequestBody('google_gemini', 'gemini-3-flash-preview', 'MEDIUM');
-  assert.deepEqual(body.google, { thinking_config: { include_thoughts: true } });
-  assert.equal(body.reasoning_effort, 'medium');
-  // thinking_config 内的 level/budget 与顶层 reasoning_effort 互斥，不得同时下发
-  assert.equal(body.google.thinking_config.thinking_level, undefined);
-  assert.equal(body.google.thinking_config.thinking_budget, undefined);
-});
-
-test('non-google providers do not receive the google thinking_config payload', async () => {
-  const body = await captureRequestBody('openrouter', 'glm-4.6', 'high');
+test('thinking level sends reasoning_effort without provider-specific payloads', async () => {
+  const body = await captureRequestBody('glm-4.6', 'high');
   assert.equal(body.google, undefined);
   assert.equal(body.reasoning_effort, 'high');
 });
 
-test('google_gemini without an explicit thinking level keeps the request unchanged', async () => {
-  const body = await captureRequestBody('google_gemini', 'gemini-2.5-flash', undefined);
+test('without an explicit thinking level the request stays unchanged', async () => {
+  const body = await captureRequestBody('glm-4.6', undefined);
   assert.equal(body.google, undefined);
   assert.equal(body.reasoning_effort, undefined);
 });

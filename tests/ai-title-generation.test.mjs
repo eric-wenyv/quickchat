@@ -6,7 +6,7 @@ import { importAiService } from './lib/import-ai.mjs';
 function modelConfig(overrides = {}) {
   return {
     id: 'model-1',
-    provider: 'google_gemini',
+    provider: 'openai_compatible',
     model_id: 'gemini-3-flash-preview',
     display_name: 'Gemini',
     api_key: 'test-key',

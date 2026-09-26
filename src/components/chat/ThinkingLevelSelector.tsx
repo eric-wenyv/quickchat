@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 
 interface ThinkingLevelSelectorProps {
-  /** 模型支持的思考强度档位（来自 OpenRouter 元数据 / Gemini 固定三档）；null 或空数组时整个组件隐藏 */
+  /** 模型支持的思考强度档位（gemini-3 固定三档）；null 或空数组时整个组件隐藏 */
   efforts: string[] | null;
   /** 当前选中的档位（per-conversation）；null 表示未选择，使用模型默认档位 */
   thinkingLevel: string | null;
@@ -30,7 +30,7 @@ function effortLabel(effort: string): string {
 /**
  * ThinkingLevelSelector
  * 思考强度选择器，位于模型选择器右侧。档位列表由调用方按模型提供
- * （OpenRouter 官方元数据，本地持久化缓存）；不支持的模型直接隐藏。
+ * （gemini-3 固定三档）；不支持的模型直接隐藏。
  * 不提供"关闭思考"选项。
  */
 const ThinkingLevelSelector: React.FC<ThinkingLevelSelectorProps> = ({

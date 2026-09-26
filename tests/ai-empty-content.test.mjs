@@ -13,10 +13,10 @@ function sse(events) {
   });
 }
 
-function openRouterModel() {
+function testModel() {
   return {
     id: 'model-1',
-    provider: 'openrouter',
+    provider: 'openai_compatible',
     model_id: 'z-ai/glm-5.3',
     display_name: 'GLM 5.3',
     api_key: 'test-key',
@@ -70,9 +70,8 @@ test('empty-string content chunks before tool_calls resolve as tool_calls, not e
   ]));
 
   const result = await chatCompletion({
-    model: openRouterModel(),
+    model: testModel(),
     messages: [{ role: 'user', content: 'opencode如何查看session修改代码' }],
-    webSearch: { enabled: true, mode: 'official' },
   });
 
   assert.equal(result.type, 'tool_calls');
@@ -96,10 +95,9 @@ test('mid-stream error events surface as a thrown error instead of empty content
 
   await assert.rejects(
     chatCompletion({
-      model: openRouterModel(),
+      model: testModel(),
       messages: [{ role: 'user', content: 'hi' }],
-      webSearch: { enabled: true, mode: 'official' },
-    }),
+      }),
     /Internal Server Error/,
   );
 });
@@ -115,9 +113,8 @@ test('OpenRouter delta.reasoning chunks accumulate into reasoningContent', async
   ]));
 
   const result = await chatCompletion({
-    model: openRouterModel(),
+    model: testModel(),
     messages: [{ role: 'user', content: 'hi' }],
-    webSearch: { enabled: true, mode: 'official' },
   });
 
   assert.equal(result.type, 'text');
@@ -141,9 +138,8 @@ test('text followed by tool_calls returns lateToolCalls for the caller to contin
   ]));
 
   const result = await chatCompletion({
-    model: openRouterModel(),
+    model: testModel(),
     messages: [{ role: 'user', content: 'hi' }],
-    webSearch: { enabled: true, mode: 'official' },
   });
 
   assert.equal(result.type, 'text');
@@ -171,9 +167,8 @@ test('plain content streams normally after empty-string citation chunks', async 
   ]));
 
   const result = await chatCompletion({
-    model: openRouterModel(),
+    model: testModel(),
     messages: [{ role: 'user', content: 'hi' }],
-    webSearch: { enabled: true, mode: 'official' },
   });
 
   assert.equal(result.type, 'text');

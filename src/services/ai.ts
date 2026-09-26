@@ -2,18 +2,12 @@
 // Quick-Chat — 统一 AI Service（OpenAI 兼容格式 + Tool Calling）
 // =============================================================================
 
-import type { ModelConfig, ThinkingEfforts } from '@/types/types';
+import type { ModelConfig } from '@/types/types';
 import { openSseStream } from './sse-transport';
 
 // ---------------------------------------------------------------------------
 // 常量
 // ---------------------------------------------------------------------------
-
-const DEFAULT_ENDPOINTS: Record<string, string> = {
-  google_gemini: 'https://generativelanguage.googleapis.com/v1beta/openai/',
-  openrouter: 'https://openrouter.ai/api/v1/',
-  openai_compatible: '',
-};
 
 const TITLE_MAX_LENGTH = 20;
 const PLACEHOLDER_TITLES = new Set(['', 'new chat', 'untitled', '新对话']);
@@ -43,20 +37,13 @@ export type FunctionToolDefinition = {
   };
 };
 
-export type OpenRouterWebSearchTool = {
+/** OpenRouter 服务端工具（如 openrouter:web_search）：由服务端执行，不产生本地 tool_calls */
+export type ServerToolDefinition = {
   type: 'openrouter:web_search';
-  parameters?: {
-    engine?: 'auto' | 'native' | 'exa' | 'firecrawl' | 'parallel' | 'perplexity';
-    max_results?: number;
-    max_total_results?: number;
-    search_context_size?: 'low' | 'medium' | 'high';
-    allowed_domains?: string[];
-    excluded_domains?: string[];
-    max_characters?: number;
-  };
+  parameters?: Record<string, unknown>;
 };
 
-export type ToolDefinition = FunctionToolDefinition | OpenRouterWebSearchTool;
+export type ToolDefinition = FunctionToolDefinition | ServerToolDefinition;
 
 export interface ToolCall {
   id: string;
@@ -85,7 +72,6 @@ export interface ChatCompletionParams {
   model: ModelConfig;
   messages: ChatMessage[];
   tools?: ToolDefinition[];
-  webSearch?: WebSearchOptions;
   /** 思考强度档位（模型支持的档位字符串，如 low/high/max；null 表示不干预） */
   thinkingLevel?: string | null;
   signal?: AbortSignal;
@@ -99,11 +85,6 @@ export interface TokenUsage {
   prompt_tokens: number;
   completion_tokens: number;
   total_tokens: number;
-}
-
-export interface WebSearchOptions {
-  enabled: boolean;
-  mode: 'official' | 'disabled';
 }
 
 export interface UrlCitation {
@@ -189,93 +170,43 @@ export function buildSkillCatalogPrompt(skills: Array<{ id: string; name: string
 
 function getApiEndpoint(model: ModelConfig): string {
   if (model.api_endpoint) return model.api_endpoint;
-  const base = DEFAULT_ENDPOINTS[model.provider];
-  if (!base && model.provider === 'openai_compatible') {
-    throw new Error('自定义 OpenAI 兼容 API 必须填写 API Endpoint');
-  }
-  return base;
+  throw new Error('自定义 OpenAI 兼容 API 必须填写 API Endpoint');
 }
 
 function buildHeaders(model: ModelConfig): Record<string, string> {
-  const headers: Record<string, string> = {
+  return {
     'Content-Type': 'application/json',
     Authorization: `Bearer ${model.api_key}`,
   };
+}
 
-  if (model.provider === 'openrouter') {
-    headers['HTTP-Referer'] = typeof window !== 'undefined' ? window.location.href : 'https://quick-chat.app';
-    headers['X-Title'] = 'Quick Chat';
+function isOpenRouterEndpoint(model: ModelConfig): boolean {
+  try {
+    const hostname = new URL(model.api_endpoint ?? '').hostname;
+    return hostname === 'openrouter.ai' || hostname.endsWith('.openrouter.ai');
+  } catch {
+    return false;
   }
-
-  return headers;
 }
 
-export function getWebSearchOptions(_model: ModelConfig): WebSearchOptions {
-  // 2026-09-18 定案：OpenRouter 对附带 openrouter:web_search 工具的请求，会把
-  // 思考模型（如 z-ai/glm-5.3）的整段 reasoning 在思考阶段结束后作为单一事件
-  // 下发（同 key/同代理/同时段的裸请求与 function tools 请求均为逐片渐进，
-  // 已对照实验证实），导致思考内容无法流式展示。因此默认不附加该工具；
-  // 显式传 webSearch.enabled 仍可启用（后续可接 UI 开关）。
-  return { enabled: false, mode: 'disabled' };
+/**
+ * OpenRouter 服务端网络搜索工具：模型自主决定是否/何时搜索，由 OpenRouter 执行，
+ * 搜索结果以 url_citation 注解随流返回（走既有的引用解析链路）。
+ */
+export function buildOpenRouterWebSearchTool(): ServerToolDefinition {
+  return { type: 'openrouter:web_search' };
 }
 
 // ---------------------------------------------------------------------------
-// 思考强度元数据（OpenRouter 官方模型接口）
+// 思考强度
 // ---------------------------------------------------------------------------
 
-/** OpenRouter 拒绝不支持的思考档位时抛出，调用方据此重拉档位并提示用户重新选择 */
+/** 服务端拒绝不支持的思考档位时抛出，调用方据此提示用户重新选择 */
 export class ReasoningEffortError extends Error {
   constructor(message: string) {
     super(message);
     this.name = 'ReasoningEffortError';
   }
-}
-
-/** 思考强度缓存的 key：OpenRouter 模型即官方 slug */
-export function thinkingEffortsKey(model: ModelConfig): string {
-  return `${model.provider}:${model.model_id}`;
-}
-
-const OPENROUTER_MODELS_URL = 'https://openrouter.ai/api/v1/models';
-
-/**
- * 从 OpenRouter 官方模型接口获取指定模型支持的思考强度。
- * 仅 provider 为 openrouter 的模型可查（model_id 即官方 slug）。
- * 返回 null 表示 OpenRouter 上不存在该模型；efforts 为空数组表示不支持选择档位。
- * 两种情况 UI 都应隐藏思考强度选择器。
- */
-export async function fetchModelThinkingEfforts(model: ModelConfig): Promise<ThinkingEfforts | null> {
-  if (model.provider !== 'openrouter') return null;
-
-  const response = await fetch(OPENROUTER_MODELS_URL);
-  if (!response.ok) {
-    throw new Error(`获取 OpenRouter 模型元数据失败 (${response.status}): ${response.statusText}`);
-  }
-
-  const json = await response.json();
-  const entry = Array.isArray(json?.data) ? json.data.find((m: any) => m?.id === model.model_id) : null;
-  if (!entry) return null;
-
-  const reasoning = entry.reasoning;
-  const efforts = Array.isArray(reasoning?.supported_efforts)
-    ? reasoning.supported_efforts.filter((e: unknown): e is string => typeof e === 'string' && e.length > 0)
-    : [];
-  return {
-    efforts,
-    defaultEffort: typeof reasoning?.default_effort === 'string' ? reasoning.default_effort : null,
-  };
-}
-
-export function buildOpenRouterWebSearchTool(): OpenRouterWebSearchTool {
-  return {
-    type: 'openrouter:web_search',
-    parameters: {
-      engine: 'auto',
-      max_results: 5,
-      max_total_results: 10,
-      search_context_size: 'medium',
-    },
-  };
 }
 
 export function dedupeCitations(citations?: UrlCitation[]): UrlCitation[] {
@@ -355,7 +286,6 @@ function buildRequestBody(
   model: ModelConfig,
   messages: ChatMessage[],
   tools?: ToolDefinition[],
-  webSearch?: WebSearchOptions,
   thinkingLevel?: string | null,
   maxTokens?: number | null
 ): unknown {
@@ -374,22 +304,17 @@ function buildRequestBody(
   };
 
   if (thinkingEnabled) {
-    // OpenAI 风格的 reasoning_effort；OpenRouter 会将其归一化（两种格式只能发其一）
+    // OpenAI 风格的 reasoning_effort；部分服务端会将其归一化（两种格式只能发其一）
     body.reasoning_effort = thinkingLevel.toLowerCase();
-    // Gemini 的 OpenAI 兼容层必须显式 include_thoughts 才返回思考摘要（流式分片走
-    // delta.reasoning 字段）；thinking_config 内的 level/budget 与顶层 reasoning_effort
-    // 互斥，因此这里只传 include_thoughts，档位继续由 reasoning_effort 映射
-    if (model.provider === 'google_gemini') {
-      body.google = { thinking_config: { include_thoughts: true } };
-    }
   }
 
-  if (model.provider === 'openrouter' && webSearch?.enabled) {
-    // OpenRouter 官方网页搜索工具（由 OpenRouter 服务端执行）与本地 function tools（如 use_skill）可以并存
-    body.tools = [buildOpenRouterWebSearchTool(), ...(tools ?? [])];
-    body.tool_choice = 'auto';
-  } else if (tools && tools.length > 0) {
-    body.tools = tools;
+  const requestTools: ToolDefinition[] = [...(tools ?? [])];
+  // base URL 指向 OpenRouter 时动态附加服务端 web_search 工具（仅 OpenRouter 支持该工具类型）
+  if (isOpenRouterEndpoint(model)) {
+    requestTools.push(buildOpenRouterWebSearchTool());
+  }
+  if (requestTools.length > 0) {
+    body.tools = requestTools;
     body.tool_choice = 'auto';
   }
 
@@ -512,7 +437,7 @@ function mergeDelta(acc: SSEAccumulator, delta: any): void {
     acc.reasoningContent += delta.reasoning_content;
     acc.onReasoningDelta?.(delta.reasoning_content, acc.reasoningContent);
   } else if (typeof delta.reasoning === 'string') {
-    // OpenRouter 归一化的思考分片使用 delta.reasoning 字段
+    // 部分服务端归一化的思考分片使用 delta.reasoning 字段
     acc.reasoningContent += delta.reasoning;
     acc.onReasoningDelta?.(delta.reasoning, acc.reasoningContent);
   }
@@ -541,7 +466,7 @@ function mergeDelta(acc: SSEAccumulator, delta: any): void {
 }
 
 function applyParsedEvent(acc: SSEAccumulator, parsed: any): void {
-  // OpenRouter 会在流内下发错误事件（如上游 500）；若静默忽略，
+  // 部分服务端（如 OpenRouter）会在流内下发错误事件（如上游 500）；若静默忽略，
   // 用户只会看到误导性的"模型返回了空内容"而不是真实原因
   if (parsed && typeof parsed === 'object' && parsed.error) {
     const err = parsed.error;
@@ -711,12 +636,12 @@ async function* continueTextStream(
 // ---------------------------------------------------------------------------
 
 export async function chatCompletion(params: ChatCompletionParams): Promise<ChatCompletionResult> {
-  const { model, messages, tools, webSearch, thinkingLevel, signal, maxTokens, onReasoningDelta } = params;
+  const { model, messages, tools, thinkingLevel, signal, maxTokens, onReasoningDelta } = params;
 
   const endpoint = getApiEndpoint(model);
   const url = `${endpoint.replace(/\/$/, '')}/chat/completions`;
   const headers = buildHeaders(model);
-  const body = buildRequestBody(model, messages, tools, webSearch, thinkingLevel, maxTokens);
+  const body = buildRequestBody(model, messages, tools, thinkingLevel, maxTokens);
 
   const stream = await openSseStream(url, headers, JSON.stringify(body), signal);
 
@@ -730,8 +655,8 @@ export async function chatCompletion(params: ChatCompletionParams): Promise<Chat
       // 非法 JSON：readAllText 已给出原始文本，保持 errorText 不变
     }
     const detail = errorText || stream.statusText;
-    // OpenRouter 拒绝不支持的思考档位时返回 400，错误信息会点名 reasoning/effort；
-    // 单独识别出来，调用方据此重拉档位缓存并提示用户重新选择
+    // 服务端拒绝不支持的思考档位时返回 400，错误信息会点名 reasoning/effort；
+    // 单独识别出来，调用方据此提示用户重新选择
     if (stream.status === 400 && /reasoning|effort/i.test(detail)) {
       throw new ReasoningEffortError(`模型 ${model.model_id} 不支持当前思考强度: ${detail}`);
     }
@@ -781,7 +706,7 @@ export async function chatCompletion(params: ChatCompletionParams): Promise<Chat
       const firstDelta = textDeltaFromParsed(parsed);
       // 只有非空正文分片才提交文本分支：思考模型的 reasoning 总是先于 content /
       // tool_calls 到达，若凭 reasoning 就提交，随后的 tool_calls 会被 continueTextStream
-      // 当成"文本后又触发工具"的混合响应；而 OpenRouter web_search 的引用分片 content
+      // 当成"文本后又触发工具"的混合响应；而搜索引用的引用分片 content
       // 为空字符串，若据其提交，随后的 tool_calls 会全部挂进 lateToolCalls 被调用方丢弃，
       // 最终误报"返回了空内容"。
       if (firstDelta) {

@@ -11,7 +11,6 @@ import type {
   Message,
   ModelConfig,
   SystemPrompt,
-  ThinkingEfforts,
   UUID,
   EpochMillis,
 } from '@/types/types';
@@ -321,17 +320,7 @@ export async function initDatabase(): Promise<void> {
   `);
   await ensureModelColumns(db);
   await relaxModelMaxTokensConstraint(db);
-
-  // 思考强度缓存表：档位元数据来自 OpenRouter 官方模型接口，变更极少，
-  // 拉取成功后直接持久化；模型档位变化时由 API 报错触发重拉覆盖
-  await db.execute(`
-    CREATE TABLE IF NOT EXISTS thinking_efforts_cache (
-      model_key      TEXT PRIMARY KEY NOT NULL,
-      efforts        TEXT NOT NULL,
-      default_effort TEXT DEFAULT NULL,
-      updated_at     INTEGER NOT NULL
-    );
-  `);
+  await migrateModelProviders(db);
 }
 
 export async function runDatabaseMaintenance(): Promise<void> {
@@ -470,6 +459,32 @@ async function ensureModelColumns(db: Database): Promise<void> {
     }
   } catch (e) {
     console.error('[DB] ensureModelColumns failed:', e);
+  }
+}
+
+/**
+ * provider 统一迁移：历史库中的 google_gemini / openrouter 全部归一为
+ * openai_compatible（三者本来就都走 OpenAI 兼容端点）；迁移前为空 endpoint 的
+ * 旧 provider 模型按原供应商回填默认端点，保证已导入模型继续可用。
+ * CHECK 约束保留三值以兼容旧库与 sync_server，此处仅 UPDATE 列值。
+ */
+async function migrateModelProviders(db: Database): Promise<void> {
+  try {
+    await db.execute(`
+      UPDATE model_configs SET api_endpoint = CASE provider
+        WHEN 'google_gemini' THEN 'https://generativelanguage.googleapis.com/v1beta/openai/'
+        WHEN 'openrouter' THEN 'https://openrouter.ai/api/v1/'
+        ELSE api_endpoint END
+      WHERE provider != 'openai_compatible' AND (api_endpoint IS NULL OR TRIM(api_endpoint) = '')
+    `);
+    const result = await db.execute(
+      "UPDATE model_configs SET provider = 'openai_compatible' WHERE provider != 'openai_compatible'"
+    );
+    if (result.rowsAffected > 0) {
+      console.log(`[DB] Migrated ${result.rowsAffected} model_configs rows to openai_compatible`);
+    }
+  } catch (e) {
+    console.error('[DB] migrateModelProviders failed:', e);
   }
 }
 
@@ -695,46 +710,6 @@ export async function updateModelConfig(
 export async function deleteModelConfig(id: UUID): Promise<void> {
   const db = await getDb();
   await db.execute('DELETE FROM model_configs WHERE id = ?', [id]);
-}
-
-// ---------------------------------------------------------------------------
-// 思考强度缓存（OpenRouter 模型档位元数据）
-// ---------------------------------------------------------------------------
-
-/** 启动时整表加载缓存；model_key 对 OpenRouter 为模型 slug（provider:model_id） */
-export async function getThinkingEffortsCache(): Promise<Record<string, ThinkingEfforts>> {
-  const db = await getDb();
-  const rows = await db.select<{ model_key: string; efforts: string; default_effort: string | null }[]>(
-    'SELECT model_key, efforts, default_effort FROM thinking_efforts_cache'
-  );
-  const cache: Record<string, ThinkingEfforts> = {};
-  for (const row of rows) {
-    try {
-      const efforts = JSON.parse(row.efforts);
-      if (Array.isArray(efforts)) {
-        cache[row.model_key] = {
-          efforts: efforts.filter((e): e is string => typeof e === 'string'),
-          defaultEffort: row.default_effort || null,
-        };
-      }
-    } catch {
-      // 损坏的缓存行直接跳过，下次使用时会重新拉取
-    }
-  }
-  return cache;
-}
-
-export async function saveThinkingEffortsCache(modelKey: string, efforts: ThinkingEfforts): Promise<void> {
-  const db = await getDb();
-  await db.execute(
-    `INSERT INTO thinking_efforts_cache (model_key, efforts, default_effort, updated_at)
-     VALUES (?, ?, ?, ?)
-     ON CONFLICT(model_key) DO UPDATE SET
-       efforts = excluded.efforts,
-       default_effort = excluded.default_effort,
-       updated_at = excluded.updated_at`,
-    [modelKey, JSON.stringify(efforts.efforts), efforts.defaultEffort, Date.now()]
-  );
 }
 
 // ---------------------------------------------------------------------------
@@ -1181,19 +1156,25 @@ export async function migrateFromLocalStorage(): Promise<boolean> {
 
   const db = await getDb();
 
-  // 迁移模型配置
+  // 迁移模型配置（provider 已统一为 openai_compatible；按旧 provider 回填默认端点）
   for (const m of models) {
     try {
+      const legacyEndpoint =
+        m.provider === 'google_gemini'
+          ? 'https://generativelanguage.googleapis.com/v1beta/openai/'
+          : m.provider === 'openrouter'
+            ? 'https://openrouter.ai/api/v1/'
+            : null;
       await db.execute(
         `INSERT OR IGNORE INTO model_configs (id, provider, model_id, display_name, api_key, api_endpoint, temperature, max_tokens, top_p, is_default, created_at, updated_at)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           m.id,
-          m.provider || 'google_gemini',
+          'openai_compatible',
           m.model_id,
           m.display_name,
           m.api_key,
-          m.api_endpoint ?? null,
+          m.api_endpoint ?? legacyEndpoint,
           m.temperature ?? 0.6,
           m.max_tokens ?? null,
           m.top_p ?? 1.0,

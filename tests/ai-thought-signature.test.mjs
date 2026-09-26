@@ -35,7 +35,7 @@ async function expectResolvesQuickly(promise, message) {
 
 function modelConfig() {
   return {
-    provider: 'google_gemini',
+    provider: 'openai_compatible',
     model_id: 'gemini-3-flash-preview',
     api_key: 'test-key',
     api_endpoint: 'https://example.test/v1',

@@ -142,8 +142,8 @@ export interface SystemPrompt {
 // 4. AI 模型配置 (Model Config)
 // ---------------------------------------------------------------------------
 
-/** AI 供应商枚举 */
-export type AIProvider = "google_gemini" | "openrouter" | "openai_compatible";
+/** AI 供应商：已统一为 OpenAI 兼容端点（历史库中的旧值由 migrateModelProviders 迁移） */
+export type AIProvider = "openai_compatible";
 
 /** 模型配置 — 持久化到 SQLite */
 export interface ModelConfig {
@@ -173,14 +173,6 @@ export interface ModelConfig {
   is_default: boolean;
   created_at: EpochMillis;
   updated_at: EpochMillis;
-}
-
-/** 模型支持的思考强度元数据（来自 OpenRouter 官方模型接口，本地持久化缓存） */
-export interface ThinkingEfforts {
-  /** 可选档位列表，如 ["max", "high", "low"]；空数组表示不支持选择档位 */
-  efforts: string[];
-  /** OpenRouter 标注的默认档位（未选择时实际生效的值），可能为 null */
-  defaultEffort: string | null;
 }
 
 // ---------------------------------------------------------------------------

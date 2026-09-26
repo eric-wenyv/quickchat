@@ -1237,7 +1237,7 @@ const MessageContent: React.FC<MessageContentProps> = ({ content, status, activi
             </div>
           </>
         )}
-        {status === 'streaming' && hasTextContent && (
+        {status === 'streaming' && hasTextContent && !activity && (
           <span
             className="inline-block w-[2px] h-[1.1em] ml-1 bg-linear-accent rounded-sm align-middle -translate-y-[1px]"
             style={{ animation: 'terminal-blink 1.2s ease-in-out infinite' }}

@@ -24,11 +24,12 @@ import {
   deleteSystemPrompt,
   runDatabaseMaintenance,
 } from "./services/db";
-import { appendCitationList, buildSkillCatalogPrompt, chatCompletion, describeImage, generateConversationTitle, generateFallbackConversationTitle, isPlaceholderConversationTitle, READ_URL_TOOL, ReasoningEffortError, USE_SKILL_TOOL } from "./services/ai";
+import { appendCitationList, buildSkillCatalogPrompt, chatCompletion, describeImage, generateConversationTitle, generateFallbackConversationTitle, isPlaceholderConversationTitle, READ_URL_TOOL, ReasoningEffortError, USE_SKILL_TOOL, WEB_SEARCH_TOOL } from "./services/ai";
 import type { ChatMessage, ChatContentPart, ToolDefinition, ToolCall } from "./services/ai";
 import { parseAttachments, getLanguageFromFilename } from "./utils/file";
 import { parseImageDescriptions, serializeImageDescriptions, type ImageDescription } from "./utils/image-description";
 import { fetchUrlContent, formatUrlContent } from "./services/url";
+import { searchWeb, formatSearchResults } from "./services/search";
 import { ensureBuiltinSkill, getAutoInvocableSkills, getSkillsSnapshot, importExternalSkills, readSkill, refreshSkills, type SkillMeta } from "./services/skills";
 import {
   getConfiguredGlobalShortcut,
@@ -1173,6 +1174,8 @@ export default function App() {
     const functionTools: ToolDefinition[] = [];
     // read_url 不依赖搜索开关，始终可用（模型需要时自主抓取网页）
     functionTools.push(READ_URL_TOOL);
+    // web_search 由 Tavily 提供，模型需要实时信息时自主搜索
+    functionTools.push(WEB_SEARCH_TOOL);
     if (autoSkills.length > 0) functionTools.push(USE_SKILL_TOOL);
     const tools = functionTools.length > 0 ? functionTools : undefined;
     const abortController = new AbortController();
@@ -1226,6 +1229,7 @@ export default function App() {
       const TOOL_LABELS: Record<string, string> = {
         use_skill: '加载 Skill',
         read_url: '读取网页',
+        web_search: '联网搜索',
       };
 
       // 执行一轮工具调用并把结果写回 chatHistory
@@ -1253,6 +1257,19 @@ export default function App() {
               }
             } catch (e: any) {
               toolResult = `读取网页失败: ${e.message ?? e}`;
+            }
+          } else if (call.function.name === 'web_search') {
+            try {
+              const args = JSON.parse(call.function.arguments || '{}');
+              const query = String(args.query || '').trim();
+              if (!query) {
+                toolResult = '搜索失败: 未提供有效的 query 参数';
+              } else {
+                const results = await searchWeb(query);
+                toolResult = formatSearchResults(query, results);
+              }
+            } catch (e: any) {
+              toolResult = `搜索失败: ${e.message ?? e}`;
             }
           } else if (call.function.name === 'use_skill') {
             try {

@@ -73,7 +73,7 @@ test('local function tools pass through to the request body', async () => {
   assert.equal(requestBody.tool_choice, 'auto');
 });
 
-test('openrouter endpoints get the server-side web_search tool appended', async () => {
+test('no endpoint gets extra tools appended (openrouter included)', async () => {
   const { chatCompletion } = await importAiService();
   let requestBody;
 
@@ -93,42 +93,22 @@ test('openrouter endpoints get the server-side web_search tool appended', async 
     ]));
   };
 
-  // 有本地工具时：web_search 追加在本地工具之后
+  // openrouter 端点 + 本地工具：原样透传，不追加任何服务端工具
   let result = await chatCompletion({
     model: modelConfig({ api_endpoint: 'https://openrouter.ai/api/v1/' }),
     messages: [{ role: 'user', content: 'What happened this week?' }],
     tools: [LOCAL_TOOL],
   });
   await readAll(result.stream);
-  assert.deepEqual(requestBody.tools, [LOCAL_TOOL, { type: 'openrouter:web_search' }]);
+  assert.deepEqual(requestBody.tools, [LOCAL_TOOL]);
   assert.equal(requestBody.tool_choice, 'auto');
 
-  // 无本地工具时：web_search 也会下发，保证模型可自主搜索
+  // openrouter 端点 + 无工具：不下发 tools 字段
   result = await chatCompletion({
     model: modelConfig({ api_endpoint: 'https://openrouter.ai/api/v1' }),
     messages: [{ role: 'user', content: 'What happened this week?' }],
   });
   await readAll(result.stream);
-  assert.deepEqual(requestBody.tools, [{ type: 'openrouter:web_search' }]);
-});
-
-test('non-openrouter endpoints do not get the server-side web_search tool', async () => {
-  const { chatCompletion } = await importAiService();
-  let requestBody;
-
-  globalThis.fetch = async (_url, init) => {
-    requestBody = JSON.parse(init.body);
-    return new Response(sse([
-      { choices: [{ delta: { content: 'Plain answer' }, finish_reason: null }] },
-    ]));
-  };
-
-  const result = await chatCompletion({
-    model: modelConfig(),
-    messages: [{ role: 'user', content: 'Hi' }],
-  });
-  await readAll(result.stream);
-
   assert.equal(requestBody.tools, undefined);
   assert.equal(requestBody.tool_choice, undefined);
 });

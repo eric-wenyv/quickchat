@@ -53,19 +53,20 @@ test('composer keeps model, thinking and send controls without extra status chro
   assert.match(modelSelector, /cursor-pointer/);
   assert.match(thinkingSelector, /cursor-pointer/);
   assert.match(modelSelector, /className=\{`group flex h-8 items-center gap-1\.5 rounded-full px-3/);
-  assert.match(thinkingSelector, /className=\{`flex h-8 items-center gap-1\.5 rounded-full px-3/);
+  assert.match(thinkingSelector, /className=\{`group flex h-8 items-center gap-1\.5 rounded-full px-3/);
   assert.match(modelSelector, /bg-transparent text-linear-text-tertiary hover:bg-linear-surface-hover/);
   assert.match(thinkingSelector, /bg-transparent text-linear-text-tertiary hover:bg-linear-surface-hover/);
   assert.doesNotMatch(modelSelector, /border border-\[rgba\(255,255,255,0\.16\)\]/);
   assert.doesNotMatch(thinkingSelector, /border border-\[rgba\(255,255,255,0\.16\)\]/);
   assert.match(modelSelector, /className=\{`group w-full flex items-center justify-between gap-1\.5 px-3 py-2\.5 rounded-2xl text-left transition-colors cursor-pointer/);
-  assert.match(thinkingSelector, /className=\{`w-full flex items-center justify-between gap-2 rounded-lg px-3 py-2 text-left transition-colors duration-150 cursor-pointer/);
+  assert.match(thinkingSelector, /className=\{`group w-full flex items-center justify-between gap-1\.5 px-3 py-2\.5 rounded-2xl text-left transition-colors cursor-pointer/);
   assert.match(modelSelector, /role="menu"/);
   assert.match(thinkingSelector, /role="menu"/);
-  // ModelSelector 弹层已从阴影改为描边（border-linear-border）；ThinkingLevelSelector 保留阴影。
+  // 两个选择器的弹层均已从阴影改为描边（border-linear-border）。
   assert.match(modelSelector, /border border-linear-border/);
+  assert.match(thinkingSelector, /border border-linear-border/);
   assert.doesNotMatch(modelSelector, /providerBadge/);
-  assert.match(thinkingSelector, /shadow-\[0_18px_45px_rgba\(0,0,0,0\.32\)\]/);
+  assert.doesNotMatch(thinkingSelector, /shadow-\[0_18px_45px_rgba\(0,0,0,0\.32\)\]/);
   assert.match(modelSelector, /text-linear-text-primary/);
   assert.match(thinkingSelector, /text-linear-text-primary/);
   assert.doesNotMatch(modelSelector, /animate-ping/);
@@ -141,8 +142,11 @@ test('sidebar grid width and opacity transition together without reflowing label
   const emptyState = await source('src/components/chat/EmptyState.tsx');
 
   assert.match(appLayout, /transition-\[grid-template-columns\] duration-300/);
-  assert.match(appLayout, /gridTemplateColumns: isSidebarOpen \? `\$\{sidebarWidth\}px minmax\(0, 1fr\)` : '0px minmax\(0, 1fr\)'/);
-  assert.match(appLayout, /style=\{\{ width: sidebarWidth, minWidth: sidebarWidth \}\}/);
+  // 移动端整行占满；桌面端按 isSidebarOpen 在 0 与拖拽宽度之间过渡
+  assert.match(appLayout, /gridTemplateColumns: isMobilePlatform/);
+  assert.match(appLayout, /\? `\$\{sidebarWidth\}px minmax\(0, 1fr\)`/);
+  assert.match(appLayout, /: '0px minmax\(0, 1fr\)'/);
+  assert.match(appLayout, /style=\{\{ width: sidebarPx, minWidth: sidebarPx \}\}/);
   assert.match(appLayout, /contentLayout\.style\.gridTemplateColumns = `\$\{width\}px minmax\(0, 1fr\)`/);
   assert.match(appLayout, /willChange: 'grid-template-columns'/);
   assert.match(appLayout, /const sidebarContentRef = useRef<HTMLDivElement>\(null\)/);
@@ -154,13 +158,14 @@ test('sidebar grid width and opacity transition together without reflowing label
   assert.match(appLayout, /relative z-0 flex flex-col/);
   assert.doesNotMatch(appLayout, /isSidebarVisible/);
   assert.match(appLayout, /overflow-hidden/);
-  assert.match(appLayout, /border-t border-linear-border border-l transition-colors/);
+  assert.match(appLayout, /border-t border-linear-border border-l/);
   assert.match(appLayout, /isSidebarOpen \? 'rounded-tl-xl' : 'rounded-tl-none'/);
   assert.match(appLayout, /border-l-linear-border-hover/);
   assert.doesNotMatch(appLayout, /hover:bg-linear-surface-hover active:bg-linear-border-hover/);
   assert.doesNotMatch(appLayout, /overflow-visible/);
-  assert.match(appLayout, /codex-glass-chrome relative min-w-0 h-full overflow-hidden transition-opacity duration-300/);
-  assert.match(appLayout, /isSidebarOpen \? 'opacity-100' : 'opacity-0 pointer-events-none'/);
+  // aside 不透明度与位移一起过渡（桌面收缩、移动端抽屉共用同一套 class 驱动）
+  assert.match(appLayout, /codex-glass-chrome min-w-0 h-full overflow-hidden transition-\[opacity,translate\] duration-300/);
+  assert.match(appLayout, /isSidebarOpen \? 'opacity-100 translate-x-0' : 'opacity-0 pointer-events-none -translate-x-full'/);
   assert.match(appLayout, /transition-\[left,opacity\] duration-300/);
   assert.match(appLayout, /style=\{\{ left: isSidebarOpen \? sidebarWidth : 0 \}\}/);
   assert.ok(appLayout.indexOf('</aside>') < appLayout.indexOf('ref={sidebarResizeHandleRef}'));

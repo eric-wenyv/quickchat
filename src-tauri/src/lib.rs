@@ -384,6 +384,107 @@ async fn fetch_url(url: String) -> Result<Value, String> {
     }))
 }
 
+// ---------------------------------------------------------------------------
+// Command: Tavily 网络搜索（web_search 工具）
+// 请求走 Rust 侧转发，API Key 只存在后端，不暴露给 webview
+// ---------------------------------------------------------------------------
+
+#[tauri::command]
+async fn search_web(query: String) -> Result<Value, String> {
+    let api_key = get_tavily_api_key()?;
+    let api_key = api_key.trim();
+    if api_key.is_empty() {
+        return Err("Tavily API Key 未配置，请在项目根目录 .env 中设置 TAVILY_API_KEY".to_string());
+    }
+
+    let client = reqwest::Client::new();
+    let response = client
+        .post("https://api.tavily.com/search")
+        .bearer_auth(api_key)
+        .json(&json!({
+            "query": query,
+            "search_depth": "basic",
+            "max_results": 5,
+            "include_answer": false,
+            "include_raw_content": false
+        }))
+        .send()
+        .await
+        .map_err(|e| format!("Tavily 搜索请求失败: {e}"))?;
+
+    let status = response.status();
+    let body = response
+        .text()
+        .await
+        .map_err(|e| format!("Tavily 响应读取失败: {e}"))?;
+
+    if !status.is_success() {
+        return Err(format!("Tavily 搜索请求失败 ({status}): {body}"));
+    }
+
+    serde_json::from_str(&body).map_err(|e| format!("Tavily 响应解析失败: {e}"))
+}
+
+fn get_tavily_api_key() -> Result<String, String> {
+    if let Ok(value) = std::env::var("TAVILY_API_KEY") {
+        let trimmed = value.trim().to_string();
+        if !trimmed.is_empty() {
+            return Ok(trimmed);
+        }
+    }
+
+    read_dotenv_key("TAVILY_API_KEY").ok_or_else(|| {
+        "Tavily API Key 未配置，请在项目根目录 .env 中设置 TAVILY_API_KEY".to_string()
+    })
+}
+
+fn read_dotenv_key(key: &str) -> Option<String> {
+    for path in dotenv_candidate_paths() {
+        if let Ok(content) = std::fs::read_to_string(path) {
+            for line in content.lines() {
+                let trimmed = line.trim();
+                if trimmed.is_empty() || trimmed.starts_with('#') {
+                    continue;
+                }
+                let trimmed = trimmed.strip_prefix("export ").unwrap_or(trimmed).trim();
+                let Some((name, value)) = trimmed.split_once('=') else {
+                    continue;
+                };
+                if name.trim() != key {
+                    continue;
+                }
+                let value = value
+                    .trim()
+                    .trim_matches('"')
+                    .trim_matches('\'')
+                    .trim()
+                    .to_string();
+                if !value.is_empty() {
+                    return Some(value);
+                }
+            }
+        }
+    }
+    None
+}
+
+fn dotenv_candidate_paths() -> Vec<std::path::PathBuf> {
+    let mut paths = Vec::new();
+    if let Ok(dir) = std::env::current_dir() {
+        for ancestor in dir.ancestors() {
+            paths.push(ancestor.join(".env"));
+        }
+    }
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(dir) = exe.parent() {
+            for ancestor in dir.ancestors() {
+                paths.push(ancestor.join(".env"));
+            }
+        }
+    }
+    paths
+}
+
 #[cfg(test)]
 mod tests {
     use super::extract_html_text;
@@ -569,6 +670,7 @@ pub fn run() {
         // Invoke handler
         .invoke_handler(tauri::generate_handler![
             fetch_url,
+            search_web,
             parse_document,
             get_sync_info,
             set_sync_config,

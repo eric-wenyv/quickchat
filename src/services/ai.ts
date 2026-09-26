@@ -37,13 +37,7 @@ export type FunctionToolDefinition = {
   };
 };
 
-/** OpenRouter 服务端工具（如 openrouter:web_search）：由服务端执行，不产生本地 tool_calls */
-export type ServerToolDefinition = {
-  type: 'openrouter:web_search';
-  parameters?: Record<string, unknown>;
-};
-
-export type ToolDefinition = FunctionToolDefinition | ServerToolDefinition;
+export type ToolDefinition = FunctionToolDefinition;
 
 export interface ToolCall {
   id: string;
@@ -127,6 +121,29 @@ export const READ_URL_TOOL: ToolDefinition = {
 };
 
 /**
+ * AI 联网搜索工具：模型在需要实时信息（新闻、天气、股价、近期事件等）时
+ * 传入查询词，工具返回 Tavily 搜索结果（标题/来源/摘要）。
+ */
+export const WEB_SEARCH_TOOL: ToolDefinition = {
+  type: 'function',
+  function: {
+    name: 'web_search',
+    description:
+      'Search the web for current, real-time information. Use this when the user asks about recent events, news, weather, stock prices, sports results, or any information that may have changed after your knowledge cutoff.',
+    parameters: {
+      type: 'object',
+      properties: {
+        query: {
+          type: 'string',
+          description: 'The search query in Chinese or English',
+        },
+      },
+      required: ['query'],
+    },
+  },
+};
+
+/**
  * AI 自主调用 Skill 的工具：模型从系统提示中的可用 Skill 目录选择一个名称，
  * 工具返回该 Skill 的完整指引（SKILL.md 内容），模型随后遵循其指引回答。
  * 标注了 disable-model-invocation 的 Skill 不出现在目录中，此工具也拒绝加载。
@@ -178,23 +195,6 @@ function buildHeaders(model: ModelConfig): Record<string, string> {
     'Content-Type': 'application/json',
     Authorization: `Bearer ${model.api_key}`,
   };
-}
-
-function isOpenRouterEndpoint(model: ModelConfig): boolean {
-  try {
-    const hostname = new URL(model.api_endpoint ?? '').hostname;
-    return hostname === 'openrouter.ai' || hostname.endsWith('.openrouter.ai');
-  } catch {
-    return false;
-  }
-}
-
-/**
- * OpenRouter 服务端网络搜索工具：模型自主决定是否/何时搜索，由 OpenRouter 执行，
- * 搜索结果以 url_citation 注解随流返回（走既有的引用解析链路）。
- */
-export function buildOpenRouterWebSearchTool(): ServerToolDefinition {
-  return { type: 'openrouter:web_search' };
 }
 
 // ---------------------------------------------------------------------------
@@ -308,13 +308,8 @@ function buildRequestBody(
     body.reasoning_effort = thinkingLevel.toLowerCase();
   }
 
-  const requestTools: ToolDefinition[] = [...(tools ?? [])];
-  // base URL 指向 OpenRouter 时动态附加服务端 web_search 工具（仅 OpenRouter 支持该工具类型）
-  if (isOpenRouterEndpoint(model)) {
-    requestTools.push(buildOpenRouterWebSearchTool());
-  }
-  if (requestTools.length > 0) {
-    body.tools = requestTools;
+  if (tools && tools.length > 0) {
+    body.tools = tools;
     body.tool_choice = 'auto';
   }
 

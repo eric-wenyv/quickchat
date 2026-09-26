@@ -7,10 +7,13 @@ import ts from 'typescript';
 
 async function importDbService(fakeDb) {
   const source = await readFile(new URL('../src/services/db.ts', import.meta.url), 'utf8');
-  const transformedSource = source.replace(
-    "import Database from '@tauri-apps/plugin-sql';",
-    'const Database = globalThis.__quickChatDbTestDatabase;',
-  );
+  const transformedSource = source
+    .replace(
+      "import Database from '@tauri-apps/plugin-sql';",
+      'const Database = globalThis.__quickChatDbTestDatabase;',
+    )
+    // Node 环境没有 Vite 注入的 import.meta.env，打桩为空对象（等价于非 dev:fresh 模式）
+    .replaceAll('import.meta.env', '({})');
   globalThis.__quickChatDbTestDatabase = { load: async () => fakeDb };
 
   const transformed = ts.transpileModule(transformedSource, {

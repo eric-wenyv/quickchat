@@ -66,7 +66,7 @@ jobs:
       - run: npm ci
 
       - name: Build bundles
-        run: npm run tauri -- build --targets deb,rpm,appimage
+        run: npm run tauri -- build --bundles deb,rpm,appimage
 
       - uses: actions/upload-artifact@v4
         with:
@@ -100,7 +100,7 @@ jobs:
 
       # tauri.conf.json 的 bundle.targets 是 ["deb","rpm"],这里显式指定 nsis
       - name: Build NSIS installer
-        run: npm run tauri -- build --targets nsis
+        run: npm run tauri -- build --bundles nsis
 
       - uses: actions/upload-artifact@v4
         with:
@@ -137,7 +137,10 @@ jobs:
         run: |
           useradd -m builder
           chown -R builder:builder "$GITHUB_WORKSPACE"
-          su builder -c "cd '$GITHUB_WORKSPACE/archlinux' && makepkg -f --nodeps --noconfirm"
+          # package-lock.json 的 resolved 指向 npmmirror;npm 12 默认 allow-remote=none,
+          # 会把非默认 registry 的 tarball 误判为 remote 拒绝拉取(EALLOWREMOTE)。
+          # replace-registry-host=always 让 npm 抓取前把 URL 重写回默认 registry,安全门保持启用。
+          su builder -c "cd '$GITHUB_WORKSPACE/archlinux' && npm_config_replace_registry_host=always makepkg -f --nodeps --noconfirm"
 
       - uses: actions/upload-artifact@v4
         with:

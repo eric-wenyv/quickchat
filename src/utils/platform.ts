@@ -15,3 +15,6 @@ export const isMobilePlatform: boolean = isAndroid || isIos || /Mobile/.test(ua)
 
 /** 桌面端（Tauri 桌面壳或桌面浏览器） */
 export const isDesktopPlatform: boolean = !isMobilePlatform;
+
+/** Linux 桌面（WebKitGTK）：backdrop-filter 合成开销大，悬浮/滚动场景应避免使用 */
+export const isLinuxPlatform: boolean = !isMobilePlatform && /Linux/.test(ua);

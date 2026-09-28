@@ -1,4 +1,4 @@
-import React, { Suspense, lazy, useState, useMemo, useRef, useCallback, useEffect } from 'react';
+import React, { Suspense, lazy, useState, useMemo, useRef, useCallback } from 'react';
 import type { Conversation, Message, ModelConfig, SystemPrompt, UUID } from '@/types/types';
 import { MessageHeader } from './MessageHeader';
 import { useAutoFocusChatInput } from '@/hooks/useAutoFocusChatInput';
@@ -13,6 +13,7 @@ import type { MessageListHandle } from './MessageList';
 import { EmptyState } from './EmptyState';
 import { ChatInputFooter } from './ChatInputFooter';
 import { parseAttachments } from '@/utils/file';
+import { isLinuxPlatform } from '@/utils/platform';
 
 const MessageList = lazy(() => import('./MessageList'));
 
@@ -44,10 +45,6 @@ interface MainChatAreaProps {
   thinkingEfforts: string[] | null;
   /** 模型默认思考强度（未选择时的生效值） */
   defaultThinkingEffort?: string | null;
-  /** 切换会话后需要恢复滚动到的消息 ID */
-  scrollRestoreMessageId: UUID | null;
-  /** 活跃消息 ID 变化回调（用于保存滚动位置） */
-  onActiveMessageIdChange?: (messageId: UUID | null) => void;
   /** 已保存的系统提示词预设列表 */
   systemPrompts: SystemPrompt[];
   /** 保存系统提示词预设 */
@@ -105,8 +102,6 @@ export const MainChatArea: React.FC<MainChatAreaProps> = ({
   onUpdateThinkingLevel,
   thinkingEfforts,
   defaultThinkingEffort,
-  scrollRestoreMessageId,
-  onActiveMessageIdChange,
   systemPrompts,
   onSaveSystemPromptPreset,
   onDeleteSystemPromptPreset,
@@ -187,9 +182,33 @@ export const MainChatArea: React.FC<MainChatAreaProps> = ({
     }
   }, [onFileDrop]);
 
-  const userMessages = useMemo(
-    () => messages.filter((m) => m.role === 'user'),
-    [messages]
+  // 保持 userMessages 引用稳定：流式期间 messages 每次刷新都换引用，
+  // 但 user 消息对象本身不变，逐一比较引用即可复用旧数组，让下游 memo 保持有效。
+  const userMessagesCacheRef = useRef<Message[]>([]);
+  const userMessages = useMemo(() => {
+    const next = messages.filter((m) => m.role === 'user');
+    const prev = userMessagesCacheRef.current;
+    if (prev.length === next.length && next.every((m, i) => m === prev[i])) {
+      return prev;
+    }
+    userMessagesCacheRef.current = next;
+    return next;
+  }, [messages]);
+
+  // 导航条预览文本：只在 user 消息内容真正变化时重算，
+  // 避免滚动定位/hover 展开时对每条消息重跑 parseAttachments 和正则。
+  const navPreviews = useMemo(
+    () =>
+      userMessages.map((msg) => {
+        const { text: textWithoutAttachments, attachments } = parseAttachments(msg.content);
+        return (
+          textWithoutAttachments
+            .replace(/!\[.*?\]\(.*?\)/g, '[图片]')
+            .replace(/\n/g, ' ')
+            .slice(0, 18) || (attachments.length > 0 ? '[文件]' : '[空消息]')
+        );
+      }),
+    [userMessages]
   );
   const activeUserIndex = useMemo(
     () => getActiveUserIndex(messages, activeMessageIndex),
@@ -197,12 +216,6 @@ export const MainChatArea: React.FC<MainChatAreaProps> = ({
   );
 
   const showNavPanel = userMessages.length >= 2;
-
-  // ── 上报活跃消息 ID（用于切换会话时保存滚动位置）──
-  useEffect(() => {
-    const msg = messages[activeMessageIndex];
-    onActiveMessageIdChange?.(msg?.id ?? null);
-  }, [activeMessageIndex, messages, onActiveMessageIdChange]);
 
   // ── 当前对话累计 Token 统计 ──
   // 依赖压缩为 token 相关字段的签名：流式期间 messages 每次刷新都换引用，
@@ -320,8 +333,10 @@ export const MainChatArea: React.FC<MainChatAreaProps> = ({
                         overflowY: isNavHovered ? 'auto' : 'hidden',
                         overscrollBehavior: 'contain',
                         backgroundColor: isNavHovered ? 'var(--quick-jump-expanded-bg, rgba(24, 24, 24, 0.42))' : 'transparent',
-                        backdropFilter: isNavHovered ? 'blur(28px) saturate(1.35)' : 'none',
-                        WebkitBackdropFilter: isNavHovered ? 'blur(28px) saturate(1.35)' : 'none',
+                        // Linux/WebKitGTK 上 backdrop-filter 合成开销极大，悬浮时会造成明显延迟，
+                        // 由 --quick-jump-expanded-bg 提供不透明背景；其他桌面平台保留毛玻璃质感。
+                        backdropFilter: isNavHovered && !isLinuxPlatform ? 'blur(28px) saturate(1.35)' : 'none',
+                        WebkitBackdropFilter: isNavHovered && !isLinuxPlatform ? 'blur(28px) saturate(1.35)' : 'none',
                         borderRadius: isNavHovered ? '12px 0 0 12px' : 0,
                         borderWidth: '1px 0 1px 1px',
                         borderStyle: 'solid',
@@ -344,11 +359,7 @@ export const MainChatArea: React.FC<MainChatAreaProps> = ({
                       <div className="flex flex-col items-center w-full">
                         {userMessages.map((msg, idx) => {
                           const isActive = idx === activeUserIndex;
-                          const { text: textWithoutAttachments, attachments } = parseAttachments(msg.content);
-                          const preview = textWithoutAttachments
-                            .replace(/!\[.*?\]\(.*?\)/g, '[图片]')
-                            .replace(/\n/g, ' ')
-                            .slice(0, 18) || (attachments.length > 0 ? '[文件]' : '[空消息]');
+                          const preview = navPreviews[idx];
                           return (
                             <button
                               key={msg.id}
@@ -389,7 +400,7 @@ export const MainChatArea: React.FC<MainChatAreaProps> = ({
                                     maxWidth: isNavHovered ? 144 : 0,
                                     opacity: isNavHovered ? 1 : 0,
                                     transform: isNavHovered ? 'translateX(0)' : 'translateX(-6px)',
-                                    transitionDelay: isNavHovered ? `${70 + Math.min(idx * 18, 180)}ms` : '0ms',
+                                    transitionDelay: isNavHovered ? `${40 + Math.min(idx * 12, 120)}ms` : '0ms',
                                     transitionTimingFunction: 'var(--ease-snappy)',
                                   }}
                                 >
@@ -419,7 +430,6 @@ export const MainChatArea: React.FC<MainChatAreaProps> = ({
                       onDeleteMessage={onDeleteMessage}
                       onActiveIndexChange={setActiveMessageIndex}
                       onScrollStateChange={setScrollState}
-                      restoreScrollMessageId={scrollRestoreMessageId}
                     />
                   </Suspense>
 
@@ -427,7 +437,7 @@ export const MainChatArea: React.FC<MainChatAreaProps> = ({
                   {!scrollState.isNearBottom && (
                     <button
                       onClick={() => messageListRef.current?.enableAutoScroll()}
-                      className={`absolute bottom-6 right-6 z-30 flex items-center justify-center w-10 h-10 rounded-full backdrop-blur-xl border transition-all duration-300 animate-in fade-in zoom-in-95 cursor-pointer ${scrollState.isAutoScrollEnabled
+                      className={`absolute bottom-6 right-6 z-30 flex items-center justify-center w-10 h-10 rounded-full border transition-all duration-300 animate-in fade-in zoom-in-95 cursor-pointer ${scrollState.isAutoScrollEnabled
                           ? 'bg-linear-accent text-white border-linear-accent'
                           : 'bg-linear-bg-elevated text-linear-text-secondary border-linear-border hover:bg-linear-surface'
                         }`}

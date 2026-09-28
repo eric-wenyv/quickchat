@@ -117,6 +117,13 @@ export const ThinkingBlock: React.FC<ThinkingBlockProps> = ({ reasoning, isLive,
   // null = 未手动操作：思考中自动展开，结束后自动收起；手动点击后以用户意愿为准
   const [manualExpanded, setManualExpanded] = useState<boolean | null>(null);
   const expanded = manualExpanded ?? isLive;
+  // 折叠状态下不挂载思考正文的 markdown 渲染（打开会话时思考块默认收起，
+  // 挂载即解析整条 reasoning 的 remark/rehype 管线纯属浪费）；首次展开后再常驻，
+  // 避免反复展开/收起时重复解析
+  const [hasMountedContent, setHasMountedContent] = useState(isLive);
+  useEffect(() => {
+    if (expanded) setHasMountedContent(true);
+  }, [expanded]);
 
   // 思考内容限高滚动：流式期间贴底跟随最新内容，用户上翻阅读时不打扰
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -172,7 +179,7 @@ export const ThinkingBlock: React.FC<ThinkingBlockProps> = ({ reasoning, isLive,
             className="custom-scrollbar max-h-[280px] overflow-y-auto overscroll-contain"
           >
             <div className="mt-1 mb-2 border-l border-linear-border pl-3.5 text-[13px] text-linear-text-tertiary">
-              <ThinkingMarkdown reasoning={reasoning} isLive={isLive} />
+              {hasMountedContent && <ThinkingMarkdown reasoning={reasoning} isLive={isLive} />}
             </div>
           </div>
         </div>

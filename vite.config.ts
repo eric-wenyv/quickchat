@@ -19,6 +19,10 @@ export default defineConfig(async () => ({
   //
   // 1. prevent Vite from obscuring rust errors
   clearScreen: false,
+  worker: {
+    // 高亮 Worker 动态 import shiki（代码分割），iife 格式不支持分包，必须用 ES module
+    format: "es",
+  },
   build: {
     // Mermaid core + shiki oniguruma WASM are intrinsically large even when
     // dynamically imported; raise the threshold so the warning stays meaningful

@@ -15,6 +15,10 @@ import type { Components } from 'react-markdown';
 
 export const REMARK_PLUGINS = [remarkGfm, remarkMath, remarkBreaks];
 export const REHYPE_PLUGINS = [rehypeKatex];
+// 无公式内容的轻量管线：remark-math 的 tokenizer 与 rehype-katex 的整树遍历
+// 在 WebKit JSC 上成本显著，纯文本/代码块消息直接跳过
+const REMARK_PLUGINS_NO_MATH = [remarkGfm, remarkBreaks];
+const REHYPE_PLUGINS_NONE: never[] = [];
 export const identityUrlTransform = (url: string) => url;
 
 /**
@@ -101,10 +105,12 @@ interface MarkdownBlockProps {
 }
 
 export const MarkdownBlock = React.memo(function MarkdownBlock({ content, components }: MarkdownBlockProps) {
+  // 公式管线按需启用：只有出现 $ 定界符的内容才跑 remark-math + rehype-katex
+  const hasMath = content.includes('$');
   return (
     <ReactMarkdown
-      remarkPlugins={REMARK_PLUGINS}
-      rehypePlugins={REHYPE_PLUGINS}
+      remarkPlugins={hasMath ? REMARK_PLUGINS : REMARK_PLUGINS_NO_MATH}
+      rehypePlugins={hasMath ? REHYPE_PLUGINS : REHYPE_PLUGINS_NONE}
       components={components}
       urlTransform={identityUrlTransform}
     >

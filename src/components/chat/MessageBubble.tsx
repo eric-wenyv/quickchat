@@ -18,6 +18,8 @@ const LONG_PRESS_MOVE_TOLERANCE = 12;
 interface MessageBubbleProps {
   message: Message;
   onDelete?: (id: string) => void;
+  /** 打开会话的过渡形态：跳过 markdown 管线先铺纯文本（见 MessageContent.deferRich） */
+  deferRich?: boolean;
 }
 
 /**
@@ -34,7 +36,7 @@ interface MessageBubbleProps {
  * 3. 移动端长按（contextmenu / 触摸定时器）建立选区，AI 消息的
  *    选区悬浮复制条由全局 SelectionCopyBar 响应。
  */
-const MessageBubble: React.FC<MessageBubbleProps> = ({ message, onDelete }) => {
+const MessageBubble: React.FC<MessageBubbleProps> = ({ message, onDelete, deferRich }) => {
   const isUser = message.role === 'user';
   const isSystem = message.role === 'system';
   const canAct = message.status !== 'pending' && message.status !== 'streaming';
@@ -214,6 +216,7 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({ message, onDelete }) => {
             activity={message.activity ?? null}
             reasoning={message.reasoning_content ?? null}
             thinkingMs={message.thinking_ms ?? null}
+            deferRich={deferRich}
           />
         </div>
 

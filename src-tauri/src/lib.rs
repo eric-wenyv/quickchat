@@ -683,7 +683,7 @@ pub fn run() {
             skills::delete_skill,
             skills::import_external_skills,
             skills::ensure_builtin_skill,
-            skills::upsert_skill_from_sync
+            skills::upsert_skill_from_sync,
         ])
         // ── Run ─────────────────────────────────────────────────────────────
         .run(tauri::generate_context!())

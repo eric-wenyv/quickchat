@@ -295,6 +295,17 @@ export async function initDatabase(): Promise<void> {
       ON system_prompts(updated_at DESC);
   `);
 
+  // Mermaid 渲染结果缓存：mermaid.render 是全量布局计算（在 WebKit JSC 上可达数秒），
+  // 但同一份图源码的输出是确定的——按 (主题, 源码) 缓存 SVG，重开会话零渲染成本
+  await db.execute(`
+    CREATE TABLE IF NOT EXISTS mermaid_svgs (
+      cache_key   TEXT    PRIMARY KEY NOT NULL,
+      svg         TEXT    NOT NULL,
+      created_at  INTEGER NOT NULL,
+      last_hit_at INTEGER NOT NULL
+    );
+  `);
+
   // 模型配置表
   await db.execute(`
     CREATE TABLE IF NOT EXISTS model_configs (
@@ -1091,6 +1102,43 @@ export async function deleteMessage(id: UUID): Promise<void> {
     db,
     () => db.execute('DELETE FROM messages WHERE id = ?', [id]),
     'deleteMessage'
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Mermaid SVG 缓存：(主题, 源码) → SVG。渲染确定性输出，重开会话零渲染成本
+// ---------------------------------------------------------------------------
+
+const MERMAID_SVG_CACHE_LIMIT = 200;
+
+export async function getMermaidSvgCache(cacheKey: string): Promise<string | null> {
+  const db = await getDb();
+  const rows = await db.select<Array<{ svg: string }>>(
+    'SELECT svg FROM mermaid_svgs WHERE cache_key = ?',
+    [cacheKey]
+  );
+  const svg = rows[0]?.svg ?? null;
+  if (svg !== null) {
+    // 更新命中时间（供 LRU 清理），失败不影响读取结果
+    db.execute('UPDATE mermaid_svgs SET last_hit_at = ? WHERE cache_key = ?', [Date.now(), cacheKey]).catch(() => {});
+  }
+  return svg;
+}
+
+export async function setMermaidSvgCache(cacheKey: string, svg: string): Promise<void> {
+  const db = await getDb();
+  const now = Date.now();
+  await db.execute(
+    `INSERT INTO mermaid_svgs (cache_key, svg, created_at, last_hit_at) VALUES (?, ?, ?, ?)
+     ON CONFLICT(cache_key) DO UPDATE SET svg = excluded.svg, last_hit_at = excluded.last_hit_at`,
+    [cacheKey, svg, now, now]
+  );
+  // LRU：超出上限时删除最久未命中的
+  await db.execute(
+    `DELETE FROM mermaid_svgs WHERE cache_key NOT IN (
+      SELECT cache_key FROM mermaid_svgs ORDER BY last_hit_at DESC LIMIT ?
+    )`,
+    [MERMAID_SVG_CACHE_LIMIT]
   );
 }
 

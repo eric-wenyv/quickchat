@@ -37,6 +37,7 @@ import {
   setConfiguredGlobalShortcut,
 } from "./services/globalShortcut";
 import { isThreadSending, markThreadIdle, markThreadSending, type ThreadSendingState } from "./utils/threadState";
+import { prewarmHighlight } from "./utils/code-highlight";
 import { isDesktopPlatform } from "./utils/platform";
 import { useStableCallback } from "./hooks/useStableCallback";
 import type {
@@ -82,6 +83,9 @@ const BUILT_IN_ARTIFACT_PROMPT = [
 
 const CONVERSATION_LIST_LIMIT = 100;
 const MESSAGE_PAGE_SIZE = 120;
+// 打开会话时首屏只取最近这么多条：消息正文可能内嵌 base64 图片，
+// 一次拉取整页会放大 SQLite IPC 序列化开销。首屏快速渲染后由后台任务补齐到 MESSAGE_PAGE_SIZE。
+const INITIAL_MESSAGE_PAGE_SIZE = 30;
 // 流式正文刷入 React 状态的最小间隔。SSE 分片远快于人眼感知，
 // 每帧都触发整棵消息树重渲 + markdown 重解析是流式卡顿的主因；
 // 按该间隔合并刷入可将重渲染频率降低一个数量级，打字机观感不受影响。
@@ -170,13 +174,8 @@ export default function App() {
   // 闭包里的 models 还是旧值，统一从 ref 读取
   const modelsRef = useRef<ModelConfig[]>([]);
 
-  // ── per-conversation 状态：思考程度 + 滚动位置 ──
+  // ── per-conversation 状态：思考程度 ──
   const [activeThinkingLevel, setActiveThinkingLevel] = useState<string | null>(null);
-  const [scrollRestoreMessageId, setScrollRestoreMessageId] = useState<UUID | null>(null);
-  // 每个会话上次查看的消息 ID（内存缓存，切换时快速恢复）
-  const conversationScrollMessageIdRef = useRef<Record<UUID, UUID | null>>({});
-  // 当前活跃消息 ID（由 MainChatArea 持续上报，切换会话时保存到 ref）
-  const activeMessageIdRef = useRef<UUID | null>(null);
 
   const isSending = isThreadSending(sendingByConversationId, activeConversation?.id);
 
@@ -371,6 +370,9 @@ export default function App() {
       showToast('加载数据失败', String(e));
     } finally {
       setIsLoadingConversations(false);
+      // 空闲期预热 shiki 高亮引擎：WASM 初始化在主线程上有数百毫秒开销，
+      // 提前完成可避免打开含代码块的会话时卡在打开后的关键窗口期
+      window.setTimeout(prewarmHighlight, 2000);
     }
   };
 
@@ -510,7 +512,6 @@ export default function App() {
     messagesByConversationRef.current[newConv.id] = [];
     setHasMoreMessages(false);
     setIsLoadingMoreMessages(false);
-    setScrollRestoreMessageId(null);
     setShowSkills(false);
     showToast('已注入 Skill', `「${skill.name}」将作为新对话的上下文`, 'success');
   }, []);
@@ -518,13 +519,6 @@ export default function App() {
   // --- 会话操作 ---
   const handleSelectConversation = async (id: UUID, summaryOverride?: ConversationSummary) => {
     setShowSkills(false);
-    // 保存即将离开的会话的滚动位置（内存 + DB 持久化）
-    const oldConvId = activeConversationIdRef.current;
-    if (oldConvId && oldConvId !== id) {
-      const lastMsgId = activeMessageIdRef.current;
-      conversationScrollMessageIdRef.current[oldConvId] = lastMsgId;
-      dbUpdateConversation(oldConvId, { last_viewed_message_id: lastMsgId }).catch(() => {});
-    }
 
     localStorage.setItem("quick_chat_last_active_conv", id);
 
@@ -540,7 +534,6 @@ export default function App() {
     setIsLoadingMessages(true);
     setIsLoadingMoreMessages(false);
     setHasMoreMessages(false);
-    setScrollRestoreMessageId(null);
     setMessages(canUseCachedMessages ? cachedMessages : []);
     setHasMoreMessages(canUseCachedMessages ? (summary?.message_count ?? 0) > cachedMessages.length : false);
 
@@ -562,7 +555,7 @@ export default function App() {
     try {
       const [convDetail, convMessages] = await Promise.all([
         getConversation(id),
-        getMessages(id, MESSAGE_PAGE_SIZE),
+        getMessages(id, INITIAL_MESSAGE_PAGE_SIZE),
       ]);
 
       if (selectRequestIdRef.current !== requestId) return;
@@ -577,9 +570,6 @@ export default function App() {
         if (effectiveModelId) setActiveModelId(effectiveModelId);
         // 恢复会话的 thinking_level
         setActiveThinkingLevel(convDetail.thinking_level);
-        // 恢复滚动位置：内存缓存优先，fallback 到 DB 持久化值
-        const restoreId = conversationScrollMessageIdRef.current[id] ?? convDetail.last_viewed_message_id ?? null;
-        setScrollRestoreMessageId(restoreId);
       } else {
         // 会话可能不存在，从列表找摘要信息
         const convs = await getConversations(CONVERSATION_LIST_LIMIT, 0);
@@ -600,7 +590,6 @@ export default function App() {
             updated_at: s.last_message_at,
             pinned: s.pinned ?? 0,
           });
-          setScrollRestoreMessageId(conversationScrollMessageIdRef.current[id] ?? null);
         } else {
           activeConversationIdRef.current = null;
           setSelectedConversationId(null);
@@ -612,7 +601,36 @@ export default function App() {
       setMessages(nextMessages);
       messagesByConversationRef.current[id] = nextMessages;
       const totalMessageCount = summary?.message_count ?? convMessages.length;
-      setHasMoreMessages(totalMessageCount > nextMessages.length || (!canUseCachedMessages && convMessages.length === MESSAGE_PAGE_SIZE));
+      setHasMoreMessages(totalMessageCount > nextMessages.length || (!canUseCachedMessages && convMessages.length === INITIAL_MESSAGE_PAGE_SIZE));
+
+      // 后台补齐首屏之外的历史（最多补到 MESSAGE_PAGE_SIZE），供发送消息时构建
+      // 完整上下文。静默 prepend 到列表头部：MessageList 的底部钉住机制保证视口不跳动。
+      if (!canUseCachedMessages && convMessages.length === INITIAL_MESSAGE_PAGE_SIZE) {
+        const oldestLoadedAt = convMessages[0]?.created_at ?? null;
+        void (async () => {
+          try {
+            const remaining = await getMessages(id, MESSAGE_PAGE_SIZE - INITIAL_MESSAGE_PAGE_SIZE, oldestLoadedAt);
+            if (selectRequestIdRef.current !== requestId) return;
+            if (remaining.length === 0) {
+              // 首屏恰好已是全部历史（如会话正好 30 条）：修正 hasMore，避免空的分页请求
+              setHasMoreMessages(totalMessageCount > INITIAL_MESSAGE_PAGE_SIZE);
+              return;
+            }
+            setMessages(prev => {
+              if (prev.length === 0 || prev[0]?.conversation_id !== id) return prev;
+              const existingIds = new Set(prev.map(m => m.id));
+              const prepend = remaining.filter(m => !existingIds.has(m.id));
+              if (prepend.length === 0) return prev;
+              const merged = [...prepend, ...prev];
+              messagesByConversationRef.current[id] = merged;
+              return merged;
+            });
+            setHasMoreMessages(totalMessageCount > INITIAL_MESSAGE_PAGE_SIZE + remaining.length || remaining.length === MESSAGE_PAGE_SIZE - INITIAL_MESSAGE_PAGE_SIZE);
+          } catch (e) {
+            console.error('后台补齐历史消息失败:', e);
+          }
+        })();
+      }
     } catch (e) {
       if (selectRequestIdRef.current !== requestId) return;
       console.error('加载消息失败:', e);
@@ -719,7 +737,6 @@ export default function App() {
     messagesByConversationRef.current[newConv.id] = [];
     setHasMoreMessages(false);
     setIsLoadingMoreMessages(false);
-    setScrollRestoreMessageId(null);
   }, [activeConversation, messages, conversations]);
 
   const handleDeleteConversation = async (id: UUID) => {
@@ -728,7 +745,6 @@ export default function App() {
       abortControllersRef.current[id]?.abort();
       delete abortControllersRef.current[id];
       delete messagesByConversationRef.current[id];
-      delete conversationScrollMessageIdRef.current[id];
       const convs = await getConversations(CONVERSATION_LIST_LIMIT, 0);
       setConversations(limitConversationList(convs));
       if (activeConversation?.id === id) {
@@ -890,11 +906,6 @@ export default function App() {
       }
     }
   };
-
-  // --- 滚动位置上报：MainChatArea 持续更新当前活跃消息 ID ---
-  const handleActiveMessageIdChange = useCallback((messageId: UUID | null) => {
-    activeMessageIdRef.current = messageId;
-  }, []);
 
   // --- 将 Message[] 转换为 ChatMessage[] ---
   const IMAGE_MARKDOWN_REGEX = /!\[[^\]]*\]\((data:image\/[^;)]+;base64,[A-Za-z0-9+/=]+)\)/g;
@@ -1801,8 +1812,6 @@ export default function App() {
         onUpdateThinkingLevel={stableUpdateThinkingLevel}
         activeThinkingEfforts={activeThinkingEfforts}
         defaultThinkingEffort={null}
-        scrollRestoreMessageId={scrollRestoreMessageId}
-        onActiveMessageIdChange={handleActiveMessageIdChange}
         onOpenSettings={stableOpenSettings}
         showSettings={showSettings}
         onCloseSettings={stableCloseSettings}

@@ -12,6 +12,8 @@ import ArtifactFullscreenShell from './ArtifactFullscreenShell';
 import HtmlArtifact from './HtmlArtifact';
 import ThinkingBlock, { ThinkingIndicator } from './ThinkingBlock';
 import { splitMarkdownBlocks, MarkdownBlock } from './markdown-blocks';
+import { requestHighlight, type HighlightRequest } from '@/utils/code-highlight';
+import { getMermaidSvgCache, setMermaidSvgCache } from '@/services/db';
 
 interface MessageContentProps {
   content: string;
@@ -21,7 +23,38 @@ interface MessageContentProps {
   reasoning?: string | null;
   /** 思考阶段耗时（毫秒） */
   thinkingMs?: number | null;
+  /**
+   * 打开会话时的过渡形态：跳过 remark/rehype 管线，纯文本 + 图片直接铺出，
+   * 由 MessageList 在首帧绘制后逐条升级为完整 markdown 渲染
+   */
+  deferRich?: boolean;
 }
+
+const DEFERRED_IMAGE_REGEX = /!\[[^\]]*\]\((data:image\/[^;)]+;base64,[A-Za-z0-9+/=]+)\)/g;
+
+/** 延迟渲染占位：不跑 markdown 管线，正文按纯文本铺出，内嵌 base64 图片照常显示 */
+const DeferredPlainContent: React.FC<{ text: string }> = React.memo(({ text }) => {
+  const parts: React.ReactNode[] = [];
+  let last = 0;
+  let match: RegExpExecArray | null;
+  DEFERRED_IMAGE_REGEX.lastIndex = 0;
+  let i = 0;
+  while ((match = DEFERRED_IMAGE_REGEX.exec(text)) !== null) {
+    if (match.index > last) {
+      parts.push(<span key={`t${i}`}>{text.slice(last, match.index)}</span>);
+    }
+    parts.push(
+      <img key={`i${i}`} src={match[1]} alt="" loading="lazy" decoding="async" className="rounded-lg" />
+    );
+    last = match.index + match[0].length;
+    i++;
+  }
+  if (last < text.length) {
+    parts.push(<span key={`t${i}`}>{text.slice(last)}</span>);
+  }
+  return <div className="whitespace-pre-wrap break-words leading-[1.6]">{parts}</div>;
+});
+DeferredPlainContent.displayName = 'DeferredPlainContent';
 
 const FileIcon: React.FC<{ type: string }> = ({ type }) => {
   const icon = getFileIcon(type);
@@ -637,6 +670,27 @@ const MermaidFullscreenModal: React.FC<{
 // 一直在增长，等稳定后再渲染，完成后必定出图。
 const MERMAID_RENDER_DEBOUNCE_MS = 400;
 
+// 进程内缓存：命中时同步出图，连 IPC 都省掉。持久缓存见 db.ts mermaid_svgs 表
+const MERMAID_MEM_CACHE_LIMIT = 50;
+const mermaidSvgMemCache = new Map<string, string>();
+
+function readMermaidMemCache(key: string): string | undefined {
+  const hit = mermaidSvgMemCache.get(key);
+  if (hit !== undefined) {
+    mermaidSvgMemCache.delete(key);
+    mermaidSvgMemCache.set(key, hit);
+  }
+  return hit;
+}
+
+function writeMermaidMemCache(key: string, svg: string): void {
+  mermaidSvgMemCache.set(key, svg);
+  if (mermaidSvgMemCache.size > MERMAID_MEM_CACHE_LIMIT) {
+    const oldest = mermaidSvgMemCache.keys().next().value;
+    if (oldest !== undefined) mermaidSvgMemCache.delete(oldest);
+  }
+}
+
 const MermaidBlock: React.FC<{ code: string }> = React.memo(({ code }) => {
   const { copied, copy } = useCopy(code);
   const [svg, setSvg] = useState('');
@@ -663,8 +717,18 @@ const MermaidBlock: React.FC<{ code: string }> = React.memo(({ code }) => {
 
   useEffect(() => {
     let cancelled = false;
+    let timer: number | null = null;
+    // 渲染输出只取决于 (主题, 源码)：先查两级缓存，未命中才真正渲染
+    const cacheKey = `${isDark ? 'd' : 'l'}|${code}`;
 
-    const timer = window.setTimeout(async () => {
+    const memHit = readMermaidMemCache(cacheKey);
+    if (memHit !== undefined) {
+      setError(null);
+      setSvg(memHit);
+      return;
+    }
+
+    const renderAndCache = async () => {
       setError(null);
       try {
         const { default: mermaid } = await import('mermaid');
@@ -705,6 +769,9 @@ const MermaidBlock: React.FC<{ code: string }> = React.memo(({ code }) => {
         const result = await mermaid.render(`${renderId}-${isDark ? 'dark' : 'light'}`, code);
         if (!cancelled) {
           setSvg(result.svg);
+          writeMermaidMemCache(cacheKey, result.svg);
+          // 持久化缓存（后台写入，失败不影响展示）
+          setMermaidSvgCache(cacheKey, result.svg).catch(() => {});
         }
       } catch (e) {
         console.warn('Mermaid render failed:', e);
@@ -713,11 +780,29 @@ const MermaidBlock: React.FC<{ code: string }> = React.memo(({ code }) => {
           setError(e instanceof Error ? e.message : '无法渲染 Mermaid 图表');
         }
       }
-    }, MERMAID_RENDER_DEBOUNCE_MS);
+    };
+
+    void (async () => {
+      // 持久缓存查询很快（几毫秒），不等防抖直接查；只有真正需要渲染时
+      // 才走防抖——流式期间图源码一直在增长，等稳定后再渲染
+      try {
+        const dbHit = await getMermaidSvgCache(cacheKey);
+        if (cancelled) return;
+        if (dbHit !== null) {
+          writeMermaidMemCache(cacheKey, dbHit);
+          setError(null);
+          setSvg(dbHit);
+          return;
+        }
+      } catch {
+        // 缓存读取失败不影响正常渲染
+      }
+      timer = window.setTimeout(() => void renderAndCache(), MERMAID_RENDER_DEBOUNCE_MS);
+    })();
 
     return () => {
       cancelled = true;
-      window.clearTimeout(timer);
+      if (timer !== null) window.clearTimeout(timer);
     };
   }, [code, isDark, renderId]);
 
@@ -804,6 +889,7 @@ MermaidBlock.displayName = 'MermaidBlock';
 
 // 流式期间代码块内容高频增长，每次变化都跑一遍 shiki 高亮纯属浪费；
 // 去抖等源码稳定后再高亮（最后一次变更总会触发，完成后必定着色）。
+// 去抖之后的执行由 @/utils/code-highlight 的串行队列接管，避免批量高亮打满主线程。
 const SHIKI_HIGHLIGHT_DEBOUNCE_MS = 200;
 
 const CodeBlock: React.FC<{ code: string; language: string }> = React.memo(
@@ -827,24 +913,23 @@ const CodeBlock: React.FC<{ code: string; language: string }> = React.memo(
 
     useEffect(() => {
       let cancelled = false;
-      const timer = window.setTimeout(async () => {
-        try {
-          // Dynamic import so shiki's orchestrator + oniguruma WASM engine
-          // and the requested grammar chunk load on demand instead of being
-          // statically bundled into the main MessageContent chunk.
-          const { codeToHtml } = await import('shiki');
-          const result = await codeToHtml(code, {
-            lang: language || 'text',
-            theme: isDark ? 'github-dark-dimmed' : 'github-light',
-          });
-          if (!cancelled) setHtml(result);
-        } catch (e) {
-          console.warn('Shiki highlight failed:', e);
-        }
+      let request: HighlightRequest | null = null;
+      const timer = window.setTimeout(() => {
+        // 高亮经模块级串行队列执行（块间让出主线程），结果按 (主题, 语言, 源码) 缓存
+        request = requestHighlight(code, language || 'text', isDark);
+        request.promise.then(
+          (result) => {
+            if (!cancelled) setHtml(result);
+          },
+          (e) => {
+            console.warn('Shiki highlight failed:', e);
+          }
+        );
       }, SHIKI_HIGHLIGHT_DEBOUNCE_MS);
       return () => {
         cancelled = true;
         window.clearTimeout(timer);
+        request?.cancel();
       };
     }, [code, language, isDark]);
 
@@ -1028,7 +1113,7 @@ const ActivityPill: React.FC<{ label: string }> = ({ label }) => (
   </div>
 );
 
-const MessageContent: React.FC<MessageContentProps> = ({ content, status, activity, reasoning, thinkingMs }) => {
+const MessageContent: React.FC<MessageContentProps> = ({ content, status, activity, reasoning, thinkingMs, deferRich }) => {
   // 先剥离 Skill 上下文注释（/ 命令注入，UI 不显示），再剥离图片描述注释，最后解析文件附件
   const contentWithoutSkillCtx = useMemo(() => stripSkillContext(content), [content]);
   const parsedImageDescriptions = useMemo(
@@ -1157,6 +1242,12 @@ const MessageContent: React.FC<MessageContentProps> = ({ content, status, activi
         );
       },
 
+      // 消息里的图片多为内嵌 base64，同步解码会卡住首帧；
+      // 懒加载 + 异步解码把解码移出关键渲染路径
+      img({ src, alt, ...props }) {
+        return <img src={src} alt={alt ?? ''} loading="lazy" decoding="async" {...props} />;
+      },
+
       table({ children }) {
         return (
           <div className="my-4 max-w-full overflow-x-auto rounded-lg border border-[rgba(255,255,255,0.12)] bg-[#202020]">
@@ -1195,6 +1286,22 @@ const MessageContent: React.FC<MessageContentProps> = ({ content, status, activi
     }),
     [skillInvocation]
   );
+
+  // 打开会话的过渡渲染：完成态消息先以纯文本铺出（不跑 remark/rehype 管线），
+  // markdown 升级由 MessageList 在首帧绘制后逐条触发
+  if (deferRich && status !== 'streaming' && status !== 'pending') {
+    return (
+      <div className="w-full min-w-0 max-w-full text-linear-text-body selection:bg-linear-surface-hover selection:text-linear-text-primary">
+        <article className="w-full min-w-0 max-w-full">
+          {hasReasoning && reasoning && (
+            <ThinkingBlock reasoning={reasoning} isLive={false} durationMs={thinkingMs ?? null} />
+          )}
+          {hasTextContent && <DeferredPlainContent text={textContent} />}
+          {attachments.length > 0 && <AttachmentList attachments={attachments} />}
+        </article>
+      </div>
+    );
+  }
 
   return (
     <div className="w-full min-w-0 max-w-full text-linear-text-body selection:bg-linear-surface-hover selection:text-linear-text-primary">

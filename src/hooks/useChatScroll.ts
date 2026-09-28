@@ -45,8 +45,9 @@ export function useChatScroll({ messages, conversationKey }: UseChatScrollOption
   const scrollToMessage = useCallback((index: number) => {
     const container = scrollRef.current;
     if (!container) return;
-    const messageEls = container.querySelectorAll('[data-message-index]');
-    const target = messageEls[index] as HTMLElement | undefined;
+    // 按属性值查找：渐进式渲染期间 DOM 中的消息只是全量列表的尾部窗口，
+    // 不能再用 NodeList 下标对应全局索引
+    const target = container.querySelector<HTMLElement>(`[data-message-index="${index}"]`);
     if (!target) return;
     const targetTop = target.offsetTop - 24;
     container.scrollTo({ top: Math.max(0, targetTop), behavior: 'smooth' });
@@ -87,7 +88,7 @@ export function useChatScroll({ messages, conversationKey }: UseChatScrollOption
 
     if (curr.length === 0) return;
 
-    // 会话切换时，跳过"新消息"滚动逻辑（由外部 restoreScrollMessageId 处理恢复）
+    // 会话切换时，跳过"新消息"滚动逻辑（打开会话由 MessageList 统一滚动到底部）
     if (conversationChanged) return;
 
     const didPrependHistory =

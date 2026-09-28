@@ -81,10 +81,6 @@ interface AppLayoutProps {
   activeThinkingEfforts: string[] | null;
   /** 模型默认思考强度（未选择时的生效值） */
   defaultThinkingEffort?: string | null;
-  /** 切换会话后需要恢复滚动到的消息 ID */
-  scrollRestoreMessageId: UUID | null;
-  /** 活跃消息 ID 变化回调（用于保存滚动位置） */
-  onActiveMessageIdChange?: (messageId: UUID | null) => void;
   onOpenSettings?: () => void;
   /** --- 设置页（全页面替代侧栏 + 聊天区） --- */
   /** 是否显示设置页 */
@@ -293,8 +289,6 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
   onUpdateThinkingLevel,
   activeThinkingEfforts,
   defaultThinkingEffort,
-  scrollRestoreMessageId,
-  onActiveMessageIdChange,
   onOpenSettings,
   showSettings,
   onCloseSettings,
@@ -825,8 +819,6 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
             onUpdateThinkingLevel={onUpdateThinkingLevel}
             thinkingEfforts={activeThinkingEfforts}
             defaultThinkingEffort={defaultThinkingEffort}
-            scrollRestoreMessageId={scrollRestoreMessageId}
-            onActiveMessageIdChange={onActiveMessageIdChange}
             systemPrompts={systemPrompts}
             onSaveSystemPromptPreset={onSaveSystemPromptPreset}
             onDeleteSystemPromptPreset={onDeleteSystemPromptPreset}

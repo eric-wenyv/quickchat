@@ -27,6 +27,8 @@ test('Linux uses an opaque shell while Windows Acrylic defaults stay unchanged',
   assert.match(mainChat, /quick-jump-nav/);
   assert.match(mainChat, /WebkitBackdropFilter/);
   assert.match(mainChat, /rgba\(24, 24, 24, 0\.42\)/);
+  // WebKitGTK 合成 backdrop-filter 开销大，悬浮导航条时延迟明显，Linux 必须禁用
+  assert.match(mainChat, /isLinuxPlatform \? 'blur\(28px\) saturate\(1\.35\)' : 'none'/);
 
   assert.match(appCss, /html\[data-platform=['"]linux['"]\][\s\S]*--quick-jump-expanded-bg:/);
   assert.doesNotMatch(appCss, /html\[data-platform=['"]windows['"]\]/);

@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import type { Conversation, SystemPrompt, UUID } from '@/types/types';
-import { isMobilePlatform } from '@/utils/platform';
+import { isMobilePlatform, isLinuxPlatform } from '@/utils/platform';
 
 interface TokenStats {
   totalTokens: number;
@@ -142,7 +142,11 @@ const MessageHeaderImpl: React.FC<MessageHeaderProps> = ({
     <>
       <header
         data-tauri-drag-region
-        className={`sticky top-0 z-30 min-h-[56px] items-center w-full bg-linear-bg/72 backdrop-blur-xl border-b border-linear-border/70 select-none ${
+        className={`sticky top-0 z-30 min-h-[56px] items-center w-full border-b border-linear-border/70 select-none ${
+          // Linux/WebKitGTK：sticky 顶栏压在滚动内容上，backdrop-filter 会让每一帧
+          // 滚动都重算大半径模糊（合成开销极大），改用近实底背景（见 utils/platform.ts）
+          isLinuxPlatform ? 'bg-linear-bg/95' : 'bg-linear-bg/72 backdrop-blur-xl'
+        } ${
           // 移动端：三列 Grid（侧栏开关 | 居中标题 | 平衡占位）；桌面端维持左右布局
           isMobilePlatform
             ? 'grid grid-cols-[auto_minmax(0,1fr)_auto]'

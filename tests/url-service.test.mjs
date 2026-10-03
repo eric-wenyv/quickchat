@@ -8,7 +8,7 @@ import ts from 'typescript';
 async function importUrlService() {
   const source = await readFile(new URL('../src/services/url.ts', import.meta.url), 'utf8');
   const transformedSource = source.replace(
-    "import { invoke } from '@tauri-apps/api/core';",
+    "import { invoke } from '@/services/bridge';",
     "const invoke = async () => { throw new Error('invoke not stubbed'); };",
   );
   const transformed = ts.transpileModule(transformedSource, {

@@ -1,5 +1,0 @@
-# Rust build outputs
-/target/
-
-# Generated Tauri files
-/gen/schemas

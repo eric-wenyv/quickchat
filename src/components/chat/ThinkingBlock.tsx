@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import type { Components } from 'react-markdown';
 import { splitMarkdownBlocks, MarkdownBlock } from './markdown-blocks';
 import { normalizeStreamingMarkdown } from '@/utils/markdown';
+import { invoke } from '@/services/bridge';
 
 // =============================================================================
 // ThinkingBlock — 思考内容展示区块
@@ -89,9 +90,7 @@ const ThinkingMarkdown: React.FC<{ reasoning: string; isLive: boolean }> = React
             onClick={(e) => {
               if (!isExternal) return;
               e.preventDefault();
-              import('@tauri-apps/plugin-opener')
-                .then(({ openUrl }) => openUrl(href))
-                .catch(() => window.open(href, '_blank'));
+              invoke('opener:open', { url: href }).catch(() => window.open(href, '_blank'));
             }}
             className="cursor-pointer underline underline-offset-4 transition-colors"
           >

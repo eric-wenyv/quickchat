@@ -59,7 +59,6 @@ const Sidebar: React.FC<SidebarProps> = ({
     <aside className="relative flex flex-col h-full w-full overflow-hidden select-none">
       {/* 操作与搜索区域 — 整体作为拖拽区，内部按钮/搜索框可交互 */}
       <div
-        data-tauri-drag-region
         className="relative flex flex-col flex-shrink-0 px-3 pt-5 pb-1 gap-3"
         style={{ WebkitAppRegion: 'drag' } as React.CSSProperties}
       >

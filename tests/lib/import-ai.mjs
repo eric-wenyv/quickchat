@@ -1,9 +1,9 @@
 // tests/lib/import-ai.mjs
 //
 // 转译并加载 src/services/ai.ts（连同其依赖 sse-transport.ts）。
-// 关键点：产物必须写在项目目录内（tests/.transpiled/…），因为
-// sse-transport.ts 静态导入 @tauri-apps/api/core，裸包名要经项目
-// node_modules 解析 —— 写到 os.tmpdir() 会解析失败。
+// 关键点：产物必须写在项目目录内（tests/.transpiled/…），这样产物里残留
+// 的任何裸包名（如 typescript 之外的依赖）仍可在项目 node_modules 下解析
+// —— 写到 os.tmpdir() 会解析失败。
 
 import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import { dirname, join } from 'node:path';

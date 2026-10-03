@@ -1,24 +1,23 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
-import { getCurrentWindow } from "@tauri-apps/api/window";
-import { isAndroid, isIos } from "./utils/platform";
+import { isElectron, invoke } from "./services/bridge";
+import { isLinuxPlatform } from "./utils/platform";
 import "katex/dist/katex.min.css";
 import App from "./App";
 
-// Android UA 同样包含 "Linux"，需先于 Linux 判断
-if (isAndroid) {
-  document.documentElement.dataset.platform = "android";
-} else if (isIos) {
-  document.documentElement.dataset.platform = "ios";
-} else if (navigator.userAgent.includes("Linux")) {
+// data-platform 供 CSS 平台特例选择器使用（Linux 不透明底色等）；
+// Electron 用 preload 注入的 platform，浏览器回退 UA 嗅探（platform.ts 内）
+if (isLinuxPlatform) {
   document.documentElement.dataset.platform = "linux";
 }
 
-async function showTauriWindowWhenReady() {
-  if (!("__TAURI_INTERNALS__" in window)) return;
+// Electron 主进程已用 show:false + ready-to-show 避免白屏闪烁；这里仅在
+// 桥可用时兜底触发一次 show（对齐旧版桌面壳延迟 show 的时序）。
+async function showAppWindowWhenReady() {
+  if (!isElectron()) return;
 
   window.setTimeout(() => {
-    getCurrentWindow().show().catch(() => {});
+    invoke("window:show").catch(() => {});
   }, 0);
 }
 
@@ -28,4 +27,4 @@ ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
   </React.StrictMode>,
 );
 
-void showTauriWindowWhenReady();
+void showAppWindowWhenReady();

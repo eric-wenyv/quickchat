@@ -5,9 +5,11 @@
 //   • 推送：对话历史（移动端在外的新会话/消息）→ 桌面端
 //   • 拉取：模型配置（含 API Key）+ 系统提示词 + Skills + 对话历史 ← 桌面端
 // 合并策略 last-write-wins（按 updated_at），增量水位线按 桌面地址 对保存。
-// 服务端实现在 src-tauri/src/sync_server.rs（仅桌面端运行）。
+// 服务端原为 Rust 实现，Electron 迁移后在主进程重新实现（见 electron/sync-server.ts）；
+// get_sync_info / set_sync_config / regenerate_sync_token
+// 与 upsert_skill_from_sync 桥命令已就位。
 
-import { invoke } from '@tauri-apps/api/core';
+import { invoke } from '@/services/bridge';
 import {
   getConversationRowById,
   getConversationsUpdatedSince,

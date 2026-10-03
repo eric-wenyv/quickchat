@@ -89,8 +89,9 @@ export const ChatTextArea = forwardRef<ChatTextAreaHandle, ChatTextAreaProps>(({
 
     e.preventDefault();
 
-    // 优先用 paste 事件自带的图片数据（WebKitGTK 能直接从 Wayland 剪贴板
-    // 取图）；取不到再回落到系统剪贴板异步读取（Wayland 下 items 常为空）
+    // 优先用 paste 事件自带的图片数据（paste 事件同步携带剪贴板文件，
+    // 比异步权限的 navigator.clipboard.read 更可靠）；
+    // 取不到再回落到系统剪贴板异步读取（Wayland 下 items 常为空）
     const dataUrl =
       (imageItem ? await readClipboardItemAsDataUrl(imageItem) : null) ??
       (await readSystemClipboardImageDataUrl());

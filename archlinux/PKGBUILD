@@ -2,30 +2,45 @@
 # It snapshots the working tree one level up (the repo root), so uncommitted
 # changes are included; caches are excluded.
 #
-# The system rust/nodejs/npm makedepends are the canonical Arch way; if your
-# toolchain comes from rustup/mise instead, build with:  makepkg -f --nodeps
+# The system nodejs/npm makedepends are the canonical Arch way; if your
+# toolchain comes from nvm/mise instead, build with:  makepkg -f --nodeps
 #
-# Remember to bump pkgver when src-tauri/tauri.conf.json version changes.
+# Remember to bump pkgver when the repo root package.json version changes.
 
 pkgname=quick-chat
 pkgver=0.1.0
 pkgrel=1
-pkgdesc='LAN chat application built with Tauri'
+pkgdesc='LAN chat application built with Electron'
 arch=('x86_64')
 url='https://github.com/eric-wenyv/quickchat'
 # no LICENSE file in the repo yet — add one and fill this in
+# 运行时共享库：Electron 官方二进制所需（参考 Arch 官方 electron 包的依赖，
+# gtk3/nss 等其余依赖由这些包传递引入）
 depends=(
-  'webkit2gtk-4.1'          # wry webview (also pulls soup3, glib2, cairo, ...)
+  'nss'
+  'alsa-lib'
   'gtk3'
-  'openssl'                 # direct DT_NEEDED (libssl/libcrypto)
-  'libayatana-appindicator' # tray icon, dlopen'd at runtime
+  'libxss'
+  'libdrm'
+  'mesa'
+  'libxkbcommon'
+  'libxrandr'
+  'libxcomposite'
+  'libxdamage'
+  'libxfixes'
+  'libxext'
+  'libx11'
+  'libxcb'
+  'at-spi2-core'
+  'pango'
+  'cairo'
+  'glib2'
+  'dbus'
+  'expat'
   'hicolor-icon-theme'
 )
-makedepends=('rust' 'nodejs' 'npm')
-# !lto: CFLAGS "-flto=auto" turns the bundled sqlite3.c objects into LTO
-# bitcode that rustc drops when linking the sqlx proc-macro, leaving
-# libsqlx_macros.so with undefined sqlite3 symbols -> build fails.
-options=('!lto')
+makedepends=('nodejs' 'npm' 'python') # python: node-gyp 编译 better-sqlite3 备用路径
+options=()
 source=() # built from the local working tree
 sha256sums=()
 
@@ -40,30 +55,35 @@ prepare() {
         --exclude='./.git' \
         --exclude='./archlinux' \
         --exclude='./node_modules' \
-        --exclude='./src-tauri/target' \
         --exclude='./dist' \
+        --exclude='./release' \
+        --exclude='./electron-dist' \
         -cf - . | tar -C "$pkgname" -xf -
 }
 
 build() {
     cd "$srcdir/$pkgname"
     export npm_config_cache="$srcdir/npm-cache"
-    # --no-bundle skips deb/rpm/appimage, so none of the linuxdeploy pain applies
+    export ELECTRON_MIRROR="https://npmmirror.com/mirrors/electron/"
     npm ci
-    npm run tauri -- build --no-bundle
+    npm run build:web
+    npm run build:electron-main
+    # 只出 unpacked 目录（不打 deb/rpm/appimage，避开 linuxdeploy 依赖链）
+    npx electron-builder --linux dir
 }
 
 package() {
     cd "$srcdir/$pkgname"
 
-    install -Dm755 "src-tauri/target/release/quick-chat" -t "$pkgdir/usr/bin/"
+    install -d "$pkgdir/opt/$pkgname"
+    cp -a "release/linux-unpacked/." "$pkgdir/opt/$pkgname/"
 
-    local entry size
-    for entry in '32x32:32x32' '128x128:128x128' '128x128@2x:256x256' 'icon:512x512'; do
-        size="${entry##*:}"
-        install -Dm644 "src-tauri/icons/${entry%%:*}.png" \
-            "$pkgdir/usr/share/icons/hicolor/$size/apps/$pkgname.png"
-    done
+    # /usr/bin 入口符号链接
+    install -d "$pkgdir/usr/bin"
+    ln -s "/opt/$pkgname/quick-chat" "$pkgdir/usr/bin/$pkgname"
+
+    install -Dm644 "electron/assets/icon.png" \
+        "$pkgdir/usr/share/icons/hicolor/512x512/apps/$pkgname.png"
 
     cat > "$srcdir/$pkgname.desktop" <<EOF
 [Desktop Entry]

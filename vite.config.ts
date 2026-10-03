@@ -3,11 +3,10 @@ import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 import { fileURLToPath, URL } from "url";
 
-// @ts-expect-error process is a nodejs global
-const host = process.env.TAURI_DEV_HOST;
-
 // https://vite.dev/config/
 export default defineConfig(async () => ({
+  // 生产模式经自定义协议 app:// 加载，资源路径必须相对（file:// 基路径 hack 的替代）
+  base: "./",
   plugins: [react(), tailwindcss()],
   resolve: {
     alias: {
@@ -15,10 +14,6 @@ export default defineConfig(async () => ({
     },
   },
 
-  // Vite options tailored for Tauri development and only applied in `tauri dev` or `tauri build`
-  //
-  // 1. prevent Vite from obscuring rust errors
-  clearScreen: false,
   worker: {
     // 高亮 Worker 动态 import shiki（代码分割），iife 格式不支持分包，必须用 ES module
     format: "es",
@@ -71,21 +66,9 @@ export default defineConfig(async () => ({
       },
     },
   },
-  // 2. tauri expects a fixed port, fail if that port is not available
+  // 固定端口：Electron dev:electron 脚本注入 VITE_DEV_SERVER_URL 指向这里
   server: {
     port: 1420,
     strictPort: true,
-    host: host || false,
-    hmr: host
-      ? {
-          protocol: "ws",
-          host,
-          port: 1421,
-        }
-      : undefined,
-    watch: {
-      // 3. tell Vite to ignore watching `src-tauri`
-      ignored: ["**/src-tauri/**"],
-    },
   },
 }));

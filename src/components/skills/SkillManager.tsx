@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { openPath } from '@tauri-apps/plugin-opener';
+import { invoke } from '@/services/bridge';
 import MessageContent from '../chat/MessageContent';
 import SkillForm from './SkillForm';
 import SkillFrontmatterTable from './SkillFrontmatterTable';
@@ -15,6 +15,9 @@ import {
   refreshSkills,
   type SkillMeta,
 } from '@/services/skills';
+
+/** 在系统文件管理器中打开 Skill 目录 */
+const openPath = (target: string) => invoke<void>('opener:open-path', { path: target });
 
 interface SkillManagerProps {
   /** 返回聊天界面 */

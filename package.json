@@ -3,26 +3,58 @@
   "private": true,
   "version": "0.1.0",
   "type": "module",
+  "main": "electron-dist/main.js",
   "scripts": {
-    "dev": "tauri dev",
-    "dev:fresh": "VITE_FRESH_DB=1 QUICK_CHAT_DEV_DB=1 tauri dev",
+    "dev": "npm run dev:electron",
+    "dev:electron": "npm run build:electron-main && concurrently -k \"npm:dev:web\" \"wait-on http://localhost:1420 && VITE_DEV_SERVER_URL=http://localhost:1420 electron .\"",
+    "dev:fresh": "QUICK_CHAT_DEV_DB=1 npm run dev:electron",
     "dev:web": "vite",
-    "build": "npm run tauri build",
-    "build:android": "tauri android build --apk",
-    "build:arch": "cd archlinux && makepkg -f --nodeps -si && cd ..",
+    "build": "npm run build:electron",
     "build:web": "tsc && vite build",
-    "preview": "vite preview",
-    "tauri": "tauri"
+    "build:electron-main": "tsc -p tsconfig.electron.json && node -e \"require('node:fs').cpSync('electron/assets', 'electron-dist/assets', { recursive: true })\"",
+    "build:electron": "npm run build:web && npm run build:electron-main && electron-builder",
+    "test": "node --test tests/*.test.mjs",
+    "preview": "vite preview"
+  },
+  "build": {
+    "appId": "com.quickchat.app",
+    "productName": "quick-chat",
+    "asar": true,
+    "files": [
+      "dist/**/*",
+      "electron-dist/**/*",
+      "package.json"
+    ],
+    "directories": {
+      "output": "release"
+    },
+    "linux": {
+      "target": [
+        "AppImage",
+        "deb",
+        "rpm"
+      ],
+      "category": "Network",
+      "icon": "electron/assets/icon.png",
+      "syncDesktopName": true
+    },
+    "win": {
+      "target": "nsis",
+      "icon": "electron/assets/icon.png"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true
+    }
   },
   "dependencies": {
     "@tailwindcss/vite": "^4.2.4",
-    "@tauri-apps/api": "^2.11.0",
-    "@tauri-apps/plugin-clipboard-manager": "^2.3.2",
-    "@tauri-apps/plugin-global-shortcut": "^2.3.1",
-    "@tauri-apps/plugin-opener": "^2",
-    "@tauri-apps/plugin-sql": "^2.4.0",
     "autoprefixer": "^10.5.0",
+    "better-sqlite3": "^13.0.3",
     "katex": "^0.16.45",
+    "linkedom": "^0.18.13",
     "mermaid": "^11.16.0",
     "postcss": "^8.5.14",
     "react": "^19.1.0",
@@ -36,12 +68,21 @@
     "tailwindcss": "^4.2.4"
   },
   "devDependencies": {
+    "@electron/rebuild": "^4.2.0",
     "@tailwindcss/typography": "^0.5.19",
-    "@tauri-apps/cli": "^2",
+    "@types/better-sqlite3": "^9.6.0",
+    "@types/node": "^26.6.4",
     "@types/react": "^19.1.8",
     "@types/react-dom": "^19.1.6",
     "@vitejs/plugin-react": "^4.6.0",
+    "concurrently": "^10.0.5",
+    "electron": "^44.5.1",
+    "electron-builder": "^26.15.3",
     "typescript": "~5.8.3",
-    "vite": "^7.0.4"
+    "vite": "^7.0.4",
+    "wait-on": "^9.5.1"
+  },
+  "allowScripts": {
+    "better-sqlite3@13.0.3": true
   }
 }

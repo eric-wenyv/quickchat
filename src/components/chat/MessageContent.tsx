@@ -14,6 +14,7 @@ import ThinkingBlock, { ThinkingIndicator } from './ThinkingBlock';
 import { splitMarkdownBlocks, MarkdownBlock } from './markdown-blocks';
 import { requestHighlight, type HighlightRequest } from '@/utils/code-highlight';
 import { getMermaidSvgCache, setMermaidSvgCache } from '@/services/db';
+import { invoke } from '@/services/bridge';
 
 interface MessageContentProps {
   content: string;
@@ -1023,8 +1024,7 @@ const LinkPreviewModal: React.FC<{
 
   const handleOpenExternal = async () => {
     try {
-      const { openUrl } = await import('@tauri-apps/plugin-opener');
-      await openUrl(url);
+      await invoke('opener:open', { url });
     } catch {
       window.open(url, '_blank');
     }

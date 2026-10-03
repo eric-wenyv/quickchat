@@ -65,7 +65,8 @@ body,
   background: var(--color-linear-sidebar);
 }
 
-/* Linux uses an opaque WebKitGTK surface to avoid stale transparent frames. */
+/* Linux keeps an opaque window surface (transparent frames glitch on some
+   Wayland compositors); backdrop-filter runs on inner elements instead. */
 html[data-platform='linux'] {
   --quick-jump-expanded-bg: rgba(24, 24, 24, 0.82);
   background: var(--color-linear-bg);

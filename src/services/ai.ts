@@ -347,7 +347,7 @@ function createAccumulator(onReasoningDelta?: (delta: string, accumulated: strin
 }
 
 interface SSEReaderState {
-  /** 传输层文本分片迭代器（Tauri 走 Rust reqwest，浏览器走 fetch，见 sse-transport.ts）。
+  /** 传输层文本分片迭代器（统一走 fetch 流，见 sse-transport.ts）。
    *  分片已是完整 UTF-8 文本（多字节跨块边界在传输层处理），可能含不完整行。 */
   iterator: AsyncGenerator<string, void, unknown>;
   buffer: string;

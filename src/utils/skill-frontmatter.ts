@@ -1,5 +1,5 @@
 /**
- * SKILL.md frontmatter 解析（与 src-tauri/src/skills.rs 的解析器语义一致，
+ * SKILL.md frontmatter 解析（与主进程 electron/skills.ts 的解析器语义一致，
  * 均对齐 Claude（gray-matter + js-yaml）的 YAML 解析结果）。
  *
  * 用于 Skill 内容预览：把文件头部的 frontmatter 字段拆出来交给

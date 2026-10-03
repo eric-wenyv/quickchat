@@ -1,10 +1,13 @@
 // =============================================================================
 // Quick-Chat — SQLite 数据库操作封装
 // =============================================================================
-// 基于 tauri-plugin-sql，前端直接执行 SQL。
+// 基于 Electron 桥 sql:* 命令（主进程 better-sqlite3，见 electron/ipc.ts），
+// 前端直接执行 SQL。数据库文件由主进程管理：
+// app.getPath('userData')/quick_chat.db；QUICK_CHAT_DEV_DB / VITE_FRESH_DB
+// 环境变量时为 quick_chat_dev.db，并在启动时清空（对应原 dev:fresh 模式）。
 // =============================================================================
 
-import Database from '@tauri-apps/plugin-sql';
+import { invoke } from '@/services/bridge';
 import type {
   Conversation,
   ConversationSummary,
@@ -15,17 +18,25 @@ import type {
   EpochMillis,
 } from '@/types/types';
 
-let dbInstance: Database | null = null;
+// 与旧版桌面壳 SQL 插件调用面一致的内部执行器：execute 返回
+// { rowsAffected, lastInsertId }，select 返回行数组。
+interface DbExecutor {
+  execute(
+    sql: string,
+    params?: (string | number | null)[]
+  ): Promise<{ rowsAffected: number; lastInsertId: number }>;
+  select<T>(sql: string, params?: (string | number | null)[]): Promise<T>;
+}
+
+let dbInstance: DbExecutor | null = null;
 let hasTrigramMessageSearchIndex: boolean | null = null;
 
-// dev:fresh 模式（npm run dev:fresh）：改用独立的开发数据库文件，与真实数据
-// 完全隔离。Rust 侧每次启动前会删除该文件（见 lib.rs），因此每次启动都等价于
-// 全新安装的空白首启。
-const DB_FILE = import.meta.env.VITE_FRESH_DB === '1' ? 'quick_chat_dev.db' : 'quick_chat.db';
-
-export async function getDb(): Promise<Database> {
+export async function getDb(): Promise<DbExecutor> {
   if (dbInstance) return dbInstance;
-  dbInstance = await Database.load(`sqlite:${DB_FILE}`);
+  dbInstance = {
+    execute: (sql, params = []) => invoke('sql:execute', { sql, params }),
+    select: (sql, params = []) => invoke('sql:select', { sql, params }),
+  };
   return dbInstance;
 }
 
@@ -75,7 +86,7 @@ export function isSqliteCorruptionError(error: unknown): boolean {
   return SQLITE_CORRUPTION_ERROR_PATTERNS.some((pattern) => text.includes(pattern));
 }
 
-async function createMessageFtsIndex(db: Database): Promise<void> {
+async function createMessageFtsIndex(db: DbExecutor): Promise<void> {
   await db.execute(`
     CREATE VIRTUAL TABLE IF NOT EXISTS messages_fts USING fts5(
       content,
@@ -108,7 +119,7 @@ async function createMessageFtsIndex(db: Database): Promise<void> {
   `);
 }
 
-async function createTrigramMessageSearchIndex(db: Database): Promise<void> {
+async function createTrigramMessageSearchIndex(db: DbExecutor): Promise<void> {
   await db.execute(`
     CREATE VIRTUAL TABLE IF NOT EXISTS messages_search_fts USING fts5(
       content,
@@ -141,7 +152,7 @@ async function createTrigramMessageSearchIndex(db: Database): Promise<void> {
   `);
 }
 
-async function dropMessageSearchIndexObjects(db: Database): Promise<void> {
+async function dropMessageSearchIndexObjects(db: DbExecutor): Promise<void> {
   const statements = [
     'DROP TRIGGER IF EXISTS trg_messages_fts_insert;',
     'DROP TRIGGER IF EXISTS trg_messages_fts_update;',
@@ -158,7 +169,7 @@ async function dropMessageSearchIndexObjects(db: Database): Promise<void> {
   }
 }
 
-async function rebuildMessageSearchIndexes(db: Database): Promise<void> {
+async function rebuildMessageSearchIndexes(db: DbExecutor): Promise<void> {
   await dropMessageSearchIndexObjects(db);
 
   await createMessageFtsIndex(db);
@@ -175,7 +186,7 @@ async function rebuildMessageSearchIndexes(db: Database): Promise<void> {
 }
 
 async function executeWithMessageSearchIndexRepair<T>(
-  db: Database,
+  db: DbExecutor,
   operation: () => Promise<T>,
   operationName: string
 ): Promise<T> {
@@ -248,7 +259,7 @@ export async function initDatabase(): Promise<void> {
 
   // ── 同步预留（Sync reservation）─────────────────────────────────────────
   // 桌面端与移动端各自持有本地库，通过 LAN 同步通道双向合并（见
-  // src/services/sync.ts 与 src-tauri/src/sync_server.rs）：
+  // src/services/sync.ts 与主进程 electron/sync-server.ts）：
   //
   // 1. deleted_at（conversations / messages）：软删除墓碑占位。当前同步的
   //    增量水位线保证已删除项不会被重新推送，但删除本身暂不传播（v1 限制）。
@@ -340,7 +351,7 @@ export async function runDatabaseMaintenance(): Promise<void> {
   await ensureTrigramMessageSearchIndex(db);
 }
 
-async function ensureFtsIndexSynced(db: Database, tableName: 'messages_fts' | 'messages_search_fts'): Promise<void> {
+async function ensureFtsIndexSynced(db: DbExecutor, tableName: 'messages_fts' | 'messages_search_fts'): Promise<void> {
   try {
     const rows = await db.select<{ message_count: number; index_count: number }[]>(`
       SELECT
@@ -367,7 +378,7 @@ async function ensureFtsIndexSynced(db: Database, tableName: 'messages_fts' | 'm
   }
 }
 
-async function ensureTrigramMessageSearchIndex(db: Database): Promise<void> {
+async function ensureTrigramMessageSearchIndex(db: DbExecutor): Promise<void> {
   try {
     await createTrigramMessageSearchIndex(db);
     await ensureFtsIndexSynced(db, 'messages_search_fts');
@@ -378,7 +389,7 @@ async function ensureTrigramMessageSearchIndex(db: Database): Promise<void> {
   }
 }
 
-async function ensureMessageColumns(db: Database): Promise<void> {
+async function ensureMessageColumns(db: DbExecutor): Promise<void> {
   try {
     const columns = await db.select<{ name: string }[]>('PRAGMA table_info(messages);');
     const colNames = new Set(columns.map((c: any) => c.name));
@@ -405,7 +416,7 @@ async function ensureMessageColumns(db: Database): Promise<void> {
   }
 }
 
-async function ensureConversationColumns(db: Database): Promise<void> {
+async function ensureConversationColumns(db: DbExecutor): Promise<void> {
   try {
     const columns = await db.select<{ name: string }[]>('PRAGMA table_info(conversations);');
     const colNames = new Set(columns.map((c: any) => c.name));
@@ -429,7 +440,7 @@ async function ensureConversationColumns(db: Database): Promise<void> {
 }
 
 /** 同步预留列：deleted_at 软删除墓碑（当前不参与任何查询行为） */
-async function ensureSyncColumns(db: Database): Promise<void> {
+async function ensureSyncColumns(db: DbExecutor): Promise<void> {
   try {
     const conversations = await db.select<{ name: string }[]>('PRAGMA table_info(conversations);');
     if (!conversations.map((c: any) => c.name).includes('deleted_at')) {
@@ -446,7 +457,7 @@ async function ensureSyncColumns(db: Database): Promise<void> {
   }
 }
 
-async function ensureModelColumns(db: Database): Promise<void> {
+async function ensureModelColumns(db: DbExecutor): Promise<void> {
   try {
     const columns = await db.select<{ name: string }[]>('PRAGMA table_info(model_configs);');
     const colNames = new Set(columns.map((c: any) => c.name));
@@ -479,7 +490,7 @@ async function ensureModelColumns(db: Database): Promise<void> {
  * 旧 provider 模型按原供应商回填默认端点，保证已导入模型继续可用。
  * CHECK 约束保留三值以兼容旧库与 sync_server，此处仅 UPDATE 列值。
  */
-async function migrateModelProviders(db: Database): Promise<void> {
+async function migrateModelProviders(db: DbExecutor): Promise<void> {
   try {
     await db.execute(`
       UPDATE model_configs SET api_endpoint = CASE provider
@@ -505,7 +516,7 @@ async function migrateModelProviders(db: Database): Promise<void> {
  * 与"新模型默认不限制"的行为保持一致。以 PRAGMA table_info 的 notnull 标记识别旧表，
  * 迁移幂等：新表（notnull=0）直接跳过。
  */
-async function relaxModelMaxTokensConstraint(db: Database): Promise<void> {
+async function relaxModelMaxTokensConstraint(db: DbExecutor): Promise<void> {
   try {
     const columns = await db.select<{ name: string; notnull: number }[]>('PRAGMA table_info(model_configs);');
     const maxTokensCol = columns.find((c: any) => c.name === 'max_tokens');
@@ -880,7 +891,7 @@ function mapConversationRows(rows: ConversationSearchRow[]): ConversationSummary
 }
 
 async function searchConversationsWithFtsTable(
-  db: Database,
+  db: DbExecutor,
   ftsTable: MessageFtsTable,
   ftsQuery: string,
   likeQuery: string,
@@ -933,7 +944,7 @@ async function searchConversationsWithFtsTable(
 }
 
 async function searchConversationsByTitle(
-  db: Database,
+  db: DbExecutor,
   likeQuery: string,
   limit: number,
   offset: number

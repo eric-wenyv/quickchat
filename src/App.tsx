@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
-import { listen } from "@tauri-apps/api/event";
+import { isElectron, onEvent } from "./services/bridge";
 import AppLayout from "./components/layout/AppLayout";
 import { useTheme } from "./hooks/useTheme";
 import {
@@ -677,26 +677,20 @@ export default function App() {
 
   useEffect(() => {
     let unlisten: (() => void) | undefined;
-    let cancelled = false;
-    if ('__TAURI_INTERNALS__' in window) {
-      listen('quick-chat-sync-pushed', () => {
-        void refreshAfterSyncRef.current();
-      })
-        .then((u) => {
-          if (cancelled) {
-            u();
-            return;
-          }
-          unlisten = u;
-        })
-        .catch(() => {});
+    if (isElectron()) {
+      try {
+        unlisten = onEvent('quick-chat-sync-pushed', () => {
+          void refreshAfterSyncRef.current();
+        });
+      } catch {
+        // 桥未就绪时静默：同步推送刷新依赖桌面壳，dev:web 无此事件
+      }
     }
     const onSyncMerged = () => {
       void refreshAfterSyncRef.current();
     };
     window.addEventListener('quick-chat-sync-merged', onSyncMerged);
     return () => {
-      cancelled = true;
       unlisten?.();
       window.removeEventListener('quick-chat-sync-merged', onSyncMerged);
     };

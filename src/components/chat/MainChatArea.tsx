@@ -13,7 +13,6 @@ import type { MessageListHandle } from './MessageList';
 import { EmptyState } from './EmptyState';
 import { ChatInputFooter } from './ChatInputFooter';
 import { parseAttachments } from '@/utils/file';
-import { isLinuxPlatform } from '@/utils/platform';
 
 const MessageList = lazy(() => import('./MessageList'));
 
@@ -333,10 +332,10 @@ export const MainChatArea: React.FC<MainChatAreaProps> = ({
                         overflowY: isNavHovered ? 'auto' : 'hidden',
                         overscrollBehavior: 'contain',
                         backgroundColor: isNavHovered ? 'var(--quick-jump-expanded-bg, rgba(24, 24, 24, 0.42))' : 'transparent',
-                        // Linux/WebKitGTK 上 backdrop-filter 合成开销极大，悬浮时会造成明显延迟，
-                        // 由 --quick-jump-expanded-bg 提供不透明背景；其他桌面平台保留毛玻璃质感。
-                        backdropFilter: isNavHovered && !isLinuxPlatform ? 'blur(28px) saturate(1.35)' : 'none',
-                        WebkitBackdropFilter: isNavHovered && !isLinuxPlatform ? 'blur(28px) saturate(1.35)' : 'none',
+                        // Chromium 全平台支持 backdrop-filter：悬浮导航条毛玻璃
+                        // 由内部元素承担（窗口本身保持不透明底色，见 App.css）
+                        backdropFilter: isNavHovered ? 'blur(28px) saturate(1.35)' : 'none',
+                        WebkitBackdropFilter: isNavHovered ? 'blur(28px) saturate(1.35)' : 'none',
                         borderRadius: isNavHovered ? '12px 0 0 12px' : 0,
                         borderWidth: '1px 0 1px 1px',
                         borderStyle: 'solid',

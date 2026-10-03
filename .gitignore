@@ -14,6 +14,10 @@ dist-ssr
 coverage
 *.tsbuildinfo
 
+# Electron 主进程/preload 编译产物与打包输出
+electron-dist
+release
+
 # makepkg working dirs and artifacts (archlinux/PKGBUILD)
 archlinux/src
 archlinux/pkg

@@ -4,7 +4,7 @@
 // 支持 Tavily Search API
 // =============================================================================
 
-import { invoke } from '@tauri-apps/api/core';
+import { invoke } from '@/services/bridge';
 
 export interface SearchResult {
   title: string;
@@ -45,7 +45,7 @@ export function normalizeTavilySearchResponse(data: TavilySearchResponse): Searc
 
 /**
  * 使用 Tavily Search API 搜索网页。
- * API Key 由 Tauri 后端从环境变量或项目根目录 .env 的 TAVILY_API_KEY 读取。
+ * API Key 由主进程从环境变量或项目根目录 .env 的 TAVILY_API_KEY 读取。
  */
 export async function searchWeb(query: string): Promise<SearchResult[]> {
   let data: TavilySearchResponse;

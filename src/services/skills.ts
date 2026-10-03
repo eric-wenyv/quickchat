@@ -1,10 +1,11 @@
 // =============================================================================
 // Quick-Chat — Skill Service
 // =============================================================================
-// Skill 的增删查、Claude/Codex 导入，均通过 Tauri 命令操作 ~/.chat/skills/
+// Skill 的增删查、Claude/Codex 导入，均通过桥命令操作 ~/.chat/skills/
+// （handler 在阶段 2 补齐，当前调用会抛 "not implemented yet"）。
 // =============================================================================
 
-import { invoke } from '@tauri-apps/api/core';
+import { invoke } from '@/services/bridge';
 
 export type SkillSource = 'claude' | 'codex' | 'builtin' | 'local';
 

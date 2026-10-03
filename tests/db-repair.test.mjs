@@ -7,14 +7,15 @@ import ts from 'typescript';
 
 async function importDbService(fakeDb) {
   const source = await readFile(new URL('../src/services/db.ts', import.meta.url), 'utf8');
-  const transformedSource = source
-    .replace(
-      "import Database from '@tauri-apps/plugin-sql';",
-      'const Database = globalThis.__quickChatDbTestDatabase;',
-    )
-    // Node 环境没有 Vite 注入的 import.meta.env，打桩为空对象（等价于非 dev:fresh 模式）
-    .replaceAll('import.meta.env', '({})');
-  globalThis.__quickChatDbTestDatabase = { load: async () => fakeDb };
+  const transformedSource = source.replace(
+    "import { invoke } from '@/services/bridge';",
+    'const invoke = globalThis.__quickChatDbTestInvoke;',
+  );
+  globalThis.__quickChatDbTestInvoke = async (cmd, args) => {
+    if (cmd === 'sql:execute') return fakeDb.execute(args.sql, args.params ?? []);
+    if (cmd === 'sql:select') return fakeDb.select(args.sql, args.params ?? []);
+    throw new Error(`unexpected invoke: ${cmd}`);
+  };
 
   const transformed = ts.transpileModule(transformedSource, {
     compilerOptions: {
@@ -35,7 +36,7 @@ function normalizeSql(sql) {
   return sql.replace(/\s+/g, ' ').trim();
 }
 
-test('recognizes SQLite corruption errors returned by Tauri SQL', async () => {
+test('recognizes SQLite corruption errors returned by the sql bridge', async () => {
   const { isSqliteCorruptionError } = await importDbService({
     execute: async () => undefined,
     select: async () => [],

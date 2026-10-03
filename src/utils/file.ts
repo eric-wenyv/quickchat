@@ -135,7 +135,7 @@ export function parseAttachments(content: string): {
   }
 }
 
-import { invoke } from '@tauri-apps/api/core';
+import { invoke } from '@/services/bridge';
 
 export async function parseDocument(base64Data: string, ext: string): Promise<string> {
   return invoke('parse_document', { data: base64Data, ext });

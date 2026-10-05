@@ -12,7 +12,6 @@
 // =============================================================================
 
 import fs from "node:fs";
-import os from "node:os";
 import path from "node:path";
 
 /** 旧版桌面的应用数据目录标识符（tauri.conf.json 的 identifier） */
@@ -21,20 +20,13 @@ export const LEGACY_APP_DIR_NAME = "com.tauri-app.quick-chat";
 const DB_FILE = "quick_chat.db";
 const DB_SUFFIXES = ["", "-wal", "-shm"];
 
-/** 旧版应用数据目录（按平台惯例解析；userData 目录名规则与旧实现一致） */
-export function legacyConfigDir(): string {
-  switch (process.platform) {
-    case "win32": {
-      const appData = process.env.APPDATA ?? path.join(os.homedir(), "AppData", "Roaming");
-      return path.join(appData, LEGACY_APP_DIR_NAME);
-    }
-    case "darwin":
-      return path.join(os.homedir(), "Library", "Application Support", LEGACY_APP_DIR_NAME);
-    default: {
-      const xdgConfig = process.env.XDG_CONFIG_HOME ?? path.join(os.homedir(), ".config");
-      return path.join(xdgConfig, LEGACY_APP_DIR_NAME);
-    }
-  }
+/**
+ * 旧版应用数据目录。Electron 的 userData 与旧版目录位于同一配置根下
+ * （Linux ~/.config、macOS ~/Library/Application Support、Windows %APPDATA%），
+ * 因此直接取 userData 的同级目录即可，无需按平台重复解析。
+ */
+export function legacyConfigDir(userDataDir: string): string {
+  return path.join(path.dirname(userDataDir), LEGACY_APP_DIR_NAME);
 }
 
 function hasAnyDbFile(dir: string): boolean {
@@ -77,7 +69,7 @@ export function migrateLegacyDataIfNeeded(newDir: string, useDevDb: boolean): bo
   if (useDevDb) {
     return false;
   }
-  const oldDir = legacyConfigDir();
+  const oldDir = legacyConfigDir(newDir);
   if (oldDir === newDir) {
     return false;
   }

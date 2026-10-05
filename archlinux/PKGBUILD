@@ -69,7 +69,7 @@ build() {
     npm run build:web
     npm run build:electron-main
     # 只出 unpacked 目录（不打 deb/rpm/appimage，避开 linuxdeploy 依赖链）
-    npx electron-builder --linux dir
+    npx electron-builder --linux dir --publish never
 }
 
 package() {

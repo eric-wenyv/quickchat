@@ -57,7 +57,7 @@ jobs:
           npm run build:electron-main
 
       - name: Build bundles
-        run: npx electron-builder --linux AppImage deb rpm
+        run: npx electron-builder --linux AppImage deb rpm --publish never
         env:
           ELECTRON_MIRROR: https://npmmirror.com/mirrors/electron/
 
@@ -92,7 +92,7 @@ jobs:
           npm run build:electron-main
 
       - name: Build NSIS installer
-        run: npx electron-builder --win nsis
+        run: npx electron-builder --win nsis --publish never
         env:
           ELECTRON_MIRROR: https://npmmirror.com/mirrors/electron/
 

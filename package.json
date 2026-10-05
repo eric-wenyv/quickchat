@@ -2,6 +2,11 @@
   "name": "quick-chat",
   "private": true,
   "version": "0.1.0",
+  "description": "LAN chat application built with Electron",
+  "author": {
+    "name": "eric",
+    "email": "175533312+eric-wenyv@users.noreply.github.com"
+  },
   "type": "module",
   "main": "electron-dist/main.js",
   "scripts": {

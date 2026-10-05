@@ -7,7 +7,6 @@ on:
   workflow_dispatch:
 
 jobs:
-  # ── 测试 + 前端/主进程编译检查 ─────────────────────────────────────────
   test:
     name: Test & Builds
     runs-on: ubuntu-latest
@@ -30,11 +29,9 @@ jobs:
       - name: Build Electron main process
         run: npm run build:electron-main
 
-  # ── Linux: .deb / .rpm / .AppImage ──────────────────────────────────
   build-linux:
     name: Build Linux (deb/rpm/AppImage)
     needs: test
-    # 用 22.04 而不是 latest:AppImage 与 deb 需要较旧的 glibc 以兼容更多发行版
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
@@ -50,9 +47,6 @@ jobs:
           # electron-builder 打 rpm 需要 rpmbuild（deb/AppImage 不需要额外系统依赖）
           sudo apt-get install -y rpm
 
-      # package-lock.json 的 resolved 指向 npmmirror;npm 12 默认 allow-remote=none,
-      # 会把非默认 registry 的 tarball 误判为 remote 拒绝拉取(EALLOWREMOTE)。
-      # replace-registry-host=always 让 npm 抓取前把 URL 重写回默认 registry,安全门保持启用。
       - run: npm ci
         env:
           npm_config_replace_registry_host: always
@@ -72,7 +66,6 @@ jobs:
             release/*.rpm
           if-no-files-found: error
 
-  # ── Windows: .exe (NSIS 安装包) ──────────────────────────────────────
   build-windows:
     name: Build Windows (exe)
     needs: test
@@ -101,14 +94,12 @@ jobs:
           path: release/*.exe
           if-no-files-found: error
 
-  # ── Arch Linux: .pkg.tar.zst(pacman) ────────────────────────────────
   build-arch:
     name: Build Arch (pkg.tar.zst)
     needs: test
     runs-on: ubuntu-latest
     container: archlinux:latest
     steps:
-      # checkout action 需要 git
       - name: Install git
         run: pacman -Sy --noconfirm git
 
@@ -137,7 +128,6 @@ jobs:
           path: archlinux/*.pkg.tar.zst
           if-no-files-found: error
 
-  # ── 打 tag 时把所有产物发布为 GitHub Release ─────────────────────────
   release:
     name: Publish Release
     if: startsWith(github.ref, 'refs/tags/')

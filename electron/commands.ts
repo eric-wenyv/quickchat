@@ -1,11 +1,6 @@
-// =============================================================================
-// Quick-Chat — 主进程命令：fetch_url / search_web / parse_document
-// =============================================================================
-// 逐条移植自旧 Rust 主程序，返回形状与错误消息保持一致：
-//   fetch_url      抓取网页并提取正文（HTML → 纯文本，20k 字符截断）
-//   search_web     Tavily 搜索转发（API Key 只存主进程）
-//   parse_document spawn 系统 Python（pdfplumber / python-docx）解析文档
-// =============================================================================
+// fetch_url
+// search_web(Tavily)
+// parse_document
 
 import { spawnSync } from "node:child_process";
 import fs from "node:fs";
@@ -14,9 +9,7 @@ import path from "node:path";
 
 import { parseHTML } from "linkedom";
 
-// ---------------------------------------------------------------------------
 // fetch_url
-// ---------------------------------------------------------------------------
 
 /** 正文返回给模型的最大字符数 */
 const FETCH_URL_MAX_CHARS = 20_000;
@@ -276,7 +269,7 @@ function dotenvCandidatePaths(): string[] {
   const paths: string[] = [];
   // 启动目录及其祖先（dev 下即项目根）
   let dir = process.cwd();
-  for (;;) {
+  for (; ;) {
     paths.push(path.join(dir, ".env"));
     const parent = path.dirname(dir);
     if (parent === dir) {
@@ -287,7 +280,7 @@ function dotenvCandidatePaths(): string[] {
   // 可执行文件目录及其祖先
   const exeDir = path.dirname(process.execPath);
   let ed = exeDir;
-  for (;;) {
+  for (; ;) {
     paths.push(path.join(ed, ".env"));
     const parent = path.dirname(ed);
     if (parent === ed) {
@@ -410,6 +403,6 @@ export function parseDocument(data: string, ext: string): string {
   const code = output.status === null ? "None" : `Some(${output.status})`;
   throw new Error(
     `Python exit code ${code}. stderr: ${stderr.length === 0 ? "(empty)" : stderr}. ` +
-      `stdout: ${stdout.length === 0 ? "(empty)" : stdout}. python: ${pythonPath}`,
+    `stdout: ${stdout.length === 0 ? "(empty)" : stdout}. python: ${pythonPath}`,
   );
 }

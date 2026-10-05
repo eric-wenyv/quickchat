@@ -401,10 +401,6 @@ const MessageList = forwardRef<MessageListHandle, MessageListProps>(
                 ref={(el) => {
                   messageRefs.current[index] = el;
                 }}
-                // 屏外消息行跳过布局与绘制（content-visibility）：打开会话时
-                // 视口钉在底部，屏外行的渲染成本不阻塞首帧；contain-intrinsic-size
-                // 提供占位高度，行滚入视口时才按真实高度布局
-                style={{ contentVisibility: 'auto', containIntrinsicSize: 'auto 180px' }}
               >
                 <MessageBubble
                   message={message}

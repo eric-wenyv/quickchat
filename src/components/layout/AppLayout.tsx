@@ -603,26 +603,57 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
   onCreateConversationRef.current = onCreateConversation;
 
   // 快捷键监听：Electron 全局快捷键事件（主进程 globalShortcut 注册
-  // Ctrl+Shift+S/N 后转发，X11/Wayland/macOS/Windows 均可用，可穿透 iframe）
+  // Ctrl+Shift+S/N 后转发，X11/macOS/Windows 可用）+ DOM keydown 兜底。
+  // Wayland 不允许应用全局抢键，globalShortcut 静默失效，keydown 是那里
+  // 唯一的路径；其他平台上同一次按键可能同时走两条通道，按动作短时去重。
   useEffect(() => {
     let unlistenToggle: (() => void) | undefined;
     let unlistenNew: (() => void) | undefined;
+
+    const DEDUPE_MS = 100;
+    let lastToggleFiredAt = 0;
+    let lastNewFiredAt = 0;
+    const fireToggle = () => {
+      const now = Date.now();
+      if (now - lastToggleFiredAt < DEDUPE_MS) return;
+      lastToggleFiredAt = now;
+      toggleSidebar();
+    };
+    const fireNew = () => {
+      const now = Date.now();
+      if (now - lastNewFiredAt < DEDUPE_MS) return;
+      lastNewFiredAt = now;
+      onCreateConversationRef.current();
+    };
+
     if (isElectron()) {
       try {
-        unlistenToggle = onEvent('shortcut-toggle-sidebar', () => {
-          toggleSidebar();
-        });
-        unlistenNew = onEvent('shortcut-new-conversation', () => {
-          onCreateConversationRef.current();
-        });
+        unlistenToggle = onEvent('shortcut-toggle-sidebar', fireToggle);
+        unlistenNew = onEvent('shortcut-new-conversation', fireNew);
       } catch (e) {
         console.warn('全局快捷键监听未就绪:', e);
       }
     }
 
+    // 焦点在主窗口内时响应（含输入框）；mac 主进程注册的是 Command+Shift，
+    // 这里 ctrlKey/metaKey 任一匹配即可与主进程修饰键对齐
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (!(e.ctrlKey || e.metaKey) || !e.shiftKey) return;
+      const key = e.key.toLowerCase();
+      if (key === 's') {
+        e.preventDefault();
+        fireToggle();
+      } else if (key === 'n') {
+        e.preventDefault();
+        fireNew();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+
     return () => {
       unlistenToggle?.();
       unlistenNew?.();
+      window.removeEventListener('keydown', handleKeyDown);
     };
   }, [toggleSidebar]);
 

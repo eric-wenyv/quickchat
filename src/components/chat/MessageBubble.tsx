@@ -201,7 +201,11 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({ message, onDelete, deferR
       <div
         className={`flex flex-col relative min-w-0 ${isUser ? 'items-end max-w-[85%] md:max-w-[70%]' : 'flex-1'}`}
       >
-        {/* 消息正文：用户气泡靠右 / AI 全宽靠左 */}
+        {/* 消息正文：用户气泡靠右 / AI 全宽靠左。
+            content-visibility:auto 放在正文元素上（屏外跳过 markdown 布局与绘制，
+            首屏只铺可视区）；不能放在行/消息包装元素上——它会强制开启 paint
+            containment 并创建独立 stacking context，行下方浮出的复制/删除按钮
+            溢出包装盒的部分会被裁剪，且 z-10 失效被后一条消息盖住、无法 hover。 */}
         <div
           ref={contentRef}
           className={
@@ -209,6 +213,7 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({ message, onDelete, deferR
               ? 'relative rounded-2xl border border-linear-border bg-linear-surface py-0.5 px-3 shadow-linear-highlight transition-colors group-hover:bg-linear-surface-hover'
               : 'relative w-full'
           }
+          style={{ contentVisibility: 'auto', containIntrinsicSize: 'auto 160px' }}
         >
           <MessageContent
             content={message.content}

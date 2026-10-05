@@ -49,8 +49,12 @@ jobs:
 
       - run: npm ci
         env:
-          npm_config_replace_registry_host: always
           ELECTRON_MIRROR: https://npmmirror.com/mirrors/electron/
+
+      - name: Build app (web + electron main)
+        run: |
+          npm run build:web
+          npm run build:electron-main
 
       - name: Build bundles
         run: npx electron-builder --linux AppImage deb rpm
@@ -80,8 +84,12 @@ jobs:
 
       - run: npm ci
         env:
-          npm_config_replace_registry_host: always
           ELECTRON_MIRROR: https://npmmirror.com/mirrors/electron/
+
+      - name: Build app (web + electron main)
+        run: |
+          npm run build:web
+          npm run build:electron-main
 
       - name: Build NSIS installer
         run: npx electron-builder --win nsis

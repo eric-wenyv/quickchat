@@ -26,11 +26,6 @@ export interface ImportReport {
   skipped_existing: string[];
 }
 
-export interface SkillExport {
-  id: string;
-  content: string;
-}
-
 /** 桌面端 Skill 根目录（Rust 侧为 home_dir/.chat/skills） */
 export function skillsRoot(): string {
   return path.join(os.homedir(), ".chat", "skills");
@@ -507,35 +502,6 @@ export async function createSkillAt(
     throw new Error(`写入 SKILL.md 失败: ${(e as Error).message}`);
   }
   return slug;
-}
-
-/** 同步通道专用：按 id 写入/覆盖 SKILL.md（内容原样落盘，不动附属文件） */
-export async function upsertSkillFromSync(id: string, content: string): Promise<void> {
-  const root = skillsRoot();
-  if (!isValidSkillId(id)) {
-    throw new Error(`非法的 Skill 名称: ${id}`);
-  }
-  await fsp.mkdir(path.join(root, id), { recursive: true });
-  try {
-    await fsp.writeFile(path.join(root, id, "SKILL.md"), content);
-  } catch (e) {
-    throw new Error(`写入 SKILL.md 失败: ${(e as Error).message}`);
-  }
-}
-
-/** 同步通道专用：导出全部 Skill（id + SKILL.md 原文，附属文件暂不同步） */
-export async function exportSkillsForSync(root: string): Promise<SkillExport[]> {
-  const metas = await listSkillsAt(root);
-  const out: SkillExport[] = [];
-  for (const meta of metas) {
-    try {
-      const content = await readSkillAt(root, meta.id);
-      out.push({ id: meta.id, content });
-    } catch {
-      // 单个读取失败不阻塞整体导出
-    }
-  }
-  return out;
 }
 
 export async function deleteSkill(id: string): Promise<void> {

@@ -4,8 +4,6 @@ import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { registerIpcHandlers, sendEventTo } from "./ipc.js";
 import { setUserDataDir, getDb, useDevDb } from "./db.js";
-import { createSyncServer } from "./sync-server.js";
-import { exportSkillsForSync, skillsRoot } from "./skills.js";
 import { setupTray } from "./tray.js";
 import { migrateLegacyDataIfNeeded } from "./migrate.js";
 
@@ -214,15 +212,7 @@ app.whenReady().then(() => {
   // 旧版数据迁移须在打开数据库之前完成（getDb 会创建新库文件）
   migrateLegacyDataIfNeeded(userDataDir, useDevDb());
 
-  // LAN 同步服务：与前端共用同一个 SQLite 连接（better-sqlite3 单例）
-  const syncServer = createSyncServer({
-    db: getDb(),
-    configDir: userDataDir,
-    emit: (name, payload) => sendEventTo(getMainWindow(), name, payload),
-    exportSkills: () => exportSkillsForSync(skillsRoot()),
-  });
-
-  registerIpcHandlers(getMainWindow, { sync: syncServer });
+  registerIpcHandlers(getMainWindow);
 
   // 系统托盘（无 indicator 环境下降级为日志，不 crash）
   setupTray({

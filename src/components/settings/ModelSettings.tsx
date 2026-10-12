@@ -3,8 +3,6 @@ import type { ModelConfig, UUID } from '@/types/types';
 import { ModelForm } from './ModelForm';
 import { DEFAULT_GLOBAL_SHORTCUT } from '@/services/globalShortcut';
 import { isDesktopPlatform, isMobilePlatform } from '@/utils/platform';
-import { SyncServerSettings } from './SyncServerSettings';
-import { SyncClientSettings } from './SyncClientSettings';
 
 interface ModelSettingsProps {
   models: ModelConfig[];
@@ -391,7 +389,6 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({
           ) : (
             <>
               {isDesktopPlatform && <GlobalShortcutSettings value={globalShortcut} onChange={onGlobalShortcutChange} />}
-              {isDesktopPlatform ? <SyncServerSettings /> : <SyncClientSettings />}
 
               <section className="rounded-lg border border-linear-border bg-linear-surface p-4">
                 <h3 className="text-sm font-bold text-linear-text-primary">模型管理</h3>

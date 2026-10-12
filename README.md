@@ -8,7 +8,7 @@
 npm install
 npm run dev            # 启动 Electron + Vite dev server（端口 1420）
 npm run dev:fresh      # 使用隔离的开发数据库（启动时清空）
-npm run dev:web        # 仅浏览器模式（无桌面能力：DB/快捷键/同步等桥命令不可用）
+npm run dev:web        # 仅浏览器模式（无桌面能力：DB/快捷键等桥命令不可用）
 npm run build          # 打包（build:web + build:electron-main + electron-builder）
 npm test               # node --test tests/*.test.mjs
 ```
@@ -40,5 +40,3 @@ Arch（`archlinux/PKGBUILD` 出 pkg.tar.zst）并发布 GitHub Release。
 - SQLite：`app.getPath('userData')/quick_chat.db`（WAL），由主进程
   better-sqlite3 持有，前端经 `sql:execute` / `sql:select` 桥命令直接执行 SQL。
 - Skill：`~/.chat/skills/`（兼容导入 `~/.claude/skills`、`~/.codex/skills`）。
-- LAN 同步服务：`http://0.0.0.0:8975/api/sync/*`（Bearer Token 鉴权，
-  Token 与配置存于 userData 目录）。

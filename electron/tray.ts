@@ -1,10 +1,4 @@
-// =============================================================================
-// Quick-Chat — 系统托盘
-// =============================================================================
-// 对齐旧 Rust 实现的 setup_tray：右键菜单「显示窗口」/「退出」，
-// 左键点击显示窗口。Linux 无 indicator 环境（如 headless CI）下创建托盘
-// 可能失败 —— 降级为日志，不影响主进程（与 Rust 侧 tray setup error 一致）。
-// =============================================================================
+// Quick-Chat Tray
 
 import { Menu, nativeImage, Tray } from "electron";
 import path from "node:path";
@@ -16,7 +10,6 @@ const TRAY_ICON_PATH = path.join(__dirname, "assets", "tray-icon.png");
 
 export interface TrayDeps {
   getMainWindow: () => { show: () => void; focus: () => void } | null;
-  /** 「退出」：置退出标记后真正退出（绕过 close-to-tray 拦截） */
   onQuit: () => void;
 }
 

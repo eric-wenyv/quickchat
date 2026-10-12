@@ -8,7 +8,7 @@
 //   clipboard:*  剪贴板
 //   opener:*     外部打开
 //   shortcut:*   全局快捷键
-//   fetch_url / search_web / parse_document / skills / sync
+//   fetch_url / search_web / parse_document / skills
 // =============================================================================
 
 import { BrowserWindow, clipboard, globalShortcut, ipcMain, shell } from "electron";
@@ -16,7 +16,6 @@ import { BrowserWindow, clipboard, globalShortcut, ipcMain, shell } from "electr
 import { getDb, toLastInsertId } from "./db.js";
 import { fetchUrl, parseDocument, searchWeb } from "./commands.js";
 import * as skills from "./skills.js";
-import type { SyncServer } from "./sync-server.js";
 
 type InvokeArgs = Record<string, unknown> | undefined;
 
@@ -232,31 +231,11 @@ handle("ensure_builtin_skill", () => {
   return skills.ensureBuiltinSkill();
 });
 
-handle("upsert_skill_from_sync", (args) => {
-  return skills.upsertSkillFromSync(String(args?.id ?? ""), String(args?.content ?? ""));
-});
-
 // ---------------------------------------------------------------------------
 // Register Entry
 // ---------------------------------------------------------------------------
 
-export interface IpcDeps {
-  sync: SyncServer;
-}
-
-export function registerIpcHandlers(getMainWindow: () => BrowserWindow | null, deps: IpcDeps): void {
-  handle("get_sync_info", () => {
-    return deps.sync.info();
-  });
-
-  handle("set_sync_config", (args) => {
-    return deps.sync.setConfig(Boolean(args?.enabled), Number(args?.port));
-  });
-
-  handle("regenerate_sync_token", () => {
-    return deps.sync.regenerateToken();
-  });
-
+export function registerIpcHandlers(getMainWindow: () => BrowserWindow | null): void {
   ipcMain.handle("qc:invoke", async (event, cmd: string, args: InvokeArgs) => {
     const fn = handlers.get(cmd);
     if (!fn) {

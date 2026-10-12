@@ -1,37 +1,19 @@
-// =============================================================================
-// Quick-Chat — Skill 管理（Electron 主进程）
-// =============================================================================
-// 逐函数移植自旧 Rust skills 模块，行为与返回形状（serde 输出）一致：
-// 桌面端存储 $HOME/.chat/skills/<skill-dir>/SKILL.md；兼容 Claude
-// (~/.claude/skills) 与 Codex (~/.codex/skills) 目录格式，导入时整目录复制
-// （排除 .git，符号链接解析为目标内容），同名时 Claude 优先。
-// frontmatter 解析实现 Skill 实际用到的 YAML 子集（对齐 Claude gray-matter
-// + js-yaml 语义）：普通标量（含更缩进续行折叠）、单/双引号标量、块标量
-// （| 与 >，含 -/+ 裁剪与数字缩进指示）、# 注释剥离。
-// =============================================================================
+// Skills management
 
 import fs from "node:fs";
 import fsp from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
-// ---------------------------------------------------------------------------
-// 类型（与 serde Serialize 输出形状一致）
-// ---------------------------------------------------------------------------
-
 export interface SkillMeta {
-  /** 目录名，稳定 ID */
   id: string;
-  /** 展示名称（frontmatter name） */
   name: string;
   description: string;
-  /** claude | codex | builtin | local */
-  source: string;
-  /** Skill 目录的绝对路径 */
-  path: string;
-  /** 目录中除 SKILL.md 外是否还有其它可见文件（脚本、模板等） */
-  has_assets: boolean;
   disable_model_invocation: boolean;
+
+  source: string;
+  path: string;
+  has_assets: boolean;
 }
 
 export interface ImportedSkill {
@@ -517,9 +499,8 @@ export async function createSkillAt(
   await fsp.mkdir(dir, { recursive: true });
   const body = content.trim();
   const disableLine = disableModelInvocation ? "disable-model-invocation: true\n" : "";
-  const markdown = `---\nname: ${slug}\n${formatDescriptionYaml(description.trim())}${disableLine}---\n\n${
-    body.length === 0 ? `# ${slug}\n` : `${body}\n`
-  }`;
+  const markdown = `---\nname: ${slug}\n${formatDescriptionYaml(description.trim())}${disableLine}---\n\n${body.length === 0 ? `# ${slug}\n` : `${body}\n`
+    }`;
   try {
     await fsp.writeFile(path.join(dir, "SKILL.md"), markdown);
   } catch (e) {
@@ -662,7 +643,7 @@ export async function importExternalSkillsAt(
       }
       const dst = path.join(root, dirName);
       await copyDirRecursive(srcPath, dst);
-      await fsp.writeFile(path.join(dst, ".source"), source).catch(() => {});
+      await fsp.writeFile(path.join(dst, ".source"), source).catch(() => { });
       taken.add(dirName);
       taken.add(fmName);
       report.imported.push({ name: fmName, source });
@@ -793,7 +774,7 @@ export async function ensureBuiltinSkillAt(root: string): Promise<void> {
     } catch (e) {
       throw new Error(`写入内置 Skill 失败: ${(e as Error).message}`);
     }
-    await fsp.writeFile(path.join(dir, ".source"), "builtin").catch(() => {});
+    await fsp.writeFile(path.join(dir, ".source"), "builtin").catch(() => { });
   }
-  await fsp.writeFile(flag, BUILTIN_SKILL_VERSION).catch(() => {});
+  await fsp.writeFile(flag, BUILTIN_SKILL_VERSION).catch(() => { });
 }

@@ -42,6 +42,10 @@ if (!gotSingleInstanceLock) {
   // 注意不能用 app.quit()：ready 前调用不会阻止 whenReady() 链继续执行，
   // 第二实例会继续起同步服务器（端口冲突）并建窗。app.exit 立即终止。
   app.exit(0);
+} else if (process.argv.includes("--toggle")) {
+  // --toggle 仅用于唤起已在运行的实例（显隐切换）；进程未运行时直接退出，
+  // 不创建窗口
+  app.exit(0);
 } else {
   app.on("second-instance", (_event, argv) => {
     const win = getMainWindow();

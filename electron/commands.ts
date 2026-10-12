@@ -9,15 +9,15 @@ import path from "node:path";
 
 import { parseHTML } from "linkedom";
 
+// ---------------------------------------------------------------------------
 // fetch_url
+// ---------------------------------------------------------------------------
 
-/** 正文返回给模型的最大字符数 */
+// Fetch URL Limits
 const FETCH_URL_MAX_CHARS = 20_000;
-/** 响应体读取上限 */
 const FETCH_URL_MAX_BYTES = 5 * 1024 * 1024;
-/** 提出 HTML 中不提供正文语义的标签 */
+
 const HTML_STRIP_SELECTOR = "script, style, noscript, template, svg, iframe, head";
-/** 提取文本时在边界补换行，保留基本段落结构 */
 const HTML_BLOCK_SELECTOR =
   "p, div, br, hr, li, ul, ol, tr, table, section, article, header, footer, aside, nav, h1, h2, h3, h4, h5, h6, blockquote, pre, figure, figcaption, form, fieldset, dl, dt, dd";
 
@@ -33,7 +33,7 @@ interface UrlContent {
   truncated: boolean;
 }
 
-/** 收集元素子树的纯文本（Text/CDATA 节点；跳过注释），对齐 scraper 的 text() */
+// Extract text from node
 function collectText(node: { childNodes?: ArrayLike<unknown> }): string {
   let out = "";
   const children = node.childNodes;
@@ -44,16 +44,11 @@ function collectText(node: { childNodes?: ArrayLike<unknown> }): string {
     } else if (child.nodeType === 1 || child.nodeType === 11) {
       out += collectText(child);
     }
-    // 注释（8）与处理指令不参与正文
   }
   return out;
 }
 
-/**
- * HTML → (title, 正文文本)。
- * 剔除无正文语义节点后，在块级元素末尾补换行保留段落结构，
- * 行内连续空白折叠为单空格，空行丢弃。
- */
+// Extract html text
 export function extractHtmlText(html: string): { title: string | null; content: string } {
   const { document } = parseHTML(html);
 
@@ -61,7 +56,7 @@ export function extractHtmlText(html: string): { title: string | null; content: 
   const titleRaw = titleEl ? collectText(titleEl).trim() : "";
   const title = titleRaw.length > 0 ? titleRaw : null;
 
-  // 剔除无正文语义的节点
+  // Remove useless node
   const stripEls = Array.from(document.querySelectorAll(HTML_STRIP_SELECTOR)) as Array<Element & { remove(): void }>;
   for (const el of stripEls) {
     el.remove();
@@ -72,7 +67,7 @@ export function extractHtmlText(html: string): { title: string | null; content: 
     return { title, content: "" };
   }
 
-  // 在块级元素边界插入换行，再收集纯文本
+  // Append \n to each node
   const blockEls = Array.from(body.querySelectorAll(HTML_BLOCK_SELECTOR)) as Array<Element>;
   for (const el of blockEls) {
     el.appendChild(document.createTextNode("\n"));
@@ -80,7 +75,6 @@ export function extractHtmlText(html: string): { title: string | null; content: 
 
   const raw = collectText(body as unknown as { childNodes?: ArrayLike<unknown> });
 
-  // 行内连续空白折叠为单空格，空行丢弃
   const lines = raw
     .split("\n")
     .map((line) => line.split(/\s+/).join(" ").trim())
@@ -94,7 +88,7 @@ export async function fetchUrl(rawUrl: string): Promise<UrlContent> {
     throw new Error(`仅支持 http/https 链接: ${url}`);
   }
 
-  // 手动跟随重定向（上限 10 次，对齐 reqwest redirect::Policy::limited(10)）
+  // redirect 10 times
   let current = url;
   let response: Response | null = null;
   for (let redirectCount = 0; ; redirectCount += 1) {
@@ -108,6 +102,7 @@ export async function fetchUrl(rawUrl: string): Promise<UrlContent> {
     } catch (e) {
       throw new Error(`请求网页失败: ${(e as Error).message}`);
     }
+
     if (REDIRECT_STATUSES.has(attempt.status)) {
       if (redirectCount >= 10) {
         throw new Error("请求网页失败: 重定向次数超过限制");
@@ -140,7 +135,6 @@ export async function fetchUrl(rawUrl: string): Promise<UrlContent> {
   if (bytes.length > FETCH_URL_MAX_BYTES) {
     bytes = bytes.slice(0, FETCH_URL_MAX_BYTES);
   }
-  // from_utf8_lossy 等价：非致命解码，无效字节替换为 U+FFFD
   const rawText = new TextDecoder("utf-8").decode(bytes);
 
   const isHtml = contentType.includes("text/html") || contentType.includes("application/xhtml");
@@ -155,14 +149,14 @@ export async function fetchUrl(rawUrl: string): Promise<UrlContent> {
   }
 
   if (content.trim().length === 0) {
-    throw new Error("网页内容为空或无法提取正文（可能需要 JS 渲染或登录）");
+    throw new Error("网页内容为空或无法提取正文");
   }
 
   return { url, title: extracted.title, content, truncated };
 }
 
 // ---------------------------------------------------------------------------
-// search_web（Tavily）
+// search_web(Tavily)
 // ---------------------------------------------------------------------------
 
 export async function searchWeb(query: string): Promise<unknown> {
@@ -207,7 +201,6 @@ export async function searchWeb(query: string): Promise<unknown> {
   }
 }
 
-/** 依次剥离首尾所有 chars 中的字符（对齐 Rust trim_matches） */
 function trimMatches(s: string, chars: string): string {
   let out = s;
   const set = new Set(Array.from(chars));
@@ -267,7 +260,6 @@ function readDotenvKey(key: string): string | null {
 
 function dotenvCandidatePaths(): string[] {
   const paths: string[] = [];
-  // 启动目录及其祖先（dev 下即项目根）
   let dir = process.cwd();
   for (; ;) {
     paths.push(path.join(dir, ".env"));
@@ -277,7 +269,6 @@ function dotenvCandidatePaths(): string[] {
     }
     dir = parent;
   }
-  // 可执行文件目录及其祖先
   const exeDir = path.dirname(process.execPath);
   let ed = exeDir;
   for (; ;) {
@@ -292,7 +283,7 @@ function dotenvCandidatePaths(): string[] {
 }
 
 // ---------------------------------------------------------------------------
-// parse_document（spawn Python：pdfplumber / python-docx）
+// parse_document (spawn Python)
 // ---------------------------------------------------------------------------
 
 const PYTHON_SCRIPT = `
@@ -349,7 +340,6 @@ function findPython(): string {
     }
   }
 
-  // Fallback: try bare commands
   for (const cmd of ["python3", "python", "py"]) {
     const result = spawnSync(cmd, ["--version"], { encoding: "utf8" });
     if (result.error === undefined && result.status !== null) {
@@ -387,7 +377,6 @@ export function parseDocument(data: string, ext: string): string {
   try {
     fs.rmSync(tempPath, { force: true });
   } catch {
-    // 临时文件清理失败不影响结果
   }
 
   if (output.error) {

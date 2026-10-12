@@ -3,16 +3,12 @@
 // =============================================================================
 // 前端统一经 preload 桥 `window.__QC_BRIDGE__.invoke(cmd, args)` 调用，
 // 本模块按 cmd 路由到 handler 表。命令命名约定：
-//   sql:*        SQLite 数据面（better-sqlite3，见 electron/db.ts 连接单例）
-//   window:*     窗口控制（阶段 3 的自绘标题栏使用）
+//   sql:*        SQLite
+//   window:*     窗口控制
 //   clipboard:*  剪贴板
 //   opener:*     外部打开
 //   shortcut:*   全局快捷键
-//   fetch_url / search_web / parse_document / skills 系列 / sync 系列
-//                逐条移植自旧 Rust 实现（见 electron/commands.ts、
-//                electron/skills.ts、electron/sync-server.ts）。
-// stream_http_sse / cancel_http_stream 不注册：Electron 下前端永远走
-// Chromium fetch 流。
+//   fetch_url / search_web / parse_document / skills / sync
 // =============================================================================
 
 import { BrowserWindow, clipboard, globalShortcut, ipcMain, shell } from "electron";
@@ -36,7 +32,7 @@ function handle(cmd: string, fn: InvokeHandler): void {
   handlers.set(cmd, fn);
 }
 
-/** 向窗口推送 qc:event:<name> 事件（preload 的 onEvent 按同名通道订阅） */
+// send window qc:event:<name> 
 export function sendEventTo(window: BrowserWindow | null, name: string, payload?: unknown): void {
   if (window && !window.isDestroyed()) {
     window.webContents.send(`qc:event:${name}`, payload);
@@ -44,7 +40,7 @@ export function sendEventTo(window: BrowserWindow | null, name: string, payload?
 }
 
 // ---------------------------------------------------------------------------
-// SQLite 数据面（与旧版 SQL 插件行为对齐）
+// SQLite
 // ---------------------------------------------------------------------------
 
 function readParams(args: InvokeArgs): unknown[] {
@@ -59,8 +55,6 @@ handle("sql:execute", (args) => {
     const result = database.prepare(sql).run(...params);
     return { rowsAffected: result.changes, lastInsertId: toLastInsertId(result.lastInsertRowid) };
   } catch (error) {
-    // better-sqlite3 不允许一条 SQL 内含多个语句（db.ts 的 FTS 触发器块即如此），
-    // 无参时退回 exec 顺序执行；旧版 SQL 插件对多语句也是整串执行。
     if (params.length === 0 && error instanceof Error && /one statement/i.test(error.message)) {
       database.exec(sql);
       return { rowsAffected: 0, lastInsertId: 0 };
@@ -76,7 +70,7 @@ handle("sql:select", (args) => {
 });
 
 // ---------------------------------------------------------------------------
-// 窗口控制（阶段 3 的 UI 直接复用）
+// Window control
 // ---------------------------------------------------------------------------
 
 function targetWindow(event: Electron.IpcMainInvokeEvent, getMainWindow: () => BrowserWindow | null): BrowserWindow | null {
@@ -120,7 +114,6 @@ handle("window:hide", (_args, event, getMainWindow) => {
 handle("window:show", (_args, event, getMainWindow) => {
   const win = targetWindow(event, getMainWindow);
   if (win) {
-    // 覆盖最小化恢复 + 显示 + 聚焦（旧版 toggle 链路的 show/unminimize/setFocus）
     if (win.isMinimized()) win.restore();
     win.show();
     win.focus();
@@ -142,12 +135,9 @@ handle("window:is-visible", (_args, event, getMainWindow) => {
 });
 
 // ---------------------------------------------------------------------------
-// 剪贴板 / 外部打开
+// Clipborad
 // ---------------------------------------------------------------------------
-
-/** 剪贴板不含图片时返回 null，否则返回 PNG 的 base64（前端自行拼 data URL） */
 handle("clipboard:read-image", async () => {
-  // Electron 44 起剪贴板为 W3C 风格异步 API（clipboard.read + ClipboardItem）
   const items = await clipboard.read();
   for (const item of items) {
     const imageType = item.types.find((t) => t.startsWith("image/"));
@@ -168,18 +158,17 @@ handle("opener:open-path", (args) => {
 });
 
 // ---------------------------------------------------------------------------
-// 全局快捷键：注册后触发时向主窗口转发 shortcut-fired 事件
+// Global shortcur
 // ---------------------------------------------------------------------------
 
 handle("shortcut:register", (args, _event, getMainWindow) => {
   const accelerator = String(args?.accelerator ?? "");
-  // 重复注册同一快捷键前先注销，保证幂等
   globalShortcut.unregister(accelerator);
   const ok = globalShortcut.register(accelerator, () => {
     sendEventTo(getMainWindow(), "shortcut-fired", { accelerator });
   });
   if (!ok) {
-    throw new Error(`无法注册全局快捷键: ${accelerator}（可能被系统占用或格式非法）`);
+    throw new Error(`无法注册全局快捷键: ${accelerator}`);
   }
   return null;
 });
@@ -195,7 +184,7 @@ handle("shortcut:unregister-all", () => {
 });
 
 // ---------------------------------------------------------------------------
-// fetch_url / search_web / parse_document（移植自旧 Rust 主程序）
+// fetch_url / search_web / parse_document
 // ---------------------------------------------------------------------------
 
 handle("fetch_url", (args) => {
@@ -211,7 +200,7 @@ handle("parse_document", (args) => {
 });
 
 // ---------------------------------------------------------------------------
-// skills 系列（移植自旧 Rust skills 模块）
+// skills
 // ---------------------------------------------------------------------------
 
 handle("list_skills", () => {
@@ -248,7 +237,7 @@ handle("upsert_skill_from_sync", (args) => {
 });
 
 // ---------------------------------------------------------------------------
-// 注册入口（main.ts 在 app ready 后调用；sync 命令由 main.ts 注入实例）
+// Register Entry
 // ---------------------------------------------------------------------------
 
 export interface IpcDeps {
@@ -273,7 +262,6 @@ export function registerIpcHandlers(getMainWindow: () => BrowserWindow | null, d
     if (!fn) {
       throw new Error(`unknown command: ${cmd}`);
     }
-    // Electron 经结构化克隆序列化错误，前端 reject 拿到同 message 的 Error
     return fn(args, event, getMainWindow);
   });
 }

@@ -64,7 +64,8 @@ prepare() {
 build() {
     cd "$srcdir/$pkgname"
     export npm_config_cache="$srcdir/npm-cache"
-    export ELECTRON_MIRROR="https://npmmirror.com/mirrors/electron/"
+    # npmmirror 的 cdn 下载大文件会断流（EOF），用华为云镜像
+    export ELECTRON_MIRROR="https://mirrors.huaweicloud.com/electron/"
     npm ci
     npm run build:web
     npm run build:electron-main

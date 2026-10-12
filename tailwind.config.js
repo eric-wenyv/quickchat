@@ -14,12 +14,10 @@ export default {
         'input-hover': '0 2px 12px -2px rgba(0, 0, 0, 0.08), 0 4px 24px -4px rgba(0, 0, 0, 0.04)',
         // Extremely restrained panel shadows for popups/dropdowns
         'panel': '0 4px 32px -4px rgba(0, 0, 0, 0.06)',
-        // Linear-style top highlight for elevated panels/inputs
         'linear-highlight': 'inset 0 1px 0 0 rgba(255, 255, 255, 0.04)',
         'linear-highlight-strong': 'inset 0 1px 0 0 rgba(255, 255, 255, 0.08)',
       },
       fontFamily: {
-        // High-quality typography baseline
         sans: [
           'Inter',
           '-apple-system',

@@ -3,9 +3,8 @@ import netSocket from "node:net";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { registerIpcHandlers, sendEventTo } from "./ipc.js";
-import { setUserDataDir, getDb, useDevDb } from "./db.js";
+import { setUserDataDir, getDb } from "./db.js";
 import { setupTray } from "./tray.js";
-import { migrateLegacyDataIfNeeded } from "./migrate.js";
 
 // ESM 主进程没有 __dirname，从 import.meta.url 推导（Electron >= 28 支持 ESM 主进程）。
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -208,9 +207,6 @@ app.whenReady().then(() => {
 
   const userDataDir = app.getPath("userData");
   setUserDataDir(userDataDir);
-
-  // 旧版数据迁移须在打开数据库之前完成（getDb 会创建新库文件）
-  migrateLegacyDataIfNeeded(userDataDir, useDevDb());
 
   registerIpcHandlers(getMainWindow);
 

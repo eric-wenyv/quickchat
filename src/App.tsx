@@ -22,9 +22,11 @@ import {
   getSystemPrompts,
   saveSystemPrompt,
   deleteSystemPrompt,
+  getThinkingEffortsCache,
+  saveThinkingEffortsCache,
   runDatabaseMaintenance,
 } from "./services/db";
-import { appendCitationList, buildSkillCatalogPrompt, chatCompletion, describeImage, generateConversationTitle, generateFallbackConversationTitle, isPlaceholderConversationTitle, READ_URL_TOOL, ReasoningEffortError, USE_SKILL_TOOL, WEB_SEARCH_TOOL } from "./services/ai";
+import { appendCitationList, buildSkillCatalogPrompt, chatCompletion, describeImage, fetchModelThinkingEfforts, generateConversationTitle, generateFallbackConversationTitle, isOpenRouterModel, isPlaceholderConversationTitle, READ_URL_TOOL, ReasoningEffortError, thinkingEffortsKey, USE_SKILL_TOOL, WEB_SEARCH_TOOL } from "./services/ai";
 import type { ChatMessage, ChatContentPart, ToolDefinition, ToolCall } from "./services/ai";
 import { parseAttachments, getLanguageFromFilename } from "./utils/file";
 import { parseImageDescriptions, serializeImageDescriptions, type ImageDescription } from "./utils/image-description";
@@ -46,6 +48,7 @@ import type {
   Message,
   ModelConfig,
   SystemPrompt,
+  ThinkingEfforts,
   UUID,
 } from "./types/types";
 
@@ -176,6 +179,8 @@ export default function App() {
 
   // ── per-conversation 状态：思考程度 ──
   const [activeThinkingLevel, setActiveThinkingLevel] = useState<string | null>(null);
+  // OpenRouter 模型思考档位元数据缓存（启动时从 DB 整表加载，缺失时按需拉取并持久化）
+  const [thinkingEffortsCache, setThinkingEffortsCache] = useState<Record<string, ThinkingEfforts>>({});
 
   const isSending = isThreadSending(sendingByConversationId, activeConversation?.id);
 
@@ -329,10 +334,11 @@ export default function App() {
   const loadAll = async () => {
     setIsLoadingConversations(true);
     try {
-      const [convs, mods, prompts] = await Promise.all([
+      const [convs, mods, prompts, effortsCache] = await Promise.all([
         getConversations(CONVERSATION_LIST_LIMIT, 0),
         getModelConfigs(),
         getSystemPrompts(),
+        getThinkingEffortsCache(),
       ]);
       const limitedConversations = limitConversationList(convs);
       setConversations(limitedConversations);
@@ -341,6 +347,7 @@ export default function App() {
       modelsRef.current = mods;
       setModels(mods);
       setSystemPrompts(prompts);
+      setThinkingEffortsCache(effortsCache);
 
       if (mods.length > 0) {
         const def = mods.find(m => m.is_default) || mods[0];
@@ -350,21 +357,9 @@ export default function App() {
         await seedDefaultModels();
       }
 
-      // 恢复上次活跃会话，失效时 fallback 到最新会话
-      let hasSelectedConversation = false;
-      const lastActiveId = localStorage.getItem("quick_chat_last_active_conv");
-      const targetConversation =
-        (lastActiveId ? limitedConversations.find(c => c.id === lastActiveId) : undefined) ??
-        limitedConversations[0];
-      if (targetConversation) {
-        await handleSelectConversation(targetConversation.id, targetConversation);
-        hasSelectedConversation = true;
-      }
-
-      // 首次安装或没有任何历史会话时，直接创建一个新对话，不再显示旧版默认欢迎页
-      if (!hasSelectedConversation) {
-        handleCreateConversation();
-      }
+      // 每次启动默认进入新对话，不再恢复上次会话（历史会话从侧边栏手动打开）。
+      // --toggle 唤起的已运行实例不重载页面，会话位置天然保留
+      handleCreateConversation();
     } catch (e) {
       console.error('加载数据失败:', e);
       showToast('加载数据失败', String(e));
@@ -519,8 +514,6 @@ export default function App() {
   // --- 会话操作 ---
   const handleSelectConversation = async (id: UUID, summaryOverride?: ConversationSummary) => {
     setShowSkills(false);
-
-    localStorage.setItem("quick_chat_last_active_conv", id);
 
     const requestId = ++selectRequestIdRef.current;
     const cachedMessages = messagesByConversationRef.current[id];
@@ -868,16 +861,46 @@ export default function App() {
   };
 
   // --- 当前模型的思考强度档位 ---
-  // gemini-3 模型固定三档；其余模型不支持选择档位，选择器隐藏
+  // OpenRouter：读取持久化的官方元数据缓存（缓存缺失时由下方 useEffect 拉取）；
+  // 其余端点的 gemini-3 模型固定三档；其他模型不支持选择档位，选择器隐藏
   const activeModelConfig = models.find(m => m.id === activeModelId) ?? null;
-  const activeThinkingEfforts = activeModelConfig?.model_id.includes('gemini-3')
-    ? ['LOW', 'MEDIUM', 'HIGH']
-    : null;
+  const activeIsOpenRouter = activeModelConfig ? isOpenRouterModel(activeModelConfig) : false;
+  const activeThinkingMeta = activeModelConfig && activeIsOpenRouter
+    ? thinkingEffortsCache[thinkingEffortsKey(activeModelConfig)]
+    : undefined;
+  const activeThinkingEfforts = !activeModelConfig
+    ? null
+    : activeIsOpenRouter
+      ? activeThinkingMeta?.efforts ?? null
+      : activeModelConfig.model_id.includes('gemini-3')
+        ? ['LOW', 'MEDIUM', 'HIGH']
+        : null;
 
-  // 选择器显示值：gemini-3 空档位按 MEDIUM 显示（与发送逻辑一致）
-  const displayThinkingLevel = activeThinkingEfforts
-    ? (activeThinkingLevel ?? 'MEDIUM')
-    : null;
+  // 选择器显示值：非 OpenRouter 的 gemini-3 空档位按 MEDIUM 显示（与发送逻辑一致）；
+  // OpenRouter 模型的失效选择（不在当前档位列表中）显示为"默认"
+  const displayThinkingLevel =
+    activeModelConfig && !activeIsOpenRouter && activeModelConfig.model_id.includes('gemini-3')
+      ? (activeThinkingLevel ?? 'MEDIUM')
+      : activeThinkingLevel && activeThinkingEfforts?.includes(activeThinkingLevel)
+        ? activeThinkingLevel
+        : null;
+
+  // 缓存缺失时从 OpenRouter 拉取档位元数据并持久化（档位极少变化，拉取失败
+  // 保持隐藏，切换模型或重启后重试）
+  useEffect(() => {
+    if (!activeModelConfig || !activeIsOpenRouter) return;
+    const key = thinkingEffortsKey(activeModelConfig);
+    if (thinkingEffortsCache[key]) return;
+    let cancelled = false;
+    fetchModelThinkingEfforts(activeModelConfig)
+      .then(meta => {
+        if (cancelled || !meta) return;
+        setThinkingEffortsCache(prev => ({ ...prev, [key]: meta }));
+        saveThinkingEffortsCache(key, meta).catch(e => console.warn('持久化思考强度缓存失败:', e));
+      })
+      .catch(e => console.warn('获取思考强度元数据失败:', e));
+    return () => { cancelled = true; };
+  }, [activeModelConfig, activeIsOpenRouter, thinkingEffortsCache]);
 
   // --- 更新思考程度：per-conversation 持久化 + 更新模型的"上次使用"值 ---
   const handleUpdateThinkingLevel = async (level: string | null) => {
@@ -1000,11 +1023,15 @@ export default function App() {
       return;
     }
 
-    // 与 ThinkingLevelSelector 的显示逻辑一致：gemini-3 的空档位按 MEDIUM 发送；
-    // 其余模型不发送思考强度（等价于使用服务端默认档位）
-    const effectiveThinkingLevel = activeThinkingEfforts
-      ? (activeThinkingLevel ?? 'MEDIUM')
-      : null;
+    // 与选择器显示逻辑一致：非 OpenRouter 的 gemini-3 空档位按 MEDIUM 发送；
+    // OpenRouter 模型把选择校验到当前支持的档位（缓存更新后遗留的失效值
+    // 不再发送，等价于回到模型默认档位）；其余模型不发送思考强度
+    const effectiveThinkingLevel =
+      !isOpenRouterModel(activeModel) && activeModel.model_id.includes('gemini-3')
+        ? (activeThinkingLevel ?? 'MEDIUM')
+        : activeThinkingLevel && activeThinkingEfforts?.includes(activeThinkingLevel)
+          ? activeThinkingLevel
+          : null;
 
     // 如果是新会话（未持久化），先保存
     const isExisting = conversations.some(c => c.id === convId);
@@ -1543,7 +1570,19 @@ export default function App() {
       } else if (e instanceof ReasoningEffortError) {
         clearPendingAssistantUpdate();
         console.error(e);
-        // 服务端不再支持所选思考强度：清掉会话里的失效选择，提示用户重新选择
+        // 服务端不再支持所选思考强度：OpenRouter 模型强制重拉元数据、更新持久化缓存，
+        // 清掉会话里的失效选择，提示用户重新选择
+        let refreshed: ThinkingEfforts | null = null;
+        try {
+          refreshed = await fetchModelThinkingEfforts(activeModel);
+        } catch (fetchErr) {
+          console.warn('重新获取思考强度元数据失败:', fetchErr);
+        }
+        if (refreshed) {
+          const key = thinkingEffortsKey(activeModel);
+          setThinkingEffortsCache(prev => ({ ...prev, [key]: refreshed! }));
+          saveThinkingEffortsCache(key, refreshed).catch(err => console.warn('持久化思考强度缓存失败:', err));
+        }
         setActiveThinkingLevel(null);
         try {
           await dbUpdateConversation(convId, { thinking_level: null });
@@ -1553,7 +1592,10 @@ export default function App() {
         }
         updateThreadMessages(convId, prev => prev.map(msg => msg.id === aiMsgId ? { ...msg, status: 'error' as const, activity: null } : msg));
         await updateMessage(aiMsgId, { status: 'error' });
-        showToast('思考强度已变化', `模型 ${activeModel.model_id} 不再支持当前思考强度，请重新选择`, 'error');
+        const effortList = refreshed && refreshed.efforts.length > 0
+          ? `，当前支持: ${refreshed.efforts.join(' / ')}`
+          : '';
+        showToast('思考强度已变化', `模型 ${activeModel.model_id} 不再支持当前思考强度${effortList}，请重新选择`, 'error');
       } else {
         console.error(e);
         showToast('AI 流式错误', e.toString(), 'error');
@@ -1805,7 +1847,7 @@ export default function App() {
         activeThinkingLevel={displayThinkingLevel}
         onUpdateThinkingLevel={stableUpdateThinkingLevel}
         activeThinkingEfforts={activeThinkingEfforts}
-        defaultThinkingEffort={null}
+        defaultThinkingEffort={activeThinkingMeta?.defaultEffort ?? null}
         onOpenSettings={stableOpenSettings}
         showSettings={showSettings}
         onCloseSettings={stableCloseSettings}

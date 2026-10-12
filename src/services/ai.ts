@@ -2,7 +2,7 @@
 // Quick-Chat — 统一 AI Service（OpenAI 兼容格式 + Tool Calling）
 // =============================================================================
 
-import type { ModelConfig } from '@/types/types';
+import type { ModelConfig, ThinkingEfforts } from '@/types/types';
 import { openSseStream } from './sse-transport';
 
 // ---------------------------------------------------------------------------
@@ -207,6 +207,46 @@ export class ReasoningEffortError extends Error {
     super(message);
     this.name = 'ReasoningEffortError';
   }
+}
+
+/** 是否 OpenRouter 端点：provider 已统一为 openai_compatible，按 endpoint 域名识别 */
+export function isOpenRouterModel(model: ModelConfig): boolean {
+  return (model.api_endpoint ?? '').includes('openrouter.ai');
+}
+
+/** 思考强度缓存的 key：OpenRouter 模型即官方 slug（provider:model_id） */
+export function thinkingEffortsKey(model: ModelConfig): string {
+  return `${model.provider}:${model.model_id}`;
+}
+
+const OPENROUTER_MODELS_URL = 'https://openrouter.ai/api/v1/models';
+
+/**
+ * 从 OpenRouter 官方模型接口获取指定模型支持的思考强度。
+ * 仅 OpenRouter 端点的模型可查（model_id 即官方 slug）。
+ * 返回 null 表示非 OpenRouter 模型或 OpenRouter 上不存在该模型；
+ * efforts 为空数组表示不支持选择档位。两种情况 UI 都应隐藏思考强度选择器。
+ */
+export async function fetchModelThinkingEfforts(model: ModelConfig): Promise<ThinkingEfforts | null> {
+  if (!isOpenRouterModel(model)) return null;
+
+  const response = await fetch(OPENROUTER_MODELS_URL);
+  if (!response.ok) {
+    throw new Error(`获取 OpenRouter 模型元数据失败 (${response.status}): ${response.statusText}`);
+  }
+
+  const json = await response.json();
+  const entry = Array.isArray(json?.data) ? json.data.find((m: any) => m?.id === model.model_id) : null;
+  if (!entry) return null;
+
+  const reasoning = entry.reasoning;
+  const efforts = Array.isArray(reasoning?.supported_efforts)
+    ? reasoning.supported_efforts.filter((e: unknown): e is string => typeof e === 'string' && e.length > 0)
+    : [];
+  return {
+    efforts,
+    defaultEffort: typeof reasoning?.default_effort === 'string' ? reasoning.default_effort : null,
+  };
 }
 
 export function dedupeCitations(citations?: UrlCitation[]): UrlCitation[] {

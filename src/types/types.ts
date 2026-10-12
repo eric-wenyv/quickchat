@@ -175,6 +175,14 @@ export interface ModelConfig {
   updated_at: EpochMillis;
 }
 
+/** 模型支持的思考强度元数据（来自 OpenRouter 官方模型接口，本地持久化缓存） */
+export interface ThinkingEfforts {
+  /** 可选档位列表，如 ["max", "high", "low"]；空数组表示不支持选择档位 */
+  efforts: string[];
+  /** OpenRouter 标注的默认档位（未选择时实际生效的值），可能为 null */
+  defaultEffort: string | null;
+}
+
 // ---------------------------------------------------------------------------
 // 4. IPC 指令 Payload 类型
 // ---------------------------------------------------------------------------

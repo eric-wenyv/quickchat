@@ -1,4 +1,4 @@
-import { useEffect, useRef, useCallback, useState, type RefObject } from 'react';
+import { useEffect, useRef, useCallback, useState, useLayoutEffect, type RefObject } from 'react';
 import type { Message } from '@/types/types';
 
 /**
@@ -6,9 +6,13 @@ import type { Message } from '@/types/types';
  *
  * 职责：智能管理聊天列表的滚动行为。
  * - 默认不自动追踪底部（autoScrollEnabled = false）。
- * - 用户发送新消息时，自动滚动到该用户消息位置。
- * - AI 流式输出完成时，若 autoScrollEnabled 为 true，则滚动到底部。
- * - 用户手动向上滚动（离开底部）时，自动禁用 autoScroll。
+ * - 用户发送新消息时，若发送前视口不在底部附近，平滑滚动到该用户消息位置。
+ * - 发送前视口在底部附近（约 1-2 行容错）时，进入跟随模式：AI 思考和流式
+ *   输出期间持续钉在底部（token 增长与代码高亮/图片/KaTeX 等异步撑高都跟随），
+ *   用户向上滚动离开底部超过阈值时解除。
+ * - 挂载时若末尾消息正在流式生成（空会话首条消息、生成中切回会话），
+ *   直接进入跟随模式。注意空会话下 MessageList 整体不挂载（EmptyState 分支），
+ *   首条消息发送时的挂载必须视为"刚发送"而非"打开会话"。
  * - 提供 enableAutoScroll()（同时立即 scrollToBottom）和 scrollToMessage(index)。
  */
 
@@ -27,14 +31,31 @@ interface UseChatScrollReturn {
   scrollToMessage: (index: number) => void;
 }
 
-const BOTTOM_THRESHOLD = 100; // px
+const BOTTOM_THRESHOLD = 100; // px，"回到底部"按钮显隐/解除跟随的判定
+const SEND_FOLLOW_THRESHOLD = 64; // px，发送前距底部在该范围内（约 1-2 行）则跟随 AI 输出
+
+/** 上一次 commit 末尾消息的尾部快照，用于区分追加/prepend/会话切换/状态流转 */
+interface TailSnapshot {
+  key: string | null;
+  len: number;
+  firstId: string | null;
+  lastId: string | null;
+  lastStatus: Message['status'] | null;
+}
 
 export function useChatScroll({ messages, conversationKey }: UseChatScrollOptions): UseChatScrollReturn {
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const [isAutoScrollEnabled, setIsAutoScrollEnabled] = useState(false);
   const [isNearBottom, setIsNearBottom] = useState(true);
-  const prevMessagesRef = useRef<Message[]>([]);
-  const prevConversationKeyRef = useRef<string | null>(null);
+  // isAutoScrollEnabled 的同步镜像：滚动/ResizeObserver 回调里直接读写，
+  // 避免 setState 异步间隙内程序化滚动与用户滚动互相干扰
+  const autoScrollRef = useRef(false);
+  // 上一帧 scrollTop，用于区分用户上滚与程序化下滚
+  const lastScrollTopRef = useRef(0);
+  // 视口距底部距离，由滚动事件与每次 commit 结束时的布局阶段持续维护；
+  // 发送检测读取的是"新消息追加前"的值（本帧布局阶段读取后再覆写）
+  const distToBottomRef = useRef(0);
+  const tailRef = useRef<TailSnapshot | null>(null);
 
   const scrollToBottom = useCallback(() => {
     const el = scrollRef.current;
@@ -54,6 +75,7 @@ export function useChatScroll({ messages, conversationKey }: UseChatScrollOption
   }, []);
 
   const enableAutoScroll = useCallback(() => {
+    autoScrollRef.current = true;
     setIsAutoScrollEnabled(true);
     scrollToBottom();
   }, [scrollToBottom]);
@@ -64,9 +86,16 @@ export function useChatScroll({ messages, conversationKey }: UseChatScrollOption
     if (!el) return;
 
     const handleScroll = () => {
-      const nearBottom = el.scrollHeight - el.scrollTop <= el.clientHeight + BOTTOM_THRESHOLD;
+      const distanceToBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
+      distToBottomRef.current = distanceToBottom;
+      const nearBottom = distanceToBottom <= BOTTOM_THRESHOLD;
       setIsNearBottom(nearBottom);
-      if (!nearBottom && isAutoScrollEnabled) {
+      // 只有"向上滚动"才解除跟随：程序化平滑滚动（scrollToBottom）的中间帧
+      // 同样会短暂离开底部，但那并非用户意图
+      const scrolledUp = el.scrollTop < lastScrollTopRef.current;
+      lastScrollTopRef.current = el.scrollTop;
+      if (scrolledUp && !nearBottom && autoScrollRef.current) {
+        autoScrollRef.current = false;
         setIsAutoScrollEnabled(false);
       }
     };
@@ -77,54 +106,81 @@ export function useChatScroll({ messages, conversationKey }: UseChatScrollOption
     return () => el.removeEventListener('scroll', handleScroll);
   }, [isAutoScrollEnabled]);
 
-  // 监听 messages 变化，处理两种滚动场景
-  useEffect(() => {
-    const prev = prevMessagesRef.current;
-    const curr = messages;
+  // 统一的消息变化处理，在布局阶段（绘制前）执行：
+  // 1. 挂载/会话切换：末尾消息正在流式生成则直接进入跟随；
+  // 2. 同会话尾部新增用户消息：按追加前的视口位置决定跟随还是滚动到该消息；
+  // 3. 末尾消息 streaming -> completed：跟随中则平滑收尾；
+  // 4. 跟随期间每次 commit 都把视口钉在底部（即时滚动，平滑滚动跟不上 token 频率）。
+  useLayoutEffect(() => {
+    const el = scrollRef.current;
     const convKey = conversationKey ?? null;
-    const conversationChanged = prevConversationKeyRef.current !== convKey;
-    prevMessagesRef.current = curr;
-    prevConversationKeyRef.current = convKey;
+    const prev = tailRef.current;
+    const last = messages[messages.length - 1];
 
-    if (curr.length === 0) return;
-
-    // 会话切换时，跳过"新消息"滚动逻辑（打开会话由 MessageList 统一滚动到底部）
-    if (conversationChanged) return;
-
-    const didPrependHistory =
-      prev.length > 0 &&
-      curr.length > prev.length &&
-      curr[0]?.id !== prev[0]?.id &&
-      curr[curr.length - 1]?.id === prev[prev.length - 1]?.id;
-
-    // 场景 1：检测新增的用户消息，滚动到该消息；向上分页 prepend 历史时跳过。
-    if (curr.length > prev.length && !didPrependHistory) {
-      const newMessages = curr.slice(prev.length);
-      for (let i = 0; i < newMessages.length; i++) {
-        if (newMessages[i].role === 'user') {
-          const globalIndex = prev.length + i;
-          requestAnimationFrame(() => {
-            scrollToMessage(globalIndex);
-          });
-          break;
+    if (el && messages.length > 0) {
+      if (prev === null || prev.key !== convKey) {
+        // 挂载/会话切换。空会话首条消息发送时 MessageList 才挂载（EmptyState 分支），
+        // 此时末尾是 streaming 的 AI 占位消息，必须进入跟随而非当作普通打开
+        const streaming = last?.status === 'streaming';
+        autoScrollRef.current = streaming;
+        setIsAutoScrollEnabled(streaming);
+      } else if (messages.length > prev.len) {
+        const didPrependHistory =
+          prev.len > 0 &&
+          messages[0]?.id !== prev.firstId &&
+          last?.id === prev.lastId;
+        if (!didPrependHistory) {
+          const newUserIndex = messages.slice(prev.len).findIndex(m => m.role === 'user');
+          if (newUserIndex >= 0) {
+            if (distToBottomRef.current <= SEND_FOLLOW_THRESHOLD) {
+              // 发送前已在底部附近：进入跟随模式，不再平滑滚动到用户消息
+              // （避免与跟随滚动互相拉扯）
+              autoScrollRef.current = true;
+              setIsAutoScrollEnabled(true);
+            } else {
+              const globalIndex = prev.len + newUserIndex;
+              requestAnimationFrame(() => scrollToMessage(globalIndex));
+            }
+          }
         }
+      } else if (
+        last &&
+        prev.lastId === last.id &&
+        prev.lastStatus === 'streaming' &&
+        last.status === 'completed' &&
+        autoScrollRef.current
+      ) {
+        scrollToBottom();
       }
+
+      if (autoScrollRef.current) {
+        el.scrollTop = el.scrollHeight;
+      }
+      distToBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight;
     }
 
-    // 场景 2：检测最后一条消息从 streaming -> completed，且 autoScrollEnabled 时滚动到底部
-    const lastMsg = curr[curr.length - 1];
-    const prevLastMsg = prev[prev.length - 1];
-    if (
-      lastMsg &&
-      prevLastMsg &&
-      lastMsg.id === prevLastMsg.id &&
-      prevLastMsg.status === 'streaming' &&
-      lastMsg.status === 'completed' &&
-      isAutoScrollEnabled
-    ) {
-      scrollToBottom();
-    }
-  }, [messages, isAutoScrollEnabled, scrollToBottom, scrollToMessage, conversationKey]);
+    tailRef.current = {
+      key: convKey,
+      len: messages.length,
+      firstId: messages[0]?.id ?? null,
+      lastId: last?.id ?? null,
+      lastStatus: last?.status ?? null,
+    };
+  }, [messages, conversationKey, scrollToMessage, scrollToBottom]);
+
+  // 跟随模式：内容异步撑高（代码高亮、图片、KaTeX、Mermaid 渲染完成）时同样钉在底部
+  useEffect(() => {
+    if (!isAutoScrollEnabled) return;
+    const el = scrollRef.current;
+    const content = el?.firstElementChild;
+    if (!el || !content) return;
+
+    const observer = new ResizeObserver(() => {
+      if (autoScrollRef.current) el.scrollTop = el.scrollHeight;
+    });
+    observer.observe(content);
+    return () => observer.disconnect();
+  }, [isAutoScrollEnabled]);
 
   return {
     scrollRef,

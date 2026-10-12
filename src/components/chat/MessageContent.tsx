@@ -735,7 +735,6 @@ const MermaidBlock: React.FC<{ code: string }> = React.memo(({ code }) => {
         const { default: mermaid } = await import('mermaid');
         mermaid.initialize({
           startOnLoad: false,
-          suppressErrorRendering: true,
           securityLevel: 'strict',
           theme: isDark ? 'dark' : 'base',
           themeVariables: {

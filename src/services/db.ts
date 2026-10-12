@@ -14,6 +14,7 @@ import type {
   Message,
   ModelConfig,
   SystemPrompt,
+  ThinkingEfforts,
   UUID,
   EpochMillis,
 } from '@/types/types';
@@ -343,6 +344,17 @@ export async function initDatabase(): Promise<void> {
   await ensureModelColumns(db);
   await relaxModelMaxTokensConstraint(db);
   await migrateModelProviders(db);
+
+  // 思考强度缓存表：档位元数据来自 OpenRouter 官方模型接口，变更极少，
+  // 拉取成功后直接持久化；模型档位变化时由 API 报错触发重拉覆盖
+  await db.execute(`
+    CREATE TABLE IF NOT EXISTS thinking_efforts_cache (
+      model_key      TEXT PRIMARY KEY NOT NULL,
+      efforts        TEXT NOT NULL,
+      default_effort TEXT DEFAULT NULL,
+      updated_at     INTEGER NOT NULL
+    );
+  `);
 }
 
 export async function runDatabaseMaintenance(): Promise<void> {
@@ -732,6 +744,46 @@ export async function updateModelConfig(
 export async function deleteModelConfig(id: UUID): Promise<void> {
   const db = await getDb();
   await db.execute('DELETE FROM model_configs WHERE id = ?', [id]);
+}
+
+// ---------------------------------------------------------------------------
+// 思考强度缓存（OpenRouter 模型档位元数据）
+// ---------------------------------------------------------------------------
+
+/** 启动时整表加载缓存；model_key 对 OpenRouter 为模型 slug（provider:model_id） */
+export async function getThinkingEffortsCache(): Promise<Record<string, ThinkingEfforts>> {
+  const db = await getDb();
+  const rows = await db.select<{ model_key: string; efforts: string; default_effort: string | null }[]>(
+    'SELECT model_key, efforts, default_effort FROM thinking_efforts_cache'
+  );
+  const cache: Record<string, ThinkingEfforts> = {};
+  for (const row of rows) {
+    try {
+      const efforts = JSON.parse(row.efforts);
+      if (Array.isArray(efforts)) {
+        cache[row.model_key] = {
+          efforts: efforts.filter((e): e is string => typeof e === 'string'),
+          defaultEffort: row.default_effort || null,
+        };
+      }
+    } catch {
+      // 损坏的缓存行直接跳过，下次使用时会重新拉取
+    }
+  }
+  return cache;
+}
+
+export async function saveThinkingEffortsCache(modelKey: string, efforts: ThinkingEfforts): Promise<void> {
+  const db = await getDb();
+  await db.execute(
+    `INSERT INTO thinking_efforts_cache (model_key, efforts, default_effort, updated_at)
+     VALUES (?, ?, ?, ?)
+     ON CONFLICT(model_key) DO UPDATE SET
+       efforts = excluded.efforts,
+       default_effort = excluded.default_effort,
+       updated_at = excluded.updated_at`,
+    [modelKey, JSON.stringify(efforts.efforts), efforts.defaultEffort, Date.now()]
+  );
 }
 
 // ---------------------------------------------------------------------------

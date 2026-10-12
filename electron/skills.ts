@@ -4,6 +4,7 @@ import fs from "node:fs";
 import fsp from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import * as yaml from "js-yaml";
 
 export interface SkillMeta {
@@ -128,7 +129,7 @@ async function dirHasAssets(dir: string): Promise<boolean> {
 }
 
 // ---------------------------------------------------------------------------
-// 递归复制（排除 .git；符号链接解析为目标内容复制，保证链接类 Skill 可用）
+// recur Copy
 // ---------------------------------------------------------------------------
 
 async function copyDirRecursive(src: string, dst: string): Promise<void> {
@@ -145,7 +146,6 @@ async function copyDirRecursive(src: string, dst: string): Promise<void> {
     } else if (entry.isFile()) {
       await fsp.copyFile(srcPath, dstPath);
     } else if (entry.isSymbolicLink()) {
-      // 解析符号链接：复制其指向的实际内容，保证 Skill 迁移后仍然完整
       try {
         const real = await fsp.realpath(srcPath);
         const stat = await fsp.stat(real);
@@ -155,14 +155,13 @@ async function copyDirRecursive(src: string, dst: string): Promise<void> {
           await fsp.copyFile(real, dstPath);
         }
       } catch {
-        // 悬空链接：跳过（Rust 侧 metadata 失败亦静默跳过）
       }
     }
   }
 }
 
 // ---------------------------------------------------------------------------
-// Commands（*_at 变体与 Rust 对齐，便于测试传入临时根目录）
+// Commands
 // ---------------------------------------------------------------------------
 
 export async function listSkills(): Promise<SkillMeta[]> {
@@ -220,7 +219,6 @@ export async function readSkillAt(root: string, id: string): Promise<string> {
   }
 }
 
-/** 描述内联写入 YAML 是否安全（不含冒号/井号/引号等特殊字符、不以空白结尾） */
 function isPlainInlineSafe(s: string): boolean {
   return (
     s.length > 0 &&
@@ -257,11 +255,7 @@ function isPlainInlineSafe(s: string): boolean {
     )
   );
 }
-
-/**
- * 序列化 description 字段：简单文本内联单行；含特殊字符时改用字面量块标量
- * （|-），保证 Claude / Codex 的 YAML 解析器读到的文本与用户输入完全一致
- */
+// Ensure description format
 function formatDescriptionYaml(desc: string): string {
   if (isPlainInlineSafe(desc)) {
     return `description: ${desc}\n`;
@@ -337,7 +331,7 @@ export async function deleteSkillAt(root: string, id: string): Promise<void> {
   }
 }
 
-/** 扫描一个外部 Skill 来源目录，返回 [目录名, frontmatter name, 源路径] 列表 */
+// Scan skill dir, return array[dirname, frontmatter name, path]
 async function scanExternalSource(dir: string): Promise<Array<[string, string, string]>> {
   const found: Array<[string, string, string]> = [];
   let entries: fs.Dirent[];
@@ -351,7 +345,6 @@ async function scanExternalSource(dir: string): Promise<Array<[string, string, s
       continue;
     }
     const dirName = entry.name;
-    // 跳过隐藏目录（包括 Codex 的 .system 内置 skills）
     if (dirName.startsWith(".")) {
       continue;
     }
@@ -372,7 +365,6 @@ async function scanExternalSource(dir: string): Promise<Array<[string, string, s
   return found;
 }
 
-/** 外部 Skill 来源目录（桌面端），已按优先级排序：同名时 Claude 优先 */
 export function externalSkillSources(): Array<[string, string]> {
   const home = os.homedir();
   return [
@@ -393,7 +385,7 @@ export async function importExternalSkillsAt(
 
   const report: ImportReport = { imported: [], skipped_existing: [] };
 
-  // 已占用的名称（目录名 + frontmatter name），Claude 先扫描，因此同名时 Claude 优先
+  // Existed skills
   const taken = new Set<string>();
   try {
     const entries = await fsp.readdir(root, { withFileTypes: true });
@@ -414,10 +406,9 @@ export async function importExternalSkillsAt(
       }
     }
   } catch {
-    // 读取失败视为无已占用名称
   }
 
-  // 传入的 sources 已按优先级排序：同名冲突时排在前面的来源胜出
+  // External skills
   for (const [source, dir] of sources) {
     for (const [dirName, fmName, srcPath] of await scanExternalSource(dir)) {
       if (taken.has(dirName) || taken.has(fmName)) {
@@ -437,108 +428,21 @@ export async function importExternalSkillsAt(
 }
 
 // ---------------------------------------------------------------------------
-// 内置 Skill：Skill 使用/导入指南
+// Built-in skill
 // ---------------------------------------------------------------------------
-
 const BUILTIN_SKILL_ID = "quick-chat-skill-guide";
-
-/** 内置 Skill 内容版本：升级内容时递增，ensure_builtin_skill 会就地更新旧版本 */
-const BUILTIN_SKILL_VERSION = "4";
-
-const BUILTIN_SKILL_MD = `---
-name: quick-chat-skill-guide
-description: >
-  Quick Chat Skill 使用指南：斜杠命令与 AI 自主调用、从 Claude / Codex 导入 Skill、
-  新建 Skill、目录结构与 SKILL.md frontmatter 规范。Use when the user asks how to
-  create, import, preview, or invoke skills in Quick Chat, or how SKILL.md works.
----
-
-# Quick Chat Skill 指南
-
-## 什么是 Skill
-
-Skill 是一个以 Markdown 描述的能力包，遵循 Claude / Codex 的 Skill 目录规范。
-每个 Skill 是一个文件夹，其中必须包含一个 \`SKILL.md\`，还可以携带脚本、模板、参考文档等附属文件。
-
-## 在对话中调用 Skill
-
-有两种调用方式：
-
-1. **用户主动调用（斜杠命令）**：在输入框输入 \`/\` 会弹出 Skill 列表，选择后发送，
-   例如 \`/generate-pdf 帮我做一份简历\`。该 Skill 的完整指引会随这条消息注入对话，
-   并在整个会话中持续生效（消息里的 HTML 注释携带指引，界面上不可见）。
-2. **AI 自主调用**：发送消息时，模型会看到可调用 Skill 的目录（名称 + 描述），
-   当请求与某个 Skill 的用途匹配时，模型会通过 \`use_skill\` 工具自动加载其完整指引并遵循。
-
-### 禁止 AI 自主调用
-
-在 \`SKILL.md\` 的 frontmatter 中加入（Claude 规范字段，\`true\` = 禁止，缺省或 \`false\` = 允许）：
-
-\`\`\`markdown
----
-name: my-skill
-description: …
-disable-model-invocation: true
----
-\`\`\`
-
-标注后该 Skill 不会出现在 AI 的可用目录中，只能由用户通过 \`/my-skill\` 主动调用。
-新建 Skill 时勾选「仅手动调用」也会写入此字段。
-直接编辑 SKILL.md 增删该字段无需重启：下一条消息发送时会重新扫描并即时生效。
-
-## 目录结构
-
-\`\`\`
-~/.chat/skills/
-└── <skill-name>/
-    ├── SKILL.md        # 必需：Skill 说明（含 frontmatter）
-    ├── scripts/        # 可选：bash/python 等辅助脚本
-    └── templates/      # 可选：模板、参考文件
-\`\`\`
-
-\`SKILL.md\` 开头的 frontmatter（YAML）定义名称与描述，遵循 Claude Skill 规范：
-
-- \`name\`：小写字母、数字、连字符，与目录名一致
-- \`description\`：说明这个 Skill 做什么、什么时候用（when to use / triggers），上限 1024 字符
-- 较长的描述推荐用 \`>\` 折叠块写法：源码里分多行书写，解析时自动折叠成一行
-
-\`\`\`markdown
----
-name: my-skill
-description: >
-  一句话说明这个 Skill 做什么、什么时候用（when to use / triggers）。
----
-
-# 正文：具体的使用指引……
-\`\`\`
-
-## 如何导入 Skill
-
-1. **自动导入**：应用启动时会自动扫描 \`~/.claude/skills/\` 与 \`~/.codex/skills/\`，
-   把新增的 Skill 复制到 \`~/.chat/skills/\`。两边同名时优先导入 Claude 的版本；
-   本地已存在的同名 Skill 不会被覆盖。
-2. **手动导入**：在 Skill 管理界面点击右上角「导入 Claude/Codex」按钮，立即重新扫描。
-3. **手动复制**：直接把任何符合规范的 Skill 文件夹拷贝到 \`~/.chat/skills/\` 即可被识别。
-4. **新建**：点击「新建 Skill」，填写名称、描述和 Markdown 内容，会自动写入 \`~/.chat/skills/\`。
-
-## 在 Skill 管理界面
-
-点击侧边栏的 Skills 图标进入管理界面：左侧列表悬浮可查看描述，点击可预览完整内容；
-「在对话中使用」会新建一个对话并把该 Skill 作为系统提示词注入。
-
-> 注意：Quick Chat 是对话应用，只注入 Skill 的文本内容，**不会执行**其中的 bash/python 脚本。
-> 包含可执行脚本的 Skill（如需要跑命令的场景）请在 Claude Code / Codex 中使用；
-> 本应用会完整保留这些文件，方便随时在文件管理器中查看或拷回。
-`;
-
+const BUILTIN_SKILL_VERSION = "5";
+async function loadBuiltinSkillContent(): Promise<string> {
+  const rel = path.join("assets", "builtin-skills", BUILTIN_SKILL_ID, "SKILL.md");
+  const moduleDir = path.dirname(fileURLToPath(import.meta.url));
+  return await fsp
+    .readFile(path.join(moduleDir, rel), "utf8")
+    .catch(() => fsp.readFile(path.join(process.cwd(), "electron", rel), "utf8"));
+}
 export async function ensureBuiltinSkill(): Promise<void> {
   return ensureBuiltinSkillAt(skillsRoot());
 }
-
-/**
- * 首次运行时写入内置 Skill；内容升级时就地更新（用户已删除的则不复活）。
- * 通过 \`.builtin-installed\` 标记文件记录已安装的版本。
- */
+// update->update, deleted->none
 export async function ensureBuiltinSkillAt(root: string): Promise<void> {
   await fsp.mkdir(root, { recursive: true });
   const flag = path.join(root, ".builtin-installed");
@@ -547,13 +451,17 @@ export async function ensureBuiltinSkillAt(root: string): Promise<void> {
     return;
   }
   const dir = path.join(root, BUILTIN_SKILL_ID);
-  // 目录存在则升级内容；目录不存在但只有旧版本标记，说明用户删过旧版 ——
-  // 若从未安装过（无标记），则全新写入。
   const neverInstalled = installedVersion.length === 0;
   if (fs.existsSync(dir) || neverInstalled) {
+    let content: string;
+    try {
+      content = await loadBuiltinSkillContent();
+    } catch (e) {
+      throw new Error(`读取内置 Skill 资源失败: ${(e as Error).message}`);
+    }
     await fsp.mkdir(dir, { recursive: true });
     try {
-      await fsp.writeFile(path.join(dir, "SKILL.md"), BUILTIN_SKILL_MD);
+      await fsp.writeFile(path.join(dir, "SKILL.md"), content);
     } catch (e) {
       throw new Error(`写入内置 Skill 失败: ${(e as Error).message}`);
     }

@@ -31,7 +31,7 @@ import { parseAttachments, getLanguageFromFilename } from "./utils/file";
 import { parseImageDescriptions, serializeImageDescriptions, type ImageDescription } from "./utils/image-description";
 import { fetchUrlContent, formatUrlContent } from "./services/url";
 import { searchWeb, formatSearchResults } from "./services/search";
-import { ensureBuiltinSkill, getAutoInvocableSkills, getSkillsSnapshot, importExternalSkills, readSkill, refreshSkills, type SkillMeta } from "./services/skills";
+import { ensureBuiltinSkill, getAutoInvocableSkills, getSkillsSnapshot, readSkill, refreshSkills, type SkillMeta } from "./services/skills";
 import {
   getConfiguredGlobalShortcut,
   initializeGlobalShortcut,
@@ -439,7 +439,7 @@ export default function App() {
       });
   }, [dbReady, normalizedSearchQuery, conversations]);
 
-  // --- Skills：首次写入内置 Skill + 启动时自动导入 Claude/Codex 新增 Skill ---
+  // --- Skills：首次写入内置 Skill 并刷新全局缓存 ---
   useEffect(() => {
     if (!dbReady) return;
     (async () => {
@@ -447,23 +447,6 @@ export default function App() {
         await ensureBuiltinSkill();
       } catch (e) {
         console.warn('内置 Skill 初始化失败:', e);
-      }
-      try {
-        // 移动端没有 ~/.claude / ~/.codex 目录，跳过外部 Skill 导入
-        if (isDesktopPlatform) {
-          const report = await importExternalSkills();
-          if (report.imported.length > 0) {
-            const byClaude = report.imported.filter(i => i.source === 'claude').length;
-            const byCodex = report.imported.length - byClaude;
-            const parts = [
-              byClaude > 0 ? `Claude ${byClaude} 个` : '',
-              byCodex > 0 ? `Codex ${byCodex} 个` : '',
-            ].filter(Boolean).join('、');
-            showToast('已自动导入 Skill', `来自 ${parts}`, 'success');
-          }
-        }
-      } catch (e) {
-        console.warn('自动导入 Skill 失败:', e);
       }
       // 刷新全局 Skill 缓存（/ 命令补全与 AI 自主调用目录共用）
       try {

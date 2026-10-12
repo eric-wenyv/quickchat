@@ -52,7 +52,7 @@ test('skills end-to-end: import/list/create/delete 与 frontmatter 语义', asyn
     await skills.ensureBuiltinSkillAt(root);
     assert.ok((await stat(join(root, 'quick-chat-skill-guide', 'SKILL.md'))).isFile());
     const guide = await skills.readSkillAt(root, 'quick-chat-skill-guide');
-    assert.ok(guide.includes('如何导入 Skill'));
+    assert.ok(guide.includes('Managing Skills in Quick Chat'));
 
     // 导入：claude 优先、跳过 .system、跳过已存在
     const report = await skills.importExternalSkillsAt(root, sources);
@@ -86,7 +86,7 @@ test('skills end-to-end: import/list/create/delete 与 frontmatter 语义', asyn
     assert.equal(guideMeta.source, 'builtin');
     assert.equal(guideMeta.has_assets, false);
     // 内置指南自身也用折叠块写法，解析结果不应残留 ">"
-    assert.ok(guideMeta.description.startsWith('Quick Chat Skill 使用指南'));
+    assert.ok(guideMeta.description.startsWith('How to manage skills'));
     assert.ok(!guideMeta.description.includes('>'));
 
     // 新建：slug 化 + 重名拒绝 + disable-model-invocation 写入与解析

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFile, writeFile, mkdir } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import test from 'node:test';
 import ts from 'typescript';
 
@@ -15,11 +15,14 @@ async function importSkillFrontmatter() {
     },
   }).outputText;
 
-  const dir = join(tmpdir(), 'quick-chat-tests');
+  // 产物必须写在项目目录内（tests/.transpiled/…）：转译后的裸包名
+  // （js-yaml）要经项目 node_modules 解析，写到 os.tmpdir() 会解析失败。
+  const projectRoot = dirname(dirname(fileURLToPath(import.meta.url)));
+  const dir = join(projectRoot, 'tests', '.transpiled');
   await mkdir(dir, { recursive: true });
   const modulePath = join(dir, `skill-frontmatter-${Date.now()}-${Math.random().toString(36).slice(2)}.mjs`);
   await writeFile(modulePath, transformed);
-  return import(`file:///${modulePath.replaceAll('\\', '/')}`);
+  return import(pathToFileURL(modulePath));
 }
 
 test('folding folded block scalar (>) matches Claude/js-yaml semantics', async () => {

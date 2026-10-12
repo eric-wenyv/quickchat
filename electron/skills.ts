@@ -4,6 +4,7 @@ import fs from "node:fs";
 import fsp from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import * as yaml from "js-yaml";
 
 export interface SkillMeta {
   id: string;
@@ -26,16 +27,15 @@ export interface ImportReport {
   skipped_existing: string[];
 }
 
-/** 桌面端 Skill 根目录（Rust 侧为 home_dir/.chat/skills） */
+// skill dir: $HOME/.chat/skills
 export function skillsRoot(): string {
   return path.join(os.homedir(), ".chat", "skills");
 }
 
 // ---------------------------------------------------------------------------
-// 路径与安全校验
+// Path varify
 // ---------------------------------------------------------------------------
 
-/** Skill 目录名只允许安全的 slug 字符，杜绝路径穿越 */
 export function isValidSkillId(id: string): boolean {
   return (
     id.length > 0 &&
@@ -53,7 +53,7 @@ function resolveSkillDir(root: string, id: string): string {
 }
 
 // ---------------------------------------------------------------------------
-// Frontmatter 解析（对齐 Claude 的 YAML 解析语义）
+// Frontmatter: name + description + invocation
 // ---------------------------------------------------------------------------
 
 interface Frontmatter {
@@ -62,186 +62,15 @@ interface Frontmatter {
   disable_model_invocation: boolean;
 }
 
-function indentOf(line: string): number {
-  return line.length - line.trimStart().length;
-}
-
-/** 顶层映射键：`name`、`disable-model-invocation` 等（字母数字_-，冒号前） */
-function splitKey(line: string): [string, string] | null {
-  const idx = line.indexOf(":");
-  if (idx < 0) return null;
-  const key = line.slice(0, idx).trim();
-  if (
-    key.length === 0 ||
-    !Array.from(key).every((c) => /[A-Za-z0-9]/.test(c) || c === "-" || c === "_")
-  ) {
-    return null;
+function scalarString(v: unknown): string | undefined {
+  if (typeof v === "string") {
+    const t = v.trimEnd();
+    return t.length > 0 ? t : undefined;
   }
-  return [key, line.slice(idx + 1)];
-}
-
-/** 块标量头：| 或 > 加可选的缩进指示数字与 -/+ 裁剪指示（如 `>`、`|-`、`|2+`） */
-function blockScalarHeader(rest: string): "|" | ">" | null {
-  const style = rest.charAt(0);
-  if (style !== "|" && style !== ">") return null;
-  let seenDigit = false;
-  let seenChomp = false;
-  for (const c of rest.slice(1)) {
-    if (c >= "1" && c <= "9" && !seenDigit) {
-      seenDigit = true;
-    } else if ((c === "-" || c === "+") && !seenChomp) {
-      seenChomp = true;
-    } else {
-      return null;
-    }
+  if (typeof v === "number" || typeof v === "boolean") {
+    return String(v);
   }
-  return style;
-}
-
-/** 剥离普通标量行内的注释（YAML：# 注释前必须有空白） */
-function stripPlainComment(s: string): string {
-  const pos = s.indexOf(" #");
-  return pos >= 0 ? s.slice(0, pos) : s;
-}
-
-/**
- * 折叠块标量（>）：相邻非空行以空格连接，空行变为换行，
- * 更缩进的行（相对块缩进还有前导空白）与其前后保留原换行
- */
-function foldBlockLines(lines: string[]): string {
-  let out = "";
-  let prevMoreIndented: boolean | null = null;
-  let pendingNewlines = 0;
-  for (const line of lines) {
-    if (line.trim().length === 0) {
-      pendingNewlines += 1;
-      continue;
-    }
-    const moreIndented = line.startsWith(" ");
-    if (prevMoreIndented !== null && pendingNewlines > 0) {
-      out += "\n".repeat(pendingNewlines);
-    } else if (prevMoreIndented !== null && (prevMoreIndented || moreIndented)) {
-      out += "\n";
-    } else if (prevMoreIndented !== null) {
-      out += " ";
-    }
-    pendingNewlines = 0;
-    out += line;
-    prevMoreIndented = moreIndented;
-  }
-  return out;
-}
-
-/** 解析某个键的标量值，返回 [值, 键行之后额外消耗的行数] */
-function parseScalarValue(lines: string[], keyIndex: number, rest: string): [string, number] {
-  rest = rest.trim();
-
-  // 块标量：| 字面量 / > 折叠
-  const style = blockScalarHeader(rest);
-  if (style !== null) {
-    let i = keyIndex + 1;
-    let blockIndent: number | null = null;
-    const raw: string[] = [];
-    while (i < lines.length) {
-      const line = lines[i];
-      if (line.trim().length === 0) {
-        raw.push("");
-        i += 1;
-        continue;
-      }
-      const ind = indentOf(line);
-      if (blockIndent === null) {
-        blockIndent = ind;
-      }
-      if (ind < blockIndent) {
-        break;
-      }
-      raw.push(line.slice(blockIndent));
-      i += 1;
-    }
-    while (raw.length > 0 && raw[raw.length - 1].trim().length === 0) {
-      raw.pop();
-    }
-    const value = style === ">" ? foldBlockLines(raw) : raw.join("\n");
-    return [value.trimEnd(), i - keyIndex - 1];
-  }
-
-  // 引号标量（按单行尽力解析：'' 与 \" 等转义）
-  const first = rest.charAt(0);
-  if (first === '"' || first === "'") {
-    let value = "";
-    const chars = Array.from(rest.slice(1));
-    let i = 0;
-    while (i < chars.length) {
-      const c = chars[i];
-      i += 1;
-      if (first === '"' && c === "\\") {
-        const next = i < chars.length ? chars[i] : null;
-        if (next === null) {
-          value += "\\";
-        } else {
-          i += 1;
-          if (next === "n") value += "\n";
-          else if (next === "t") value += "\t";
-          else if (next === "r") value += "\r";
-          else if (next === '"') value += '"';
-          else if (next === "\\") value += "\\";
-          else {
-            value += "\\";
-            value += next;
-          }
-        }
-        continue;
-      }
-      if (c === first) {
-        // 单引号内 '' 转义为 '
-        if (first === "'" && i < chars.length && chars[i] === "'") {
-          i += 1;
-          value += "'";
-          continue;
-        }
-        break;
-      }
-      value += c;
-    }
-    return [value.trim(), 0];
-  }
-
-  // 普通标量：截掉 # 注释；键值为空或后续行更缩进时，续行折叠进来
-  let value = rest.startsWith("#") ? "" : stripPlainComment(rest).trim();
-  let i = keyIndex + 1;
-  let pendingNewlines = 0;
-  while (i < lines.length) {
-    const line = lines[i];
-    if (line.trim().length === 0) {
-      if (value.length === 0) {
-        break;
-      }
-      pendingNewlines += 1;
-      i += 1;
-      continue;
-    }
-    if (indentOf(line) === 0) {
-      break;
-    }
-    const cont = stripPlainComment(line).trim();
-    if (cont.length === 0) {
-      i += 1;
-      continue;
-    }
-    if (value.length === 0 && pendingNewlines === 0) {
-      value = cont;
-    } else if (pendingNewlines > 0) {
-      value += "\n".repeat(pendingNewlines);
-      value += cont;
-      pendingNewlines = 0;
-    } else {
-      value += " ";
-      value += cont;
-    }
-    i += 1;
-  }
-  return [value.trim(), i - keyIndex - 1];
+  return undefined;
 }
 
 export function parseFrontmatter(content: string): Frontmatter {
@@ -255,40 +84,28 @@ export function parseFrontmatter(content: string): Frontmatter {
   const endIdx = all.findIndex((l) => l.trim() === "---");
   const lines = endIdx >= 0 ? all.slice(0, endIdx) : all;
 
-  const fields: Array<[string, string]> = [];
-  let i = 0;
-  while (i < lines.length) {
-    const line = lines[i];
-    if (line.trim().length === 0 || line.trimStart().startsWith("#")) {
-      i += 1;
-      continue;
-    }
-    // 只认缩进为 0 的顶层键；嵌套结构（列表等）Skill 元数据用不到，跳过
-    if (indentOf(line) > 0) {
-      i += 1;
-      continue;
-    }
-    const kv = splitKey(line);
-    if (kv === null) {
-      i += 1;
-      continue;
-    }
-    const [key, rest] = kv;
-    const [value, consumed] = parseScalarValue(lines, i, rest);
-    fields.push([key, value]);
-    i += 1 + consumed;
+  let doc: unknown;
+  try {
+    doc = yaml.load(lines.join("\n"));
+  } catch {
+    return { disable_model_invocation: false };
   }
+  if (doc === null || typeof doc !== "object" || Array.isArray(doc)) {
+    return { disable_model_invocation: false };
+  }
+  const record = doc as Record<string, unknown>;
 
-  const get = (k: string): string | undefined => {
-    const hit = fields.find(([key]) => key === k);
-    return hit ? hit[1] : undefined;
-  };
-  const disableRaw = get("disable-model-invocation") ?? get("disable_model_invocation");
+  const disableRaw = record["disable-model-invocation"] ?? record["disable_model_invocation"];
+  const disable =
+    disableRaw === true ||
+    disableRaw === 1 ||
+    (typeof disableRaw === "string" &&
+      ["true", "yes", "on", "1"].includes(disableRaw.toLowerCase()));
+
   return {
-    name: get("name") || undefined,
-    description: get("description") || undefined,
-    disable_model_invocation:
-      disableRaw !== undefined && ["true", "yes", "on", "1"].includes(disableRaw.toLowerCase()),
+    name: scalarString(record.name),
+    description: scalarString(record.description),
+    disable_model_invocation: disable,
   };
 }
 

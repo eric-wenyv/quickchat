@@ -3,15 +3,17 @@ import type { ModelConfig } from '@/types/types';
 
 interface ModelFormProps {
   initial?: ModelConfig | null;
+  /** 新建模型时预填的字段（如从某个 endpoint/api-key 分类下添加） */
+  prefill?: { api_key?: string; api_endpoint?: string | null } | null;
   onSave: (config: ModelConfig) => void;
   onCancel: () => void;
 }
 
-export const ModelForm: React.FC<ModelFormProps> = ({ initial, onSave, onCancel }) => {
+export const ModelForm: React.FC<ModelFormProps> = ({ initial, prefill, onSave, onCancel }) => {
   const [modelId, setModelId] = useState(initial?.model_id || '');
   const [displayName, setDisplayName] = useState(initial?.display_name || '');
-  const [apiKey, setApiKey] = useState(initial?.api_key || '');
-  const [apiEndpoint, setApiEndpoint] = useState(initial?.api_endpoint || '');
+  const [apiKey, setApiKey] = useState(initial?.api_key || prefill?.api_key || '');
+  const [apiEndpoint, setApiEndpoint] = useState(initial?.api_endpoint || prefill?.api_endpoint || '');
   const [temperature, setTemperature] = useState(initial?.temperature ?? 0.6);
   // null = 不限制（请求不发 max_tokens，由 provider 取模型默认最大输出）；新模型默认不限制
   const [maxTokens, setMaxTokens] = useState<number | null>(initial?.max_tokens ?? null);

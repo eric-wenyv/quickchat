@@ -305,7 +305,7 @@ const CheckIcon: React.FC<{ className?: string }> = ({ className }) => (
  * 设置页（全页面，占据主界面整个内容区，替代侧栏 + 聊天区）
  *
  * - 桌面端返回入口在顶部菜单栏左侧；移动端无菜单栏，头部自带返回按钮
- * - 单列窄栏内容流：快捷键 / 同步 / 模型管理 / 图片解析模型
+ * - 单列窄栏内容流：快捷键 / 模型管理 / 图片解析模型
  */
 export const ModelSettings: React.FC<ModelSettingsProps> = ({
   models,

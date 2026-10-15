@@ -157,7 +157,7 @@ handle("opener:open-path", (args) => {
 });
 
 // ---------------------------------------------------------------------------
-// Global shortcur
+// Global shortcut
 // ---------------------------------------------------------------------------
 
 handle("shortcut:register", (args, _event, getMainWindow) => {

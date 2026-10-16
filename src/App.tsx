@@ -146,6 +146,8 @@ export default function App() {
   const [showSkills, setShowSkills] = useState(false);
   const [systemPrompts, setSystemPrompts] = useState<SystemPrompt[]>([]);
   const [globalShortcut, setGlobalShortcut] = useState<string | null>(() => getConfiguredGlobalShortcut());
+  // 启动时注册失败（组合键被系统/其他应用占用）→ 设置页内显示黄色警告
+  const [globalShortcutError, setGlobalShortcutError] = useState<string | null>(null);
 
   const [isLoadingConversations, setIsLoadingConversations] = useState(false);
   const [isSearchingConversations, setIsSearchingConversations] = useState(false);
@@ -187,6 +189,7 @@ export default function App() {
     if (!isDesktopPlatform) return;
     void initializeGlobalShortcut().catch(error => {
       console.warn('全局快速打开快捷键未注册:', error);
+      setGlobalShortcutError(String(error));
     });
   }, []);
 
@@ -1630,6 +1633,8 @@ export default function App() {
   const handleSaveGlobalShortcut = async (shortcut: string | null) => {
     await setConfiguredGlobalShortcut(shortcut);
     setGlobalShortcut(shortcut);
+    // 重新保存成功说明注册已恢复（禁用场景下也无须再警告）
+    setGlobalShortcutError(null);
   };
 
   // --- 稳定回调：流式输出期间 messages 高频变化会让上面依赖闭包的 handler
@@ -1783,6 +1788,7 @@ export default function App() {
         visionModelId={visionModelId}
         onSelectVisionModel={stableSelectVisionModel}
         globalShortcut={globalShortcut}
+        globalShortcutError={globalShortcutError}
         onGlobalShortcutChange={stableSaveGlobalShortcut}
         onSaveModel={stableSaveModel}
         onDeleteModel={stableDeleteModel}

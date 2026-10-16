@@ -93,6 +93,8 @@ interface AppLayoutProps {
   onSelectVisionModel: (id: string | null) => void;
   /** 全局快速打开快捷键 */
   globalShortcut: string | null;
+  /** 启动时全局快捷键注册失败信息（null = 正常） */
+  globalShortcutError: string | null;
   /** 更新全局快捷键 */
   onGlobalShortcutChange: (shortcut: string | null) => Promise<void>;
   /** 保存模型配置 */
@@ -294,6 +296,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
   visionModelId,
   onSelectVisionModel,
   globalShortcut,
+  globalShortcutError,
   onGlobalShortcutChange,
   onSaveModel,
   onDeleteModel,
@@ -692,6 +695,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
             visionModelId={visionModelId}
             onSelectVisionModel={onSelectVisionModel}
             globalShortcut={globalShortcut}
+            globalShortcutError={globalShortcutError}
             onGlobalShortcutChange={onGlobalShortcutChange}
             onSave={onSaveModel}
             onDelete={onDeleteModel}

@@ -24,3 +24,7 @@ export const isDesktopPlatform: boolean = !isMobilePlatform;
 /** Linux 桌面（ opaque 窗口底色 + backdrop-filter 可用的平台特例） */
 export const isLinuxPlatform: boolean =
   bridgePlatform !== null ? bridgePlatform === 'linux' : !isMobilePlatform && /Linux/.test(ua);
+
+/** macOS 桌面 */
+export const isMacPlatform: boolean =
+  bridgePlatform !== null ? bridgePlatform === 'darwin' : !isMobilePlatform && /Macintosh|Mac OS X/.test(ua);

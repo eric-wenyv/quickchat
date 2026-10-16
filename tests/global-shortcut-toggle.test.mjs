@@ -146,3 +146,22 @@ test('setConfiguredGlobalShortcut 注册前归一化，注册值与过滤值一�
   assert.ok(module.__mock.calls.includes('show'));
   assert.equal(module.__mock.visible(), true);
 });
+
+test('isReservedGlobalShortcut 按平台拦截固定快捷键（含 mac Super≡Command 写法）', async () => {
+  const module = await importGlobalShortcut();
+  const { isReservedGlobalShortcut } = module;
+
+  // mac：录入 UI 把 Cmd 记为 Super，必须拦截，否则会抢占侧栏/新建会话快捷键
+  assert.equal(isReservedGlobalShortcut('Super+Shift+S', true), true);
+  assert.equal(isReservedGlobalShortcut('Super+Shift+N', true), true);
+  assert.equal(isReservedGlobalShortcut('cmd+shift+s', true), true);
+  // mac 上固定快捷键是 Command+Shift，真正的 Ctrl 组合不冲突
+  assert.equal(isReservedGlobalShortcut('Ctrl+Shift+S', true), false);
+  assert.equal(isReservedGlobalShortcut('Super+Shift+P', true), false);
+
+  // Windows / Linux：Ctrl+Shift+S/N 保留，其余放行
+  assert.equal(isReservedGlobalShortcut('Ctrl+Shift+S', false), true);
+  assert.equal(isReservedGlobalShortcut('ctrl+shift+n', false), true);
+  assert.equal(isReservedGlobalShortcut('Super+Shift+S', false), false);
+  assert.equal(isReservedGlobalShortcut('Ctrl+Shift+P', false), false);
+});

@@ -151,6 +151,19 @@ export async function initializeGlobalShortcut(): Promise<void> {
 }
 
 /**
+ * 判断快捷键是否撞上主进程写死的固定快捷键（electron/main.ts registerFixedShortcuts：
+ * 切换侧栏 / 新建会话）。mac 上固定快捷键注册为 Command+Shift+S/N，而录入 UI 把
+ * metaKey 写成 'Super'（Electron 在 mac 上 Super≡Command），所以必须先把录入结果
+ * 归一化，再按平台对照保留集，否则 mac 用户设 Cmd+Shift+S 会绕过校验并抢占侧栏快捷键。
+ */
+export function isReservedGlobalShortcut(shortcut: string, isMac: boolean): boolean {
+  const reserved = isMac
+    ? ['Super+Shift+S', 'Super+Shift+N', 'Command+Shift+S', 'Command+Shift+N']
+    : ['Control+Shift+S', 'Control+Shift+N'];
+  return reserved.includes(normalizeAccelerator(shortcut));
+}
+
+/**
  * Swap the global quick-open shortcut without leaving a stale registration.
  * The persisted value is updated only after the new shortcut is registered.
  */

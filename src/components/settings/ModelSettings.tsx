@@ -1,14 +1,16 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import type { ModelConfig, UUID } from '@/types/types';
 import { ModelForm } from './ModelForm';
-import { DEFAULT_GLOBAL_SHORTCUT } from '@/services/globalShortcut';
-import { isDesktopPlatform, isMobilePlatform } from '@/utils/platform';
+import { DEFAULT_GLOBAL_SHORTCUT, isReservedGlobalShortcut } from '@/services/globalShortcut';
+import { isDesktopPlatform, isMacPlatform, isMobilePlatform } from '@/utils/platform';
 
 interface ModelSettingsProps {
   models: ModelConfig[];
   visionModelId: string | null;
   onSelectVisionModel: (id: string | null) => void;
   globalShortcut: string | null;
+  /** 启动时全局快捷键注册失败信息（null = 正常） */
+  globalShortcutError: string | null;
   onGlobalShortcutChange: (shortcut: string | null) => Promise<void>;
   onSave: (config: ModelConfig) => void;
   onDelete: (id: UUID) => void;
@@ -17,6 +19,8 @@ interface ModelSettingsProps {
 
 interface GlobalShortcutSettingsProps {
   value: string | null;
+  /** 启动时注册失败信息（null = 正常），在卡片内以黄色警告展示 */
+  startupError: string | null;
   onChange: (shortcut: string | null) => Promise<void>;
 }
 
@@ -27,10 +31,8 @@ const shortcutKeyFromEvent = (event: React.KeyboardEvent<HTMLButtonElement>): st
   return null;
 };
 
-const RESERVED_SHORTCUTS = new Set(['Ctrl+Shift+S', 'Ctrl+Shift+N']);
-
 // TODO: beautify or completely delete this componet
-const GlobalShortcutSettings: React.FC<GlobalShortcutSettingsProps> = ({ value, onChange }) => {
+const GlobalShortcutSettings: React.FC<GlobalShortcutSettingsProps> = ({ value, startupError, onChange }) => {
   const [shortcut, setShortcut] = useState(value);
   const [isCapturing, setIsCapturing] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
@@ -64,7 +66,7 @@ const GlobalShortcutSettings: React.FC<GlobalShortcutSettingsProps> = ({ value, 
     }
 
     const nextShortcut = [...modifiers, key].join('+');
-    if (RESERVED_SHORTCUTS.has(nextShortcut)) {
+    if (isReservedGlobalShortcut(nextShortcut, isMacPlatform)) {
       setError('该组合键已用于应用内操作，请选择其他快捷键。');
       return;
     }
@@ -94,8 +96,14 @@ const GlobalShortcutSettings: React.FC<GlobalShortcutSettingsProps> = ({ value, 
         <div>
           <h3 className="text-sm font-bold text-linear-text-primary">快速打开</h3>
         </div>
-        <span className={`shrink-0 rounded-md px-2 py-1 text-[10px] font-bold ${shortcut ? 'bg-emerald-500/10 text-emerald-400' : 'bg-linear-surface-hover text-linear-text-tertiary'}`}>
-          {shortcut ? '已启用' : '已禁用'}
+        <span className={`shrink-0 rounded-md px-2 py-1 text-[10px] font-bold ${
+          startupError && shortcut
+            ? 'bg-amber-500/10 text-amber-400'
+            : shortcut
+              ? 'bg-emerald-500/10 text-emerald-400'
+              : 'bg-linear-surface-hover text-linear-text-tertiary'
+        }`}>
+          {startupError && shortcut ? '注册失败' : shortcut ? '已启用' : '已禁用'}
         </span>
       </div>
 
@@ -141,6 +149,12 @@ const GlobalShortcutSettings: React.FC<GlobalShortcutSettingsProps> = ({ value, 
           恢复默认
         </button>
       </div>
+      {startupError && shortcut && (
+        <p className="mt-2 flex items-center gap-1.5 text-xs text-amber-400" role="alert" title={startupError}>
+          <span aria-hidden="true" className="inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-amber-500/15 text-[10px] font-bold">!</span>
+          启动时注册失败，快捷键当前不可用（可能被其他应用占用）。重新保存即可重试。
+        </p>
+      )}
       {error && <p className="mt-2 text-xs text-red-400" role="alert">{error}</p>}
     </section>
   );
@@ -318,6 +332,7 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({
   visionModelId,
   onSelectVisionModel,
   globalShortcut,
+  globalShortcutError,
   onGlobalShortcutChange,
   onSave,
   onDelete,
@@ -469,7 +484,7 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({
             </section>
           ) : (
             <>
-              {isDesktopPlatform && <GlobalShortcutSettings value={globalShortcut} onChange={onGlobalShortcutChange} />}
+              {isDesktopPlatform && <GlobalShortcutSettings value={globalShortcut} startupError={globalShortcutError} onChange={onGlobalShortcutChange} />}
 
               <section className="rounded-lg border border-linear-border bg-linear-surface p-4">
                 <h3 className="text-sm font-bold text-linear-text-primary">模型管理</h3>

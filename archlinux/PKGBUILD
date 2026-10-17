@@ -13,9 +13,6 @@ pkgrel=1
 pkgdesc='LAN chat application built with Electron'
 arch=('x86_64')
 url='https://github.com/eric-wenyv/quickchat'
-# no LICENSE file in the repo yet — add one and fill this in
-# 运行时共享库：Electron 官方二进制所需（参考 Arch 官方 electron 包的依赖，
-# gtk3/nss 等其余依赖由这些包传递引入）
 depends=(
   'nss'
   'alsa-lib'
@@ -41,7 +38,7 @@ depends=(
 )
 makedepends=('nodejs' 'npm' 'python') # python: node-gyp 编译 better-sqlite3 备用路径
 options=()
-source=() # built from the local working tree
+source=()
 sha256sums=()
 
 prepare() {
@@ -64,12 +61,10 @@ prepare() {
 build() {
     cd "$srcdir/$pkgname"
     export npm_config_cache="$srcdir/npm-cache"
-    # npmmirror 的 cdn 下载大文件会断流（EOF），用华为云镜像
     export ELECTRON_MIRROR="https://mirrors.huaweicloud.com/electron/"
     npm ci
     npm run build:web
     npm run build:electron-main
-    # 只出 unpacked 目录（不打 deb/rpm/appimage，避开 linuxdeploy 依赖链）
     npx electron-builder --linux dir --publish never
 }
 

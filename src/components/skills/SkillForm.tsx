@@ -7,7 +7,7 @@ interface SkillFormProps {
 
 /**
  * 新建 Skill 弹窗：名称（slug）、描述、Markdown 正文、是否仅手动调用。
- * 视觉与 ModelSettings / Toast 保持一致：elevated 背景 + 细边框 + 圆角。
+ * 视觉与 SettingsPanel / Toast 保持一致：elevated 背景 + 细边框 + 圆角。
  */
 const SkillForm: React.FC<SkillFormProps> = ({ onSave, onClose }) => {
   const [name, setName] = useState('');

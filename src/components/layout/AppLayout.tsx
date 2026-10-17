@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import Sidebar from '../sidebar/Sidebar';
 import { MainChatArea } from '../chat/MainChatArea';
 import SkillManager from '../skills/SkillManager';
-import ModelSettings from '../settings/ModelSettings';
+import SettingsPanel from '../settings/SettingsPanel';
 import type { SkillMeta } from '@/services/skills';
 import { isElectron, onEvent } from '@/services/bridge';
 import { getCurrentWindow } from '@/services/appWindow';
@@ -20,6 +20,8 @@ interface AppLayoutProps {
   // --- 主题 ---
   theme: string;
   onToggleTheme: () => void;
+  /** 设置主题（设置浮层的亮/暗分段控件用） */
+  onSetTheme: (theme: 'light' | 'dark') => void;
   // --- 数据契约 ---
   /** 会话列表摘要 */
   conversations: ConversationSummary[];
@@ -129,17 +131,11 @@ const SIDEBAR_WIDTH_KEY = 'quick_chat_sidebar_width';
 interface CodexMenuBarProps {
   isSidebarOpen: boolean;
   onToggleSidebar: () => void;
-  /** 设置页打开时，左侧按钮切换为"返回" */
-  isSettingsOpen: boolean;
-  /** 从设置页返回主界面 */
-  onExitSettings: () => void;
 }
 
 const CodexMenuBar: React.FC<CodexMenuBarProps> = ({
   isSidebarOpen,
   onToggleSidebar,
-  isSettingsOpen,
-  onExitSettings,
 }) => {
   const [isWindowMaximized, setIsWindowMaximized] = useState(false);
   const [hoveredWindowButton, setHoveredWindowButton] = useState<'minimize' | 'maximize' | 'close' | null>(null);
@@ -165,30 +161,17 @@ const CodexMenuBar: React.FC<CodexMenuBarProps> = ({
         className="flex h-full items-center px-2"
         style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
       >
-        {isSettingsOpen ? (
-          <button
-            onClick={onExitSettings}
-            className="flex h-6 w-6 items-center justify-center rounded-md text-linear-text-tertiary hover:bg-linear-surface hover:text-linear-text-primary transition-colors"
-            title="返回对话"
-            aria-label="返回对话"
-          >
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M15 18l-6-6 6-6" />
-            </svg>
-          </button>
-        ) : (
-          <button
-            onClick={onToggleSidebar}
-            className="flex h-6 w-6 items-center justify-center rounded-md text-linear-text-tertiary hover:bg-linear-surface hover:text-linear-text-primary transition-colors"
-            title={isSidebarOpen ? '收起侧栏' : '展开侧栏'}
-            aria-label={isSidebarOpen ? 'Collapse sidebar' : 'Expand sidebar'}
-          >
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-              <rect x="4" y="4" width="19" height="19" rx="3" />
-              <path d="M9 5v14" />
-            </svg>
-          </button>
-        )}
+        <button
+          onClick={onToggleSidebar}
+          className="flex h-6 w-6 items-center justify-center rounded-md text-linear-text-tertiary hover:bg-linear-surface hover:text-linear-text-primary transition-colors"
+          title={isSidebarOpen ? '收起侧栏' : '展开侧栏'}
+          aria-label={isSidebarOpen ? 'Collapse sidebar' : 'Expand sidebar'}
+        >
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+            <rect x="4" y="4" width="19" height="19" rx="3" />
+            <path d="M9 5v14" />
+          </svg>
+        </button>
       </div>
 
       <div
@@ -262,6 +245,7 @@ const CodexMenuBar: React.FC<CodexMenuBarProps> = ({
 export const AppLayout: React.FC<AppLayoutProps> = ({
   theme,
   onToggleTheme,
+  onSetTheme,
   conversations,
   activeConversation,
   selectedConversationId,
@@ -363,11 +347,15 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
     onOpenSkills();
     if (isMobilePlatform) setIsSidebarOpen(false);
   }, [onOpenSkills]);
-  // 移动端：进入设置页同样收起抽屉（设置页全屏覆盖内容区）
+  // 移动端：打开设置浮层后收起抽屉；再次点击齿轮关闭浮层
   const handleOpenSettingsFromSidebar = useCallback(() => {
-    onOpenSettings?.();
+    if (showSettings) {
+      onCloseSettings();
+    } else {
+      onOpenSettings?.();
+    }
     if (isMobilePlatform) setIsSidebarOpen(false);
-  }, [onOpenSettings]);
+  }, [onOpenSettings, onCloseSettings, showSettings]);
 
   // ── 移动端抽屉手势：跟手拖拽，松手按展开比例落位（>50% 展开，否则收回）──
   // 不要求从屏幕边缘起始：Android 12+ 系统手势导航占据左右边缘，边缘横滑
@@ -530,8 +518,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
       shell.removeEventListener('touchcancel', onTouchCancel);
       window.clearTimeout(settleTimer);
     };
-    // showSettings 切换会卸载/重建 aside 与遮罩，需重新绑定引用
-  }, [isMobilePlatform, sidebarPx, showSettings]);
+  }, [isMobilePlatform, sidebarPx]);
 
   // 直接操作 DOM 的拖拽实现，绕过 React 渲染周期以避免卡顿
   const startResize = useCallback((e: React.MouseEvent) => {
@@ -667,8 +654,6 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
         <CodexMenuBar
           isSidebarOpen={isSidebarOpen}
           onToggleSidebar={toggleSidebar}
-          isSettingsOpen={showSettings}
-          onExitSettings={onCloseSettings}
         />
       )}
       <div
@@ -685,23 +670,9 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
       >
 
         {/*
-          设置页：全页面占据整个内容区（替代侧栏 + 聊天区），
-          col-span-full 跨越全部 Grid 列，无需改动列宽定义与过渡动画。
-          返回入口：桌面端在顶部菜单栏左侧，移动端在设置页头部。
+          主界面（侧栏 + 聊天区）常驻渲染；设置打开时在其上方叠加
+          SettingsPanel 浮层（半透明遮罩），不再替换内容区。
         */}
-        {showSettings ? (
-          <ModelSettings
-            models={models}
-            visionModelId={visionModelId}
-            onSelectVisionModel={onSelectVisionModel}
-            globalShortcut={globalShortcut}
-            globalShortcutError={globalShortcutError}
-            onGlobalShortcutChange={onGlobalShortcutChange}
-            onSave={onSaveModel}
-            onDelete={onDeleteModel}
-            onClose={onCloseSettings}
-          />
-        ) : (
         <>
         {/*
           移动端抽屉背景遮罩：点击关闭侧栏。
@@ -830,9 +801,25 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
           )}
         </main>
         </>
-        )}
 
       </div>
+
+      {/* 设置浮层：半透明遮罩下主界面保持可见 */}
+      {showSettings && (
+        <SettingsPanel
+          theme={theme}
+          onSetTheme={onSetTheme}
+          models={models}
+          onSaveModel={onSaveModel}
+          onDeleteModel={onDeleteModel}
+          visionModelId={visionModelId}
+          onSelectVisionModel={onSelectVisionModel}
+          globalShortcut={globalShortcut}
+          globalShortcutError={globalShortcutError}
+          onGlobalShortcutChange={onGlobalShortcutChange}
+          onClose={onCloseSettings}
+        />
+      )}
     </div>
   );
 };

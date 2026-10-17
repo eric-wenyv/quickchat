@@ -27,7 +27,7 @@ function isTextEntryTarget(target: EventTarget | null): boolean {
 }
 
 function hasActiveModalOverlay(doc: Document): boolean {
-  // 任何带 role="dialog" aria-modal="true" 的打开状态遮罩（如 ModelSettings）
+  // 任何带 role="dialog" aria-modal="true" 的打开状态遮罩（如 SettingsPanel）
   return Boolean(
     doc.querySelector('[role="dialog"][aria-modal="true"]:not([hidden]):not([aria-hidden="true"])')
   );

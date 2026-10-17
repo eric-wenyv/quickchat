@@ -131,7 +131,7 @@ const showToast = (title: string, desc?: string, type: "error" | "success" = "er
 // App
 // -----------------------------------------------------------------------------
 export default function App() {
-  const { theme, toggleTheme } = useTheme();
+  const { theme, toggleTheme, setTheme: setThemeValue } = useTheme();
 
   // --- 状态 ---
   const [conversations, setConversations] = useState<ConversationSummary[]>([]);
@@ -1755,6 +1755,7 @@ export default function App() {
       <AppLayout
         theme={theme}
         onToggleTheme={toggleTheme}
+        onSetTheme={setThemeValue}
         conversations={displayedConversations}
         activeConversation={activeConversation}
         selectedConversationId={selectedConversationId}

@@ -201,6 +201,82 @@ export async function searchWeb(query: string): Promise<unknown> {
   }
 }
 
+// ---------------------------------------------------------------------------
+// 工具结果格式化（注入对话上下文的文案）
+// ---------------------------------------------------------------------------
+
+export interface SearchResult {
+  title: string;
+  url: string;
+  snippet: string;
+}
+
+interface TavilySearchResponse {
+  query?: string;
+  answer?: string;
+  response_time?: number;
+  error?: string;
+  results?: Array<{
+    title?: string;
+    url?: string;
+    content?: string;
+    raw_content?: string;
+  }>;
+}
+
+export function normalizeTavilySearchResponse(data: TavilySearchResponse): SearchResult[] {
+  if (!data.results || !Array.isArray(data.results)) {
+    return [];
+  }
+
+  return data.results.slice(0, 5).map((r) => ({
+    title: r.title || '',
+    url: r.url || '',
+    snippet: r.content || r.raw_content || '',
+  }));
+}
+
+/** 将搜索结果格式化为文本，注入到对话上下文中 */
+export function formatSearchResults(query: string, results: SearchResult[]): string {
+  if (results.length === 0) {
+    return `搜索 "${query}" 未返回结果。`;
+  }
+
+  const lines = [
+    `以下是通过网络搜索 "${query}" 获得的实时信息：`,
+    '',
+  ];
+
+  for (let i = 0; i < results.length; i++) {
+    const r = results[i];
+    lines.push(`${i + 1}. ${r.title}`);
+    if (r.url) lines.push(`   来源: ${r.url}`);
+    if (r.snippet) lines.push(`   摘要: ${r.snippet}`);
+    lines.push('');
+  }
+
+  lines.push('请基于以上搜索结果回答用户的问题，并在适当的地方引用来源。');
+  return lines.join('\n');
+}
+
+/** 将抓取结果格式化为文本，作为 read_url 工具的返回注入对话上下文。 */
+export function formatUrlContent(result: UrlContent): string {
+  const lines = [`以下是从 ${result.url} 抓取的网页内容：`, ''];
+
+  if (result.title) {
+    lines.push(`标题: ${result.title}`, '');
+  }
+
+  lines.push(result.content.trim());
+
+  if (result.truncated) {
+    lines.push('', '（正文过长，已截断，以上内容仅为开头部分。）');
+  }
+
+  lines.push('', '请基于以上网页内容回答用户的问题。');
+  return lines.join('\n');
+}
+
 function trimMatches(s: string, chars: string): string {
   let out = s;
   const set = new Set(Array.from(chars));

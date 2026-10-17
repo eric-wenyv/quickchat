@@ -1,79 +1,19 @@
 // =============================================================================
-// Quick-Chat — 统一 AI Service（OpenAI 兼容格式 + Tool Calling）
+// Quick-Chat — AI Service 前端客户端（薄封装）
+// =============================================================================
+// AI 管线（SSE 解析、tool-calling 循环、标题生成、图片描述）都在 Electron
+// 主进程（electron/ai.ts、electron/chat.ts）。本模块负责：
+//   - runChat/abortChat：发起主进程对话循环，流式增量经 qc:event:ai:stream 分发
+//   - generateConversationTitle / describeImage / fetchModelThinkingEfforts：invoke 包装
+//   - 前端 UI 仍需要的纯函数（标题兜底、OpenRouter 判定、思考档位 key）
 // =============================================================================
 
+import { invoke, onEvent } from '@/services/bridge';
 import type { ModelConfig, ThinkingEfforts } from '@/types/types';
-import { openSseStream } from './sse-transport';
 
 // ---------------------------------------------------------------------------
-// 常量
+// 类型（与 electron/ai.ts、electron/chat.ts 的 IPC 载荷结构对齐）
 // ---------------------------------------------------------------------------
-
-const TITLE_MAX_LENGTH = 20;
-const PLACEHOLDER_TITLES = new Set(['', 'new chat', 'untitled', '新对话']);
-
-
-// ---------------------------------------------------------------------------
-// 类型
-// ---------------------------------------------------------------------------
-
-export interface StreamChunk {
-  delta: string;
-  accumulated: string;
-  citations?: UrlCitation[];
-  usage?: {
-    prompt_tokens: number;
-    completion_tokens: number;
-    total_tokens: number;
-  };
-}
-
-export type FunctionToolDefinition = {
-  type: 'function';
-  function: {
-    name: string;
-    description: string;
-    parameters: Record<string, unknown>;
-  };
-};
-
-export type ToolDefinition = FunctionToolDefinition;
-
-export interface ToolCall {
-  id: string;
-  type: 'function';
-  function: {
-    name: string;
-    arguments: string; // JSON string
-  };
-  extra_content?: Record<string, unknown>;
-}
-
-export type ChatContentPart =
-  | { type: 'text'; text: string }
-  | { type: 'image_url'; image_url: { url: string } };
-
-export interface ChatMessage {
-  role: 'system' | 'user' | 'assistant' | 'tool';
-  content: string | ChatContentPart[];
-  reasoning_content?: string;
-  tool_call_id?: string;
-  tool_calls?: ToolCall[];
-  name?: string;
-}
-
-export interface ChatCompletionParams {
-  model: ModelConfig;
-  messages: ChatMessage[];
-  tools?: ToolDefinition[];
-  /** 思考强度档位（模型支持的档位字符串，如 low/high/max；null 表示不干预） */
-  thinkingLevel?: string | null;
-  signal?: AbortSignal;
-  /** 覆盖模型配置的 max_tokens；传 null 表示本次请求不设上限（思考模型烧尽预算时放开） */
-  maxTokens?: number | null;
-  /** 思考增量回调：reasoning 分片到达即触发（先于首个正文分片返回），用于 UI 实时展示思考内容 */
-  onReasoningDelta?: (delta: string, accumulated: string) => void;
-}
 
 export interface TokenUsage {
   prompt_tokens: number;
@@ -89,191 +29,136 @@ export interface UrlCitation {
   end_index?: number;
 }
 
-export type ChatCompletionResult =
-  | { type: 'text'; stream: AsyncGenerator<StreamChunk, void, unknown>; reasoningContent: string; usage: TokenUsage | null; citations?: UrlCitation[]; lateToolCalls?: ToolCall[]; finishReason?: string | null }
-  | { type: 'tool_calls'; toolCalls: ToolCall[]; assistantMessage: string; reasoningContent: string; usage: TokenUsage | null };
+export type ChatContentPart =
+  | { type: 'text'; text: string }
+  | { type: 'image_url'; image_url: { url: string } };
 
-// ---------------------------------------------------------------------------
-// 内置工具定义
-// ---------------------------------------------------------------------------
+export interface ChatMessage {
+  role: 'system' | 'user' | 'assistant' | 'tool';
+  content: string | ChatContentPart[];
+  reasoning_content?: string;
+  tool_call_id?: string;
+  name?: string;
+}
 
-/**
- * AI 阅读网页内容的工具：当用户消息包含 URL、要求阅读/总结某个页面，
- * 或回答需要引用页面具体内容时，模型传入 URL，工具返回抓取到的正文文本。
- */
-export const READ_URL_TOOL: ToolDefinition = {
-  type: 'function',
-  function: {
-    name: 'read_url',
-    description:
-      'Fetch and read the text content of a web page. Use this when the user shares a URL, asks to read or summarize a page, or when answering requires the actual content of a specific web page.',
-    parameters: {
-      type: 'object',
-      properties: {
-        url: {
-          type: 'string',
-          description: 'The full http/https URL of the page to read',
-        },
-      },
-      required: ['url'],
-    },
-  },
-};
+export type ChatErrorCode = 'aborted' | 'reasoning_effort' | 'error';
 
-/**
- * AI 联网搜索工具：模型在需要实时信息（新闻、天气、股价、近期事件等）时
- * 传入查询词，工具返回 Tavily 搜索结果（标题/来源/摘要）。
- */
-export const WEB_SEARCH_TOOL: ToolDefinition = {
-  type: 'function',
-  function: {
-    name: 'web_search',
-    description:
-      'Search the web for current, real-time information. Use this when the user asks about recent events, news, weather, stock prices, sports results, or any information that may have changed after your knowledge cutoff.',
-    parameters: {
-      type: 'object',
-      properties: {
-        query: {
-          type: 'string',
-          description: 'The search query in Chinese or English',
-        },
-      },
-      required: ['query'],
-    },
-  },
-};
+/** 主进程对话循环的最终结果（runChatLoop 的 ChatLoopOutcome） */
+export interface ChatOutcome {
+  ok: boolean;
+  /** 最终正文（ok 时已附引用列表；aborted 时为中断前的部分正文） */
+  content: string;
+  /** 跨工具轮次累计的思考内容 */
+  reasoningContent: string;
+  usage: TokenUsage | null;
+  citations: UrlCitation[];
+  finishReason: string | null;
+  errorCode?: ChatErrorCode;
+  errorMessage?: string;
+}
 
-/**
- * AI 自主调用 Skill 的工具：模型从系统提示中的可用 Skill 目录选择一个名称，
- * 工具返回该 Skill 的完整指引（SKILL.md 内容），模型随后遵循其指引回答。
- * 标注了 disable-model-invocation 的 Skill 不出现在目录中，此工具也拒绝加载。
- */
-export const USE_SKILL_TOOL: ToolDefinition = {
-  type: 'function',
-  function: {
-    name: 'use_skill',
-    description:
-      'Load the full instructions of an available skill by name. Call this only when the user\'s request clearly matches a skill\'s described purpose from the available skills list, then follow the returned instructions.',
-    parameters: {
-      type: 'object',
-      properties: {
-        name: {
-          type: 'string',
-          description: 'The exact skill name from the available skills list',
-        },
-      },
-      required: ['name'],
-    },
-  },
-};
-
-/** 构造注入系统提示的可用 Skill 目录（仅 AI 可自主调用的部分） */
-export function buildSkillCatalogPrompt(skills: Array<{ id: string; name: string; description: string }>): string {
-  const lines = skills.map(s => `- ${s.id}: ${s.description || s.name}`);
-  return [
-    '## 可调用的 Skill 列表 / Available Skills',
-    '',
-    '当用户的请求与下列某个 Skill 的用途明确匹配时，调用 use_skill 工具加载其完整指引，并严格遵循返回的指引完成任务。',
-    'When the user\'s request clearly matches one of the skills below, call the use_skill tool to load its full instructions and follow them.',
-    '仅在有明确匹配时调用；不要为无关请求调用；同一条回复不要重复加载同一个 Skill。',
-    '',
-    ...lines,
-  ].join('\n');
+export interface ChatStreamHandlers {
+  onReasoning?: (delta: string, accumulated: string) => void;
+  onText?: (delta: string, accumulated: string) => void;
+  /** 一轮工具调用开始；names 为工具名（UI 标签由调用方映射） */
+  onToolStart?: (names: string[]) => void;
+  /** 工具轮结束、即将发起下一轮请求：UI 应恢复「思考中」状态 */
+  onRoundReset?: () => void;
 }
 
 // ---------------------------------------------------------------------------
-// 工具函数
+// 流式对话
 // ---------------------------------------------------------------------------
 
-function getApiEndpoint(model: ModelConfig): string {
-  if (model.api_endpoint) return model.api_endpoint;
-  throw new Error('自定义 OpenAI 兼容 API 必须填写 API Endpoint');
+type StreamPayload = {
+  requestId?: string;
+  type?: string;
+  delta?: string;
+  accumulated?: string;
+  names?: string[];
+};
+
+const streamHandlers = new Map<string, ChatStreamHandlers>();
+let streamSubscribed = false;
+
+function ensureStreamSubscription(): void {
+  if (streamSubscribed) return;
+  streamSubscribed = true;
+  onEvent('ai:stream', (payload) => {
+    const p = payload as StreamPayload;
+    if (!p || typeof p.requestId !== 'string') return;
+    const handlers = streamHandlers.get(p.requestId);
+    if (!handlers) return;
+    switch (p.type) {
+      case 'reasoning':
+        handlers.onReasoning?.(p.delta ?? '', p.accumulated ?? '');
+        break;
+      case 'text':
+        handlers.onText?.(p.delta ?? '', p.accumulated ?? '');
+        break;
+      case 'tool_start':
+        handlers.onToolStart?.(Array.isArray(p.names) ? p.names : []);
+        break;
+      case 'round_reset':
+        handlers.onRoundReset?.();
+        break;
+    }
+  });
 }
 
-function buildHeaders(model: ModelConfig): Record<string, string> {
-  return {
-    'Content-Type': 'application/json',
-    Authorization: `Bearer ${model.api_key}`,
-  };
-}
-
-// ---------------------------------------------------------------------------
-// 思考强度
-// ---------------------------------------------------------------------------
-
-/** 服务端拒绝不支持的思考档位时抛出，调用方据此提示用户重新选择 */
-export class ReasoningEffortError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = 'ReasoningEffortError';
+/**
+ * 发起一轮完整对话（含工具循环与空回复补发）。
+ * 流式增量经 handlers 回调；resolve 为最终 ChatOutcome（业务失败也 resolve，
+ * 以 ok/errorCode 区分；仅桥本身不可用时 reject）。
+ */
+export async function runChat(
+  requestId: string,
+  params: { model: ModelConfig; messages: ChatMessage[]; thinkingLevel?: string | null },
+  handlers: ChatStreamHandlers
+): Promise<ChatOutcome> {
+  ensureStreamSubscription();
+  streamHandlers.set(requestId, handlers);
+  try {
+    return await invoke<ChatOutcome>('ai:chat', { requestId, ...params });
+  } finally {
+    streamHandlers.delete(requestId);
   }
 }
 
+export const abortChat = (requestId: string) =>
+  invoke<void>('ai:abort', { requestId });
+
+// ---------------------------------------------------------------------------
+// 非流式调用
+// ---------------------------------------------------------------------------
+
+export const generateConversationTitle = (
+  messages: { role: string; content: string }[],
+  titleModel: ModelConfig
+) => invoke<string | null>('ai:generate_title', { messages, model: titleModel });
+
+export const describeImage = (imageDataUrl: string, visionModel: ModelConfig) =>
+  invoke<string | null>('ai:describe_image', { imageDataUrl, model: visionModel });
+
+export const fetchModelThinkingEfforts = (model: ModelConfig) =>
+  invoke<ThinkingEfforts | null>('ai:thinking_efforts', { model });
+
+// ---------------------------------------------------------------------------
+// 前端 UI 仍需要的纯函数（与 electron/ai.ts 保持一致的小份拷贝）
+// ---------------------------------------------------------------------------
+
 /** 是否 OpenRouter 端点：provider 已统一为 openai_compatible，按 endpoint 域名识别 */
-export function isOpenRouterModel(model: ModelConfig): boolean {
+export function isOpenRouterModel(model: Pick<ModelConfig, 'api_endpoint'>): boolean {
   return (model.api_endpoint ?? '').includes('openrouter.ai');
 }
 
 /** 思考强度缓存的 key：OpenRouter 模型即官方 slug（provider:model_id） */
-export function thinkingEffortsKey(model: ModelConfig): string {
+export function thinkingEffortsKey(model: Pick<ModelConfig, 'provider' | 'model_id'>): string {
   return `${model.provider}:${model.model_id}`;
 }
 
-const OPENROUTER_MODELS_URL = 'https://openrouter.ai/api/v1/models';
-
-/**
- * 从 OpenRouter 官方模型接口获取指定模型支持的思考强度。
- * 仅 OpenRouter 端点的模型可查（model_id 即官方 slug）。
- * 返回 null 表示非 OpenRouter 模型或 OpenRouter 上不存在该模型；
- * efforts 为空数组表示不支持选择档位。两种情况 UI 都应隐藏思考强度选择器。
- */
-export async function fetchModelThinkingEfforts(model: ModelConfig): Promise<ThinkingEfforts | null> {
-  if (!isOpenRouterModel(model)) return null;
-
-  const response = await fetch(OPENROUTER_MODELS_URL);
-  if (!response.ok) {
-    throw new Error(`获取 OpenRouter 模型元数据失败 (${response.status}): ${response.statusText}`);
-  }
-
-  const json = await response.json();
-  const entry = Array.isArray(json?.data) ? json.data.find((m: any) => m?.id === model.model_id) : null;
-  if (!entry) return null;
-
-  const reasoning = entry.reasoning;
-  const efforts = Array.isArray(reasoning?.supported_efforts)
-    ? reasoning.supported_efforts.filter((e: unknown): e is string => typeof e === 'string' && e.length > 0)
-    : [];
-  return {
-    efforts,
-    defaultEffort: typeof reasoning?.default_effort === 'string' ? reasoning.default_effort : null,
-  };
-}
-
-export function dedupeCitations(citations?: UrlCitation[]): UrlCitation[] {
-  if (!citations?.length) return [];
-
-  const seen = new Set<string>();
-  const unique: UrlCitation[] = [];
-  for (const citation of citations) {
-    const url = citation.url.trim();
-    if (!url || seen.has(url)) continue;
-    seen.add(url);
-    unique.push({ ...citation, url });
-  }
-  return unique;
-}
-
-export function appendCitationList(content: string, citations?: UrlCitation[]): string {
-  const unique = dedupeCitations(citations);
-  if (unique.length === 0) return content;
-
-  const sources = unique.map((citation, index) => {
-    const label = citation.title?.trim() || citation.url;
-    return `${index + 1}. [${label}](${citation.url})`;
-  });
-
-  return `${content.trimEnd()}\n\n来源：\n${sources.join('\n')}`;
-}
+const TITLE_MAX_LENGTH = 20;
+const PLACEHOLDER_TITLES = new Set(['', 'new chat', 'untitled', '新对话']);
 
 export function isPlaceholderConversationTitle(title: string | null | undefined): boolean {
   return PLACEHOLDER_TITLES.has((title ?? '').trim().toLowerCase());
@@ -282,7 +167,7 @@ export function isPlaceholderConversationTitle(title: string | null | undefined)
 function cleanTitleText(title: string): string | null {
   const cleaned = title
     .replace(/^(?:标题|题目)\s*[:：]\s*/i, '')
-    .replace(/^["'\u201c\u2018「『《]+|["'\u201d\u2019」』》]+$/g, '')
+    .replace(/^["'“‘「『《]+|["'”’」』》]+$/g, '')
     .replace(/\s+/g, ' ')
     .replace(/[。.!！?？,，、;；:：\s]+$/g, '')
     .trim();
@@ -320,575 +205,4 @@ export function generateFallbackConversationTitle(
   const firstSentence = cleaned.split(/[。！？!?]/)[0] || cleaned;
 
   return cleanTitleText(topicPrefix || firstSentence);
-}
-
-function buildRequestBody(
-  model: ModelConfig,
-  messages: ChatMessage[],
-  tools?: ToolDefinition[],
-  thinkingLevel?: string | null,
-  maxTokens?: number | null
-): unknown {
-  // 思考模型官方建议不干预采样参数（temperature/top_p 固定为 1），由推理力度控制行为
-  const thinkingEnabled = thinkingLevel != null;
-  const body: Record<string, unknown> = {
-    model: model.model_id,
-    messages,
-    stream: true,
-    temperature: thinkingEnabled ? 1.0 : model.temperature,
-    // 优先级：请求级 maxTokens（null = 本次显式不设上限）> 模型级 max_tokens（null = 不限制）；
-    // 最终为空时整个字段不发（JSON.stringify 会丢弃 undefined），provider 语义为"取模型默认最大输出"
-    max_tokens: (maxTokens === null ? null : maxTokens ?? model.max_tokens) ?? undefined,
-    top_p: thinkingEnabled ? 1.0 : model.top_p,
-    stream_options: { include_usage: true },
-  };
-
-  if (thinkingEnabled) {
-    // OpenAI 风格的 reasoning_effort；部分服务端会将其归一化（两种格式只能发其一）
-    body.reasoning_effort = thinkingLevel.toLowerCase();
-  }
-
-  if (tools && tools.length > 0) {
-    body.tools = tools;
-    body.tool_choice = 'auto';
-  }
-
-  return body;
-}
-
-// ---------------------------------------------------------------------------
-// SSE 解析器（支持 tool_calls）
-// ---------------------------------------------------------------------------
-
-interface AccumulatedToolCall {
-  id?: string;
-  type?: string;
-  function?: {
-    name?: string;
-    arguments?: string;
-  };
-  extra_content?: Record<string, unknown>;
-}
-
-interface SSEAccumulator {
-  text: string;
-  reasoningContent: string;
-  toolCalls: Map<number, AccumulatedToolCall>;
-  finishReason: string | null;
-  usage: TokenUsage | null;
-  citations: UrlCitation[];
-  /** 思考增量透传回调：挂到累加器上，所有读流路径（首个分片前的等待循环、
-   *  continueTextStream、tool_calls 的收尾消费）都经 mergeDelta 统一触发 */
-  onReasoningDelta?: (delta: string, accumulated: string) => void;
-}
-
-function createAccumulator(onReasoningDelta?: (delta: string, accumulated: string) => void): SSEAccumulator {
-  return { text: '', reasoningContent: '', toolCalls: new Map(), finishReason: null, usage: null, citations: [], onReasoningDelta };
-}
-
-interface SSEReaderState {
-  /** 传输层文本分片迭代器（统一走 fetch 流，见 sse-transport.ts）。
-   *  分片已是完整 UTF-8 文本（多字节跨块边界在传输层处理），可能含不完整行。 */
-  iterator: AsyncGenerator<string, void, unknown>;
-  buffer: string;
-  done: boolean;
-}
-
-function createReaderState(chunks: AsyncGenerator<string, void, unknown>): SSEReaderState {
-  return {
-    iterator: chunks,
-    buffer: '',
-    done: false,
-  };
-}
-
-/** 关闭传输层迭代器（触发其 finally：取消 Rust 侧下载 / 释放 fetch reader） */
-async function closeReaderState(state: SSEReaderState): Promise<void> {
-  try {
-    await state.iterator.return(undefined as unknown as void);
-  } catch {
-    // 传输层已关闭时 return() 可能拒绝，忽略
-  }
-}
-
-function parseUsage(usage: any): TokenUsage {
-  return {
-    prompt_tokens: usage.prompt_tokens ?? usage.input_tokens ?? 0,
-    completion_tokens: usage.completion_tokens ?? usage.output_tokens ?? 0,
-    total_tokens: usage.total_tokens ?? 0,
-  };
-}
-
-function normalizeUrlCitation(annotation: any): UrlCitation | null {
-  if (!annotation || typeof annotation !== 'object') return null;
-  const source = annotation.url_citation && typeof annotation.url_citation === 'object'
-    ? annotation.url_citation
-    : annotation;
-  const url = typeof source.url === 'string' ? source.url : '';
-  if (!url) return null;
-
-  return {
-    url,
-    ...(typeof source.title === 'string' ? { title: source.title } : {}),
-    ...(typeof source.content === 'string' ? { content: source.content } : {}),
-    ...(typeof source.start_index === 'number' ? { start_index: source.start_index } : {}),
-    ...(typeof source.end_index === 'number' ? { end_index: source.end_index } : {}),
-    ...(typeof source.startIndex === 'number' ? { start_index: source.startIndex } : {}),
-    ...(typeof source.endIndex === 'number' ? { end_index: source.endIndex } : {}),
-  };
-}
-
-function mergeCitationAnnotations(acc: SSEAccumulator, annotations: unknown): void {
-  if (!Array.isArray(annotations)) return;
-
-  const next = annotations
-    .filter((annotation) => {
-      if (!annotation || typeof annotation !== 'object') return false;
-      const type = (annotation as { type?: unknown }).type;
-      return type === undefined || type === 'url_citation';
-    })
-    .map(normalizeUrlCitation)
-    .filter((citation): citation is UrlCitation => citation !== null);
-
-  if (next.length > 0) {
-    acc.citations = dedupeCitations([...acc.citations, ...next]);
-  }
-}
-
-function collectCitationsFromParsed(acc: SSEAccumulator, parsed: any): void {
-  const choice = parsed.choices?.[0];
-  mergeCitationAnnotations(acc, choice?.delta?.annotations);
-  mergeCitationAnnotations(acc, choice?.message?.annotations);
-  mergeCitationAnnotations(acc, choice?.annotations);
-  mergeCitationAnnotations(acc, parsed.annotations);
-}
-
-function mergeDelta(acc: SSEAccumulator, delta: any): void {
-  if (typeof delta.content === 'string') {
-    acc.text += delta.content;
-  }
-
-  if (typeof delta.reasoning_content === 'string') {
-    acc.reasoningContent += delta.reasoning_content;
-    acc.onReasoningDelta?.(delta.reasoning_content, acc.reasoningContent);
-  } else if (typeof delta.reasoning === 'string') {
-    // 部分服务端归一化的思考分片使用 delta.reasoning 字段
-    acc.reasoningContent += delta.reasoning;
-    acc.onReasoningDelta?.(delta.reasoning, acc.reasoningContent);
-  }
-
-  if (delta.tool_calls && Array.isArray(delta.tool_calls)) {
-    for (const tc of delta.tool_calls) {
-      const idx = tc.index ?? 0;
-      if (!acc.toolCalls.has(idx)) {
-        acc.toolCalls.set(idx, { id: tc.id, type: tc.type, function: {} });
-      }
-      const existing = acc.toolCalls.get(idx)!;
-      if (tc.id) existing.id = tc.id;
-      if (tc.type) existing.type = tc.type;
-      if (tc.extra_content && typeof tc.extra_content === 'object') {
-        existing.extra_content = tc.extra_content;
-      }
-      if (tc.function) {
-        if (!existing.function) existing.function = {};
-        if (tc.function.name) existing.function.name = tc.function.name;
-        if (tc.function.arguments) {
-          existing.function.arguments = (existing.function.arguments || '') + tc.function.arguments;
-        }
-      }
-    }
-  }
-}
-
-function applyParsedEvent(acc: SSEAccumulator, parsed: any): void {
-  // 部分服务端（如 OpenRouter）会在流内下发错误事件（如上游 500）；若静默忽略，
-  // 用户只会看到误导性的"模型返回了空内容"而不是真实原因
-  if (parsed && typeof parsed === 'object' && parsed.error) {
-    const err = parsed.error;
-    if (typeof err === 'string') {
-      throw new Error(`API 流式响应错误: ${err}`);
-    }
-    const code = err?.code != null ? ` (${err.code})` : '';
-    const message = typeof err?.message === 'string' && err.message ? err.message : JSON.stringify(err);
-    throw new Error(`API 流式响应错误${code}: ${message}`);
-  }
-  collectCitationsFromParsed(acc, parsed);
-  const delta = parsed.choices?.[0]?.delta;
-  const finishReason = parsed.choices?.[0]?.finish_reason;
-  if (finishReason) acc.finishReason = finishReason;
-  if (delta) mergeDelta(acc, delta);
-  if (parsed.usage) {
-    acc.usage = parseUsage(parsed.usage);
-  }
-}
-
-// SSE 规范允许 "data:" 与载荷之间没有空格；只认 "data: " 会静默丢弃整行事件
-function sseDataOf(line: string): string | null {
-  const trimmed = line.trim();
-  if (!trimmed.startsWith('data:')) return null;
-  return trimmed.slice(5).trimStart();
-}
-
-async function readNextSSEData(state: SSEReaderState): Promise<string | null> {
-  while (true) {
-    const newlineIndex = state.buffer.indexOf('\n');
-    if (newlineIndex >= 0) {
-      const line = state.buffer.slice(0, newlineIndex);
-      state.buffer = state.buffer.slice(newlineIndex + 1);
-      const data = sseDataOf(line);
-      if (data === null) continue;
-      return data === '[DONE]' ? null : data;
-    }
-
-    if (state.done) {
-      const trimmed = state.buffer.trim();
-      state.buffer = '';
-      const data = sseDataOf(trimmed);
-      if (data === null) return null;
-      return data === '[DONE]' ? null : data;
-    }
-
-    const next = await state.iterator.next();
-    if (next.done) {
-      state.done = true;
-    } else {
-      state.buffer += next.value;
-    }
-  }
-}
-
-async function readNextParsedEvent(state: SSEReaderState): Promise<any | null> {
-  while (true) {
-    const data = await readNextSSEData(state);
-    if (data === null) return null;
-    try {
-      return JSON.parse(data);
-    } catch {
-      // ignore malformed SSE payloads and continue reading
-    }
-  }
-}
-
-async function consumeRemainingParsedStream(state: SSEReaderState, acc: SSEAccumulator): Promise<void> {
-  while (true) {
-    const parsed = await readNextParsedEvent(state);
-    if (parsed === null) return;
-    applyParsedEvent(acc, parsed);
-  }
-}
-
-function hasToolCallDelta(parsed: any): boolean {
-  const toolCalls = parsed.choices?.[0]?.delta?.tool_calls;
-  return Array.isArray(toolCalls) && toolCalls.length > 0;
-}
-
-function textDeltaFromParsed(parsed: any): string | null {
-  const delta = parsed.choices?.[0]?.delta?.content;
-  return typeof delta === 'string' ? delta : null;
-}
-
-function accumulatorToToolCalls(acc: SSEAccumulator): ToolCall[] {
-  const calls: ToolCall[] = [];
-  const indices = Array.from(acc.toolCalls.keys()).sort((a, b) => a - b);
-  for (const idx of indices) {
-    const tc = acc.toolCalls.get(idx)!;
-    const fn = tc.function ?? {};
-    calls.push({
-      id: tc.id || `call_${idx}`,
-      type: (tc.type as 'function') || 'function',
-      function: {
-        name: fn.name || '',
-        arguments: fn.arguments || '',
-      },
-      ...(tc.extra_content ? { extra_content: tc.extra_content } : {}),
-    });
-  }
-  return calls;
-}
-
-// ---------------------------------------------------------------------------
-// 对外暴露的文本流式生成器（用于第二轮无 tool 的回复）
-// ---------------------------------------------------------------------------
-
-async function* continueTextStream(
-  state: SSEReaderState,
-  acc: SSEAccumulator,
-  result: Extract<ChatCompletionResult, { type: 'text' }>,
-  firstDelta: string | null
-): AsyncGenerator<StreamChunk, void, unknown> {
-  try {
-    if (firstDelta !== null) {
-      yield { delta: firstDelta, accumulated: acc.text };
-    }
-
-    // 混合响应：正文开始后又出现 tool_calls（GLM 等思考模型先输出一段前言再调工具，
-    // OpenAI 规范允许 content 与 tool_calls 并存）。此时停止产出文本增量，
-    // 继续累积事件；流结束后经 result.lateToolCalls 交给调用方续跑工具循环。
-    let mixedToolCalls = false;
-
-    while (true) {
-      const parsed = await readNextParsedEvent(state);
-      if (parsed === null) return;
-
-      if (hasToolCallDelta(parsed)) {
-        mixedToolCalls = true;
-      }
-
-      applyParsedEvent(acc, parsed);
-      result.reasoningContent = acc.reasoningContent;
-      result.usage = acc.usage;
-      result.citations = acc.citations;
-      result.finishReason = acc.finishReason;
-
-      if (mixedToolCalls) continue;
-
-      const delta = textDeltaFromParsed(parsed);
-      if (delta !== null) {
-        yield { delta, accumulated: acc.text };
-      }
-      if (parsed.usage) {
-        const chunk: StreamChunk = { delta: '', accumulated: acc.text, usage: acc.usage ?? undefined };
-        if (acc.citations.length > 0) {
-          chunk.citations = acc.citations;
-        }
-        yield chunk;
-      }
-    }
-  } finally {
-    result.reasoningContent = acc.reasoningContent;
-    result.usage = acc.usage;
-    result.citations = acc.citations;
-    result.finishReason = acc.finishReason;
-    if (acc.toolCalls.size > 0) {
-      result.lateToolCalls = accumulatorToToolCalls(acc);
-    }
-    await closeReaderState(state);
-  }
-}
-
-// ---------------------------------------------------------------------------
-// 主入口：带 tool calling 的对话
-// ---------------------------------------------------------------------------
-
-export async function chatCompletion(params: ChatCompletionParams): Promise<ChatCompletionResult> {
-  const { model, messages, tools, thinkingLevel, signal, maxTokens, onReasoningDelta } = params;
-
-  const endpoint = getApiEndpoint(model);
-  const url = `${endpoint.replace(/\/$/, '')}/chat/completions`;
-  const headers = buildHeaders(model);
-  const body = buildRequestBody(model, messages, tools, thinkingLevel, maxTokens);
-
-  const stream = await openSseStream(url, headers, JSON.stringify(body), signal);
-
-  if (!stream.ok) {
-    let errorText = '';
-    try {
-      errorText = await stream.readAllText();
-      const errorJson = JSON.parse(errorText);
-      errorText = errorJson.error?.message || JSON.stringify(errorJson);
-    } catch {
-      // 非法 JSON：readAllText 已给出原始文本，保持 errorText 不变
-    }
-    const detail = errorText || stream.statusText;
-    // 服务端拒绝不支持的思考档位时返回 400，错误信息会点名 reasoning/effort；
-    // 单独识别出来，调用方据此提示用户重新选择
-    if (stream.status === 400 && /reasoning|effort/i.test(detail)) {
-      throw new ReasoningEffortError(`模型 ${model.model_id} 不支持当前思考强度: ${detail}`);
-    }
-    throw new Error(`API 请求失败 (${stream.status}): ${detail}`);
-  }
-
-  const state = createReaderState(stream.chunks());
-  const acc = createAccumulator(onReasoningDelta);
-
-  try {
-    while (true) {
-      const parsed = await readNextParsedEvent(state);
-      if (parsed === null) {
-        await closeReaderState(state);
-        return {
-          type: 'text',
-          stream: (async function* () {
-            if (acc.usage) {
-              yield { delta: '', accumulated: acc.text, usage: acc.usage };
-            }
-          })(),
-          reasoningContent: acc.reasoningContent,
-          usage: acc.usage,
-          citations: acc.citations,
-          finishReason: acc.finishReason,
-        };
-      }
-
-      applyParsedEvent(acc, parsed);
-
-      if (hasToolCallDelta(parsed) || acc.finishReason === 'tool_calls' || acc.toolCalls.size > 0) {
-        await consumeRemainingParsedStream(state, acc);
-        await closeReaderState(state);
-
-        const toolCalls = accumulatorToToolCalls(acc);
-        if (toolCalls.length > 0) {
-          return {
-            type: 'tool_calls',
-            toolCalls,
-            assistantMessage: acc.text,
-            reasoningContent: acc.reasoningContent,
-            usage: acc.usage,
-          };
-        }
-      }
-
-      const firstDelta = textDeltaFromParsed(parsed);
-      // 只有非空正文分片才提交文本分支：思考模型的 reasoning 总是先于 content /
-      // tool_calls 到达，若凭 reasoning 就提交，随后的 tool_calls 会被 continueTextStream
-      // 当成"文本后又触发工具"的混合响应；而搜索引用的引用分片 content
-      // 为空字符串，若据其提交，随后的 tool_calls 会全部挂进 lateToolCalls 被调用方丢弃，
-      // 最终误报"返回了空内容"。
-      if (firstDelta) {
-        const result: Extract<ChatCompletionResult, { type: 'text' }> = {
-          type: 'text',
-          stream: undefined as unknown as AsyncGenerator<StreamChunk, void, unknown>,
-          reasoningContent: acc.reasoningContent,
-          usage: acc.usage,
-          citations: acc.citations,
-        };
-        result.stream = continueTextStream(state, acc, result, firstDelta);
-        return result;
-      }
-    }
-  } catch (error) {
-    await closeReaderState(state);
-    throw error;
-  }
-}
-
-// ---------------------------------------------------------------------------
-// 对话标题生成（后台静默调用）
-// ---------------------------------------------------------------------------
-
-export async function generateConversationTitle(
-  messages: { role: string; content: string }[],
-  titleModel: ModelConfig
-): Promise<string | null> {
-  const endpoint = getApiEndpoint(titleModel);
-  const url = `${endpoint.replace(/\/$/, '')}/chat/completions`;
-  const headers = buildHeaders(titleModel);
-
-  const promptMessages: ChatMessage[] = [
-    {
-      role: 'system',
-      content:
-        '你是一个对话标题生成助手。请根据对话内容生成一个简洁的中文标题（不超过15个字）。只输出标题文本，不要加引号，不要有任何解释。',
-    },
-    ...messages
-      .filter((m) => m.role === 'user' || m.role === 'assistant')
-      .slice(-6)
-      .map((m) => ({
-        role: m.role as 'user' | 'assistant',
-        content: m.content.slice(0, 500),
-      })),
-    {
-      role: 'user',
-      content: '请为以上对话生成一个简洁的中文标题（不超过15个字）：',
-    },
-  ];
-
-  const body = {
-    model: titleModel.model_id,
-    messages: promptMessages,
-    stream: false,
-    temperature: Math.min(titleModel.temperature, 0.5),
-    max_tokens: 40,
-    top_p: titleModel.top_p,
-  };
-
-  const response = await fetch(url, {
-    method: 'POST',
-    headers,
-    body: JSON.stringify(body),
-  });
-
-  if (!response.ok) {
-    let errorText = '';
-    try {
-      const errorJson = await response.json();
-      errorText = errorJson.error?.message || JSON.stringify(errorJson);
-    } catch {
-      errorText = await response.text();
-    }
-    throw new Error(`API 请求失败 (${response.status}): ${errorText || response.statusText}`);
-  }
-
-  const data = await response.json();
-
-  const title =
-    data.choices?.[0]?.message?.content?.trim() ||
-    data.choices?.[0]?.text?.trim() ||
-    '';
-
-  return cleanTitleText(title);
-}
-
-// ---------------------------------------------------------------------------
-// 图片描述（非流式，用 vision 模型解析图片内容为文本）
-// ---------------------------------------------------------------------------
-
-/**
- * 使用指定的 vision 模型描述图片内容。
- * 非流式调用，返回纯文本描述。
- *
- * @param imageDataUrl 图片的 data URL（base64 编码）
- * @param visionModel 支持 vision 的模型配置
- * @returns 图片的文字描述，失败时返回 null
- */
-export async function describeImage(
-  imageDataUrl: string,
-  visionModel: ModelConfig
-): Promise<string | null> {
-  const endpoint = getApiEndpoint(visionModel);
-  const url = `${endpoint.replace(/\/$/, '')}/chat/completions`;
-  const headers = buildHeaders(visionModel);
-
-  const messages: ChatMessage[] = [
-    {
-      role: 'user',
-      content: [
-        { type: 'text', text: '请详细描述这张图片的内容。包括图片中的文字、场景、人物、物体等关键信息。用中文回复。' },
-        { type: 'image_url', image_url: { url: imageDataUrl } },
-      ],
-    },
-  ];
-
-  const body = {
-    model: visionModel.model_id,
-    messages,
-    stream: false,
-    temperature: 0.3,
-    max_tokens: 1024,
-  };
-
-  const response = await fetch(url, {
-    method: 'POST',
-    headers,
-    body: JSON.stringify(body),
-  });
-
-  if (!response.ok) {
-    let errorText = '';
-    try {
-      const errorJson = await response.json();
-      errorText = errorJson.error?.message || JSON.stringify(errorJson);
-    } catch {
-      errorText = await response.text();
-    }
-    throw new Error(`图片描述 API 请求失败 (${response.status}): ${errorText || response.statusText}`);
-  }
-
-  const data = await response.json();
-  const description =
-    data.choices?.[0]?.message?.content?.trim() ||
-    data.choices?.[0]?.text?.trim() ||
-    null;
-
-  return description;
 }

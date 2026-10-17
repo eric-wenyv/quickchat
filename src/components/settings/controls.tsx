@@ -17,7 +17,7 @@ interface RowProps {
 }
 
 /** 行式控件：左侧标题，右侧控制元件 */
-export const Row: React.FC<RowProps> = ({ title, desc, children }) => (
+export const Row: React.FC<RowProps> = ({ title, children }) => (
   <div className="flex items-center justify-between gap-6 px-4 py-3.5">
     <div className="min-w-0 flex-1">
       <h3 className="text-sm font-semibold text-linear-text-primary">{title}</h3>

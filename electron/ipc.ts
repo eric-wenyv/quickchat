@@ -3,7 +3,8 @@
 // =============================================================================
 // 前端统一经 preload 桥 `window.__QC_BRIDGE__.invoke(cmd, args)` 调用，
 // 本模块按 cmd 路由到 handler 表。命令命名约定：
-//   sql:*        SQLite
+//   db:*         SQLite 数据访问（语义命令，SQL 只在主进程，见 db-service.ts）
+//   ai:*         AI 管线（对话流、标题、图片描述、思考档位，见 ai.ts / chat.ts）
 //   window:*     窗口控制
 //   clipboard:*  剪贴板
 //   opener:*     外部打开
@@ -13,9 +14,11 @@
 
 import { BrowserWindow, clipboard, globalShortcut, ipcMain, shell } from "electron";
 
-import { getDb, toLastInsertId } from "./db.js";
 import { fetchUrl, parseDocument, searchWeb } from "./commands.js";
 import * as skills from "./skills.js";
+import * as dbs from "./db-service.js";
+import { describeImage, fetchModelThinkingEfforts, generateConversationTitle } from "./ai.js";
+import { runChatLoop, type ChatLoopOutcome } from "./chat.js";
 
 type InvokeArgs = Record<string, unknown> | undefined;
 
@@ -39,33 +42,84 @@ export function sendEventTo(window: BrowserWindow | null, name: string, payload?
 }
 
 // ---------------------------------------------------------------------------
-// SQLite
+// SQLite（语义命令；SQL 集中在 db-service.ts，不再暴露裸 sql:*）
 // ---------------------------------------------------------------------------
 
-function readParams(args: InvokeArgs): unknown[] {
-  return Array.isArray(args?.params) ? (args.params as unknown[]) : [];
-}
+handle("db:init", () => { dbs.initDatabase(); return null; });
+handle("db:maintenance", () => { dbs.runDatabaseMaintenance(); return null; });
 
-handle("sql:execute", (args) => {
-  const sql = String(args?.sql ?? "");
-  const params = readParams(args);
-  const database = getDb();
+handle("db:get_conversations", (args) => dbs.getConversations(Number(args?.limit ?? 100), Number(args?.offset ?? 0)));
+handle("db:search_conversations", (args) => dbs.searchConversations(String(args?.query ?? ""), Number(args?.limit ?? 100), Number(args?.offset ?? 0)));
+handle("db:get_conversation", (args) => dbs.getConversation(String(args?.id ?? "")));
+handle("db:create_conversation", (args) => { dbs.createConversation(args?.conv as dbs.Conversation); return null; });
+handle("db:update_conversation", (args) => { dbs.updateConversation(String(args?.id ?? ""), (args?.updates ?? {}) as never); return null; });
+handle("db:delete_conversation", (args) => { dbs.deleteConversation(String(args?.id ?? "")); return null; });
+
+handle("db:get_messages", (args) => dbs.getMessages(String(args?.conversationId ?? ""), Number(args?.limit ?? 200), (args?.beforeTimestamp ?? null) as number | null));
+handle("db:save_message", (args) => { dbs.saveMessage(args?.msg as dbs.Message); return null; });
+handle("db:update_message", (args) => { dbs.updateMessage(String(args?.id ?? ""), (args?.updates ?? {}) as never); return null; });
+handle("db:delete_message", (args) => { dbs.deleteMessage(String(args?.id ?? "")); return null; });
+handle("db:search_messages", (args) => dbs.searchMessages(String(args?.query ?? ""), (args?.conversationId ?? null) as string | null, Number(args?.limit ?? 50), Number(args?.offset ?? 0)));
+
+handle("db:get_model_configs", () => dbs.getModelConfigs());
+handle("db:save_model_config", (args) => { dbs.saveModelConfig(args?.config as dbs.ModelConfig); return null; });
+handle("db:update_model_config", (args) => { dbs.updateModelConfig(String(args?.id ?? ""), (args?.updates ?? {}) as never); return null; });
+handle("db:delete_model_config", (args) => { dbs.deleteModelConfig(String(args?.id ?? "")); return null; });
+
+handle("db:get_system_prompts", () => dbs.getSystemPrompts());
+handle("db:save_system_prompt", (args) => { dbs.saveSystemPrompt(args?.prompt as dbs.SystemPrompt); return null; });
+handle("db:delete_system_prompt", (args) => { dbs.deleteSystemPrompt(String(args?.id ?? "")); return null; });
+
+handle("db:get_thinking_efforts_cache", () => dbs.getThinkingEffortsCache());
+handle("db:save_thinking_efforts_cache", (args) => { dbs.saveThinkingEffortsCache(String(args?.modelKey ?? ""), args?.efforts as dbs.ThinkingEfforts); return null; });
+
+handle("db:get_mermaid_svg", (args) => dbs.getMermaidSvgCache(String(args?.cacheKey ?? "")));
+handle("db:set_mermaid_svg", (args) => { dbs.setMermaidSvgCache(String(args?.cacheKey ?? ""), String(args?.svg ?? "")); return null; });
+
+// ---------------------------------------------------------------------------
+// AI 管线（流式对话经 qc:event:ai:stream 推送增量，invoke 返回最终结果）
+// ---------------------------------------------------------------------------
+
+const chatAbortControllers = new Map<string, AbortController>();
+
+handle("ai:chat", async (args, event, getMainWindow) => {
+  const requestId = String(args?.requestId ?? "");
+  const win = targetWindow(event, getMainWindow);
+  const abortController = new AbortController();
+  chatAbortControllers.set(requestId, abortController);
   try {
-    const result = database.prepare(sql).run(...params);
-    return { rowsAffected: result.changes, lastInsertId: toLastInsertId(result.lastInsertRowid) };
-  } catch (error) {
-    if (params.length === 0 && error instanceof Error && /one statement/i.test(error.message)) {
-      database.exec(sql);
-      return { rowsAffected: 0, lastInsertId: 0 };
-    }
-    throw error;
+    const outcome: ChatLoopOutcome = await runChatLoop(
+      {
+        model: args?.model as never,
+        messages: (args?.messages ?? []) as never,
+        thinkingLevel: (args?.thinkingLevel ?? null) as string | null,
+        signal: abortController.signal,
+      },
+      (streamEvent) => {
+        sendEventTo(win, "ai:stream", { requestId, ...streamEvent });
+      },
+    );
+    return outcome;
+  } finally {
+    chatAbortControllers.delete(requestId);
   }
 });
 
-handle("sql:select", (args) => {
-  const sql = String(args?.sql ?? "");
-  const params = readParams(args);
-  return getDb().prepare(sql).all(...params);
+handle("ai:abort", (args) => {
+  chatAbortControllers.get(String(args?.requestId ?? ""))?.abort();
+  return null;
+});
+
+handle("ai:generate_title", (args) => {
+  return generateConversationTitle((args?.messages ?? []) as never, args?.model as never);
+});
+
+handle("ai:describe_image", (args) => {
+  return describeImage(String(args?.imageDataUrl ?? ""), args?.model as never);
+});
+
+handle("ai:thinking_efforts", (args) => {
+  return fetchModelThinkingEfforts(args?.model as never);
 });
 
 // ---------------------------------------------------------------------------

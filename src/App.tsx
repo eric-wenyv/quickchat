@@ -25,13 +25,11 @@ import {
   saveThinkingEffortsCache,
   runDatabaseMaintenance,
 } from "./services/db";
-import { appendCitationList, buildSkillCatalogPrompt, chatCompletion, describeImage, fetchModelThinkingEfforts, generateConversationTitle, generateFallbackConversationTitle, isOpenRouterModel, isPlaceholderConversationTitle, READ_URL_TOOL, ReasoningEffortError, thinkingEffortsKey, USE_SKILL_TOOL, WEB_SEARCH_TOOL } from "./services/ai";
-import type { ChatMessage, ChatContentPart, ToolDefinition, ToolCall } from "./services/ai";
+import { abortChat, describeImage, fetchModelThinkingEfforts, generateConversationTitle, generateFallbackConversationTitle, isOpenRouterModel, isPlaceholderConversationTitle, runChat, thinkingEffortsKey } from "./services/ai";
+import type { ChatMessage, ChatContentPart } from "./services/ai";
 import { parseAttachments, getLanguageFromFilename } from "./utils/file";
 import { parseImageDescriptions, serializeImageDescriptions, type ImageDescription } from "./utils/image-description";
-import { fetchUrlContent, formatUrlContent } from "./services/url";
-import { searchWeb, formatSearchResults } from "./services/search";
-import { ensureBuiltinSkill, getAutoInvocableSkills, getSkillsSnapshot, readSkill, refreshSkills, type SkillMeta } from "./services/skills";
+import { ensureBuiltinSkill, getSkillsSnapshot, readSkill, refreshSkills, type SkillMeta } from "./services/skills";
 import {
   getConfiguredGlobalShortcut,
   initializeGlobalShortcut,
@@ -85,6 +83,13 @@ const BUILT_IN_ARTIFACT_PROMPT = [
 
 const CONVERSATION_LIST_LIMIT = 100;
 const MESSAGE_PAGE_SIZE = 120;
+
+/** 工具名 → UI 展示标签（工具循环在主进程，事件只带工具名） */
+const TOOL_LABELS: Record<string, string> = {
+  use_skill: '加载 Skill',
+  read_url: '读取网页',
+  web_search: '联网搜索',
+};
 // 打开会话时首屏只取最近这么多条：消息正文可能内嵌 base64 图片，
 // 一次拉取整页会放大 SQLite IPC 序列化开销。首屏快速渲染后由后台任务补齐到 MESSAGE_PAGE_SIZE。
 const INITIAL_MESSAGE_PAGE_SIZE = 30;
@@ -165,7 +170,8 @@ export default function App() {
   const pendingReasoningRef = useRef<Record<UUID, string>>({});
   const pendingUpdateThreadsRef = useRef<Record<UUID, UUID>>({});
   const rafRef = useRef<number | null>(null);
-  const abortControllersRef = useRef<Record<UUID, AbortController>>({});
+  // 进行中的主进程对话循环：convId → requestId（中断时发给 ai:abort）
+  const chatRequestIdRef = useRef<Record<UUID, string>>({});
   const activeConversationIdRef = useRef<UUID | null>(null);
   const messagesRef = useRef<Message[]>([]);
   const messagesByConversationRef = useRef<Record<UUID, Message[]>>({});
@@ -661,8 +667,11 @@ export default function App() {
   const handleDeleteConversation = async (id: UUID) => {
     try {
       await dbDeleteConversation(id);
-      abortControllersRef.current[id]?.abort();
-      delete abortControllersRef.current[id];
+      const pendingRequestId = chatRequestIdRef.current[id];
+      if (pendingRequestId) {
+        delete chatRequestIdRef.current[id];
+        void abortChat(pendingRequestId).catch(() => {});
+      }
       delete messagesByConversationRef.current[id];
       const convs = await getConversations(CONVERSATION_LIST_LIMIT, 0);
       setConversations(limitConversationList(convs));
@@ -1123,27 +1132,12 @@ export default function App() {
       }
     }
 
-    // 构建对话历史
-    let chatHistory = buildChatHistory(threadConversation, [...previousThreadMessages, { ...userMsg, content: effectiveUserContent }], supportsVision);
+    // 构建对话历史。Skill 目录注入、工具定义与工具循环都在主进程
+    // （electron/chat.ts），前端只发送历史并消费流事件。
+    const chatHistory = buildChatHistory(threadConversation, [...previousThreadMessages, { ...userMsg, content: effectiveUserContent }], supportsVision);
 
-    // Skill：向系统提示注入 AI 可自主调用的目录（排除 disable-model-invocation），
-    // 模型通过 use_skill 工具按需加载完整指引。
-    // 发送前重扫一遍：用户可能在应用外手改了 SKILL.md（增删 disable-model-invocation 等），
-    // 使改动无需重启即可在本条消息生效；刷新失败则沿用现有快照
-    try { await refreshSkills(); } catch { /* keep snapshot */ }
-    const autoSkills = getAutoInvocableSkills();
-    if (autoSkills.length > 0) {
-      chatHistory.splice(1, 0, { role: 'system', content: buildSkillCatalogPrompt(autoSkills) });
-    }
-    const functionTools: ToolDefinition[] = [];
-    // read_url 不依赖搜索开关，始终可用（模型需要时自主抓取网页）
-    functionTools.push(READ_URL_TOOL);
-    // web_search 由 Tavily 提供，模型需要实时信息时自主搜索
-    functionTools.push(WEB_SEARCH_TOOL);
-    if (autoSkills.length > 0) functionTools.push(USE_SKILL_TOOL);
-    const tools = functionTools.length > 0 ? functionTools : undefined;
-    const abortController = new AbortController();
-    abortControllersRef.current[convId] = abortController;
+    const requestId = crypto.randomUUID();
+    chatRequestIdRef.current[convId] = requestId;
     const clearPendingAssistantUpdate = () => {
       delete pendingUpdatesRef.current[aiMsgId];
       delete pendingReasoningRef.current[aiMsgId];
@@ -1154,269 +1148,158 @@ export default function App() {
       }
     };
 
-    // 提到 try 外：中断（AbortError）时 catch 分支需要用已累积的正文兜底，
+    // 中断（aborted）时用主进程返回的已累积正文兜底，
     // 避免节流间隔内未刷入 UI/DB 的尾部内容丢失
     let accumulated = '';
-    // 当前轮次是否已流出可见正文：每个工具轮次开始时重置，本轮首个可见正文分片
-    // 到达时才清空 activity（结束本轮思考展示）。跨轮次判定必须按轮重置——
-    // 上一轮的前言正文不能阻止新一轮思考区块进入 live 状态
+    // 当前轮次是否已流出可见正文：每个工具轮次开始时重置（onRoundReset），本轮
+    // 首个可见正文分片到达时才清空 activity（结束本轮思考展示）。跨轮次判定必须
+    // 按轮重置——上一轮的前言正文不能阻止新一轮思考区块进入 live 状态
     let currentRoundTextStarted = false;
-    // 思考内容追踪：跨工具轮次累计（每轮 chatCompletion 的 reasoning 分片都经
-    // onReasoningDelta 汇入），耗时取"首个思考分片 → 首个正文分片"的间隔
+    // 思考内容追踪：跨工具轮次累计（主进程每轮的 reasoning 分片都经 onReasoning
+    // 汇入），耗时取"首个思考分片 → 首个正文分片"的间隔
     let accumulatedReasoning = '';
     let reasoningStartAt: number | null = null;
     let thinkingMs: number | null = null;
-    const handleReasoningDelta = (delta: string) => {
-      if (!delta) return;
-      if (reasoningStartAt === null) reasoningStartAt = performance.now();
-      accumulatedReasoning += delta;
-      pendingReasoningRef.current[aiMsgId] = accumulatedReasoning;
-      pendingUpdateThreadsRef.current[aiMsgId] = convId;
-      if (rafRef.current === null) {
-        rafRef.current = window.requestAnimationFrame(flushPendingStreamUpdates);
-      }
-    };
     // 思考结束兜底：正文从未流出（空回复/中断）时按"首个思考分片 → 当前"计耗时
     const resolveThinkingMs = (): number | null =>
       thinkingMs ?? (reasoningStartAt !== null ? performance.now() - reasoningStartAt : null);
 
     try {
-      let result = await chatCompletion({
+      const outcome = await runChat(requestId, {
         model: activeModel,
         messages: chatHistory,
-        tools,
         thinkingLevel: effectiveThinkingLevel,
-        signal: abortController.signal,
-        onReasoningDelta: handleReasoningDelta,
-      });
-
-      const TOOL_LABELS: Record<string, string> = {
-        use_skill: '加载 Skill',
-        read_url: '读取网页',
-        web_search: '联网搜索',
-      };
-
-      // 执行一轮工具调用并把结果写回 chatHistory
-      const runToolCalls = async (calls: ToolCall[]) => {
-        const toolNames = calls
-          .map(tc => TOOL_LABELS[tc.function.name] ?? tc.function.name)
-          .join(', ');
-        updateThreadMessages(convId, prev => prev.map(msg =>
-          msg.id === aiMsgId
-            ? { ...msg, activity: { kind: 'tool' as const, label: `正在调用工具: ${toolNames}...` }, status: 'streaming' as const }
-            : msg
-        ));
-
-        for (const call of calls) {
-          let toolResult = '';
-          if (call.function.name === 'read_url') {
-            try {
-              const args = JSON.parse(call.function.arguments || '{}');
-              const url = String(args.url || '').trim();
-              if (!url) {
-                toolResult = '读取网页失败: 未提供有效的 url 参数';
-              } else {
-                const page = await fetchUrlContent(url);
-                toolResult = formatUrlContent(page);
-              }
-            } catch (e: any) {
-              toolResult = `读取网页失败: ${e.message ?? e}`;
-            }
-          } else if (call.function.name === 'web_search') {
-            try {
-              const args = JSON.parse(call.function.arguments || '{}');
-              const query = String(args.query || '').trim();
-              if (!query) {
-                toolResult = '搜索失败: 未提供有效的 query 参数';
-              } else {
-                const results = await searchWeb(query);
-                toolResult = formatSearchResults(query, results);
-              }
-            } catch (e: any) {
-              toolResult = `搜索失败: ${e.message ?? e}`;
-            }
-          } else if (call.function.name === 'use_skill') {
-            try {
-              const args = JSON.parse(call.function.arguments || '{}');
-              const requested = String(args.name || '').trim();
-              const skill = autoSkills.find(s => s.id === requested || s.name === requested);
-              if (skill) {
-                const skillMarkdown = await readSkill(skill.id);
-                toolResult = `# Skill: ${skill.name}\n\n${skillMarkdown}\n\n---\n以上是 Skill「${skill.name}」的完整指引，请遵循它回应用户的请求。`;
-              } else {
-                toolResult = `Skill "${requested}" 不存在或未允许自主调用。可调用的 Skill: ${autoSkills.map(s => s.id).join(', ') || '(无)'}`;
-              }
-            } catch (e: any) {
-              toolResult = `加载 Skill 失败: ${e.message ?? e}`;
-            }
-          } else {
-            toolResult = `未知工具: ${call.function.name}`;
+      }, {
+        onReasoning: (delta, accReasoning) => {
+          if (!delta) return;
+          if (reasoningStartAt === null) reasoningStartAt = performance.now();
+          accumulatedReasoning = accReasoning;
+          pendingReasoningRef.current[aiMsgId] = accumulatedReasoning;
+          pendingUpdateThreadsRef.current[aiMsgId] = convId;
+          if (rafRef.current === null) {
+            rafRef.current = window.requestAnimationFrame(flushPendingStreamUpdates);
           }
-
-          chatHistory.push({
-            role: 'tool',
-            content: toolResult,
-            tool_call_id: call.id,
-          });
-        }
-      };
-
-      let lastUsage: { prompt_tokens: number; completion_tokens: number; total_tokens: number } | null = null;
-
-      // 空正文自动补发一次：上游瞬时返回空 completion、或思考模型把 max_tokens 全部
-      // 耗在推理阶段（finish_reason=length），都表现为"流正常结束但没有正文"——
-      // 这与 API Key 失效不同（那种会在 HTTP 检查处抛"API 请求失败"）。length 截断的
-      // 补发放开 max_tokens 上限；工具轮次的 assistant/tool 历史已在 chatHistory 中，
-      // 补发等价于带着工具结果再要一次正式回答。
-      let generationAttempt = 0;
-      while (true) {
-        generationAttempt++;
-
-        while (true) {
-          // 纯工具调用响应：正文尚未流出，直接进入工具循环
-          if (result.type === 'tool_calls') {
-            chatHistory.push({
-              role: 'assistant',
-              content: result.assistantMessage || '',
-              tool_calls: result.toolCalls,
-              reasoning_content: result.reasoningContent,
-            });
-
-            await runToolCalls(result.toolCalls);
-
-            currentRoundTextStarted = false;
-            updateThreadMessages(convId, prev => prev.map(msg =>
-              msg.id === aiMsgId
-                ? { ...msg, activity: { kind: 'thinking' as const, label: '思考中...' }, status: 'streaming' as const }
-                : msg
-            ));
-
-            result = await chatCompletion({
-              model: activeModel,
-              messages: chatHistory,
-              tools,
-              thinkingLevel: effectiveThinkingLevel,
-              signal: abortController.signal,
-              onReasoningDelta: handleReasoningDelta,
-            });
-            continue;
-          }
-
-          // 流式显示文本回复（增量累加：混合响应跨多轮时正文需要拼接）
-          for await (const chunk of result.stream) {
-            accumulated += chunk.delta;
-            if (chunk.delta) {
-              // 首个正文分片到达即思考阶段结束：固化耗时供 ThinkingBlock 展示
-              if (thinkingMs === null && reasoningStartAt !== null) {
-                thinkingMs = performance.now() - reasoningStartAt;
-                updateThreadMessages(convId, prev => prev.map(msg =>
-                  msg.id === aiMsgId ? { ...msg, thinking_ms: thinkingMs } : msg
-                ));
-              }
-              // 本轮首个可见正文分片到达：结束本轮思考展示（清空 activity，
-              // ThinkingBlock 由 live 转为完成态）。用 trim 后的累计正文判定，
-              // 纯空白分片（如引用占位）不提前结束思考展示
-              if (!currentRoundTextStarted && accumulated.trim()) {
-                currentRoundTextStarted = true;
-                updateThreadMessages(convId, prev => prev.map(msg =>
-                  msg.id === aiMsgId ? { ...msg, activity: null } : msg
-                ));
-              }
+        },
+        onText: (delta, accText) => {
+          accumulated = accText;
+          if (delta) {
+            // 首个正文分片到达即思考阶段结束：固化耗时供 ThinkingBlock 展示
+            if (thinkingMs === null && reasoningStartAt !== null) {
+              thinkingMs = performance.now() - reasoningStartAt;
+              updateThreadMessages(convId, prev => prev.map(msg =>
+                msg.id === aiMsgId ? { ...msg, thinking_ms: thinkingMs } : msg
+              ));
             }
-            pendingUpdatesRef.current[aiMsgId] = accumulated;
-            pendingUpdateThreadsRef.current[aiMsgId] = convId;
-            if (chunk.usage) {
-              lastUsage = chunk.usage;
-            }
-
-            if (rafRef.current === null) {
-              rafRef.current = window.requestAnimationFrame(flushPendingStreamUpdates);
+            // 本轮首个可见正文分片到达：结束本轮思考展示（清空 activity，
+            // ThinkingBlock 由 live 转为完成态）。用 trim 后的累计正文判定，
+            // 纯空白分片（如引用占位）不提前结束思考展示
+            if (!currentRoundTextStarted && accumulated.trim()) {
+              currentRoundTextStarted = true;
+              updateThreadMessages(convId, prev => prev.map(msg =>
+                msg.id === aiMsgId ? { ...msg, activity: null } : msg
+              ));
             }
           }
-
-          // 混合响应：正文流出后模型又触发了工具调用（GLM 等思考模型会先输出一段
-          // 前言再调工具）。把已流出的正文连同工具调用写回历史并继续工具循环，
-          // 否则工具调用会被静默丢弃、空回复被误报为"返回了空内容"
-          if (result.lateToolCalls && result.lateToolCalls.length > 0) {
-            chatHistory.push({
-              role: 'assistant',
-              content: accumulated,
-              tool_calls: result.lateToolCalls,
-              reasoning_content: result.reasoningContent,
-            });
-
-            await runToolCalls(result.lateToolCalls);
-
-            currentRoundTextStarted = false;
-            updateThreadMessages(convId, prev => prev.map(msg =>
-              msg.id === aiMsgId
-                ? { ...msg, activity: { kind: 'thinking' as const, label: '思考中...' }, status: 'streaming' as const }
-                : msg
-            ));
-
-            result = await chatCompletion({
-              model: activeModel,
-              messages: chatHistory,
-              tools,
-              thinkingLevel: effectiveThinkingLevel,
-              signal: abortController.signal,
-              onReasoningDelta: handleReasoningDelta,
-            });
-            continue;
+          pendingUpdatesRef.current[aiMsgId] = accumulated;
+          pendingUpdateThreadsRef.current[aiMsgId] = convId;
+          if (rafRef.current === null) {
+            rafRef.current = window.requestAnimationFrame(flushPendingStreamUpdates);
           }
-          break;
-        }
-
-        if (accumulated.trim() || generationAttempt > 1) break;
-
-        accumulated = '';
-        currentRoundTextStarted = false;
-        result = await chatCompletion({
-          model: activeModel,
-          messages: chatHistory,
-          tools,
-          thinkingLevel: effectiveThinkingLevel,
-          signal: abortController.signal,
-          maxTokens: result.type === 'text' && result.finishReason === 'length' ? null : undefined,
-          onReasoningDelta: handleReasoningDelta,
-        });
-      }
-
-      if (!accumulated.trim()) {
-        // 补发后仍为空：报真实原因而不是误导性的"检查 API Key"，
-        // 并把已生成的思考内容落库，避免排障线索直接丢失
-        const finishReason = result.type === 'text' ? (result.finishReason ?? null) : null;
-        const reasoning = accumulatedReasoning || (result.type === 'text' ? result.reasoningContent : '');
-        const completionTokens = lastUsage?.completion_tokens ?? result.usage?.completion_tokens ?? null;
-        if (reasoning.trim()) {
-          const emptyReplyThinkingMs = resolveThinkingMs();
-          await updateMessage(aiMsgId, { reasoning_content: reasoning, thinking_ms: emptyReplyThinkingMs, status: 'error' });
+        },
+        onToolStart: (names) => {
+          const toolNames = names.map(n => TOOL_LABELS[n] ?? n).join(', ');
           updateThreadMessages(convId, prev => prev.map(msg =>
             msg.id === aiMsgId
-              ? { ...msg, reasoning_content: reasoning, thinking_ms: emptyReplyThinkingMs, status: 'error' as const, activity: null }
+              ? { ...msg, activity: { kind: 'tool' as const, label: `正在调用工具: ${toolNames}...` }, status: 'streaming' as const }
               : msg
           ));
-        }
-        let hint: string;
-        if (finishReason === 'length') {
-          hint = '输出被长度截断（思考阶段耗尽了输出上限，不设上限补发后仍为空），多为模型自身的最大输出限制，请重试或换用输出上限更高的模型。';
-        } else if (reasoning.trim()) {
-          hint = `模型只输出了思考内容（${reasoning.length} 字符）而未生成正文，多为上游瞬时故障，请重试。`;
-        } else if (completionTokens === 0) {
-          hint = '上游返回了空回复（completion_tokens=0），多为瞬时故障，请重试。';
-        } else {
-          hint = `模型未返回任何正文（finish_reason=${finishReason ?? '未知'}，completion_tokens=${completionTokens ?? '未知'}）。`;
-        }
-        throw new Error(`模型 ${activeModel.model_id} 返回了空内容：${hint}`);
+        },
+        onRoundReset: () => {
+          currentRoundTextStarted = false;
+          updateThreadMessages(convId, prev => prev.map(msg =>
+            msg.id === aiMsgId
+              ? { ...msg, activity: { kind: 'thinking' as const, label: '思考中...' }, status: 'streaming' as const }
+              : msg
+          ));
+        },
+      });
+
+      if (!outcome.ok && outcome.errorCode === 'aborted') {
+        // 用户主动中断，保留当前已生成内容并标记完成。
+        // 流式刷入有节流间隔，内存里的 msg.content 可能落后于主进程累计正文，
+        // 用 outcome.content 兜底并持久化，避免中断丢失未刷出的尾部（重启后为空）。
+        clearPendingAssistantUpdate();
+        const abortReasoning = outcome.reasoningContent || accumulatedReasoning || null;
+        const abortThinkingMs = resolveThinkingMs();
+        const abortPatch = {
+          ...(outcome.content ? { content: outcome.content } : {}),
+          ...(abortReasoning !== null ? { reasoning_content: abortReasoning } : {}),
+          ...(abortThinkingMs !== null ? { thinking_ms: abortThinkingMs } : {}),
+        };
+        updateThreadMessages(convId, prev => prev.map(msg =>
+          msg.id === aiMsgId ? { ...msg, ...abortPatch, status: 'completed' as const, activity: null } : msg
+        ));
+        await updateMessage(aiMsgId, { ...abortPatch, status: 'completed' });
+        return;
       }
 
-      // 流式完成，更新最终状态
+      if (!outcome.ok && outcome.errorCode === 'reasoning_effort') {
+        clearPendingAssistantUpdate();
+        // 服务端不再支持所选思考强度：OpenRouter 模型强制重拉元数据、更新持久化缓存，
+        // 清掉会话里的失效选择，提示用户重新选择
+        console.error(outcome.errorMessage);
+        let refreshed: ThinkingEfforts | null = null;
+        try {
+          refreshed = await fetchModelThinkingEfforts(activeModel);
+        } catch (fetchErr) {
+          console.warn('重新获取思考强度元数据失败:', fetchErr);
+        }
+        if (refreshed) {
+          const key = thinkingEffortsKey(activeModel);
+          setThinkingEffortsCache(prev => ({ ...prev, [key]: refreshed! }));
+          saveThinkingEffortsCache(key, refreshed).catch(err => console.warn('持久化思考强度缓存失败:', err));
+        }
+        setActiveThinkingLevel(null);
+        try {
+          await dbUpdateConversation(convId, { thinking_level: null });
+          setActiveConversation(prev => prev?.id === convId ? { ...prev, thinking_level: null } : prev);
+        } catch (dbErr) {
+          console.error('清除失效思考强度失败:', dbErr);
+        }
+        updateThreadMessages(convId, prev => prev.map(msg => msg.id === aiMsgId ? { ...msg, status: 'error' as const, activity: null } : msg));
+        await updateMessage(aiMsgId, { status: 'error' });
+        const effortList = refreshed && refreshed.efforts.length > 0
+          ? `，当前支持: ${refreshed.efforts.join(' / ')}`
+          : '';
+        showToast('思考强度已变化', `模型 ${activeModel.model_id} 不再支持当前思考强度${effortList}，请重新选择`, 'error');
+        return;
+      }
+
+      if (!outcome.ok) {
+        // 空回复 / 上游错误：主进程已给出真实原因；已生成的思考内容一并落库，
+        // 便于排障与回看
+        clearPendingAssistantUpdate();
+        const errorReasoning = outcome.reasoningContent || accumulatedReasoning || null;
+        const errorThinkingMs = resolveThinkingMs();
+        const errorPatch = {
+          ...(errorReasoning !== null ? { reasoning_content: errorReasoning } : {}),
+          ...(errorThinkingMs !== null ? { thinking_ms: errorThinkingMs } : {}),
+        };
+        updateThreadMessages(convId, prev => prev.map(msg =>
+          msg.id === aiMsgId ? { ...msg, ...errorPatch, status: 'error' as const, activity: null } : msg
+        ));
+        await updateMessage(aiMsgId, { ...errorPatch, status: 'error' });
+        showToast('AI 流式错误', outcome.errorMessage ?? '未知错误', 'error');
+        return;
+      }
+
+      // 流式完成，更新最终状态（content 已在主进程附好引用列表）
       clearPendingAssistantUpdate();
-      const tokenCount = lastUsage?.total_tokens ?? result.usage?.total_tokens ?? null;
-      const inputTokens = lastUsage?.prompt_tokens ?? result.usage?.prompt_tokens ?? null;
-      const outputTokens = lastUsage?.completion_tokens ?? result.usage?.completion_tokens ?? null;
-      const finalContent = appendCitationList(accumulated, result.citations);
-      const finalReasoning = accumulatedReasoning || (result.type === 'text' ? result.reasoningContent : '') || null;
+      const tokenCount = outcome.usage?.total_tokens ?? null;
+      const inputTokens = outcome.usage?.prompt_tokens ?? null;
+      const outputTokens = outcome.usage?.completion_tokens ?? null;
+      const finalContent = outcome.content;
+      const finalReasoning = outcome.reasoningContent || accumulatedReasoning || null;
       const finalThinkingMs = resolveThinkingMs();
       const finalMsg: Message = {
         ...aiMsg,
@@ -1483,78 +1366,32 @@ export default function App() {
 
     } catch (e: any) {
       clearPendingAssistantUpdate();
-      if (e.name === 'AbortError' || e.message?.toLowerCase()?.includes('abort')) {
-        // 用户主动中断，保留当前已生成内容并标记完成。
-        // 流式刷入有节流间隔，内存里的 msg.content 可能落后于 accumulated，
-        // 用 accumulated 兜底并持久化，避免中断丢失未刷出的尾部（重启后为空）。
-        const abortContent = accumulated || undefined;
-        const abortReasoning = accumulatedReasoning || null;
-        const abortThinkingMs = resolveThinkingMs();
-        const abortPatch = {
-          ...(abortContent !== undefined ? { content: abortContent } : {}),
-          ...(abortReasoning !== null ? { reasoning_content: abortReasoning } : {}),
-          ...(abortThinkingMs !== null ? { thinking_ms: abortThinkingMs } : {}),
-        };
-        updateThreadMessages(convId, prev => prev.map(msg =>
-          msg.id === aiMsgId ? { ...msg, ...abortPatch, status: 'completed' as const, activity: null } : msg
-        ));
-        await updateMessage(aiMsgId, { ...abortPatch, status: 'completed' });
-      } else if (e instanceof ReasoningEffortError) {
-        clearPendingAssistantUpdate();
-        console.error(e);
-        // 服务端不再支持所选思考强度：OpenRouter 模型强制重拉元数据、更新持久化缓存，
-        // 清掉会话里的失效选择，提示用户重新选择
-        let refreshed: ThinkingEfforts | null = null;
-        try {
-          refreshed = await fetchModelThinkingEfforts(activeModel);
-        } catch (fetchErr) {
-          console.warn('重新获取思考强度元数据失败:', fetchErr);
-        }
-        if (refreshed) {
-          const key = thinkingEffortsKey(activeModel);
-          setThinkingEffortsCache(prev => ({ ...prev, [key]: refreshed! }));
-          saveThinkingEffortsCache(key, refreshed).catch(err => console.warn('持久化思考强度缓存失败:', err));
-        }
-        setActiveThinkingLevel(null);
-        try {
-          await dbUpdateConversation(convId, { thinking_level: null });
-          setActiveConversation(prev => prev?.id === convId ? { ...prev, thinking_level: null } : prev);
-        } catch (dbErr) {
-          console.error('清除失效思考强度失败:', dbErr);
-        }
-        updateThreadMessages(convId, prev => prev.map(msg => msg.id === aiMsgId ? { ...msg, status: 'error' as const, activity: null } : msg));
-        await updateMessage(aiMsgId, { status: 'error' });
-        const effortList = refreshed && refreshed.efforts.length > 0
-          ? `，当前支持: ${refreshed.efforts.join(' / ')}`
-          : '';
-        showToast('思考强度已变化', `模型 ${activeModel.model_id} 不再支持当前思考强度${effortList}，请重新选择`, 'error');
-      } else {
-        console.error(e);
-        showToast('AI 流式错误', e.toString(), 'error');
-        // 已生成的思考内容同样兜底落库，便于排障与回看
-        const errorReasoning = accumulatedReasoning || null;
-        const errorThinkingMs = resolveThinkingMs();
-        const errorPatch = {
-          ...(errorReasoning !== null ? { reasoning_content: errorReasoning } : {}),
-          ...(errorThinkingMs !== null ? { thinking_ms: errorThinkingMs } : {}),
-        };
-        updateThreadMessages(convId, prev => prev.map(msg =>
-          msg.id === aiMsgId ? { ...msg, ...errorPatch, status: 'error' as const, activity: null } : msg
-        ));
-        await updateMessage(aiMsgId, { ...errorPatch, status: 'error' });
-      }
+      console.error(e);
+      showToast('AI 流式错误', e.toString(), 'error');
+      // 已生成的思考内容同样兜底落库，便于排障与回看
+      const errorReasoning = accumulatedReasoning || null;
+      const errorThinkingMs = resolveThinkingMs();
+      const errorPatch = {
+        ...(errorReasoning !== null ? { reasoning_content: errorReasoning } : {}),
+        ...(errorThinkingMs !== null ? { thinking_ms: errorThinkingMs } : {}),
+      };
+      updateThreadMessages(convId, prev => prev.map(msg =>
+        msg.id === aiMsgId ? { ...msg, ...errorPatch, status: 'error' as const, activity: null } : msg
+      ));
+      await updateMessage(aiMsgId, { ...errorPatch, status: 'error' });
     } finally {
       setSendingByConversationId(prev => markThreadIdle(prev, convId));
       clearPendingAssistantUpdate();
-      delete abortControllersRef.current[convId];
+      delete chatRequestIdRef.current[convId];
     }
   };
 
   const handleStopGeneration = () => {
     const activeId = activeConversationIdRef.current;
-    if (activeId && abortControllersRef.current[activeId]) {
-      abortControllersRef.current[activeId].abort();
-      delete abortControllersRef.current[activeId];
+    const activeRequestId = activeId ? chatRequestIdRef.current[activeId] : undefined;
+    if (activeId && activeRequestId) {
+      delete chatRequestIdRef.current[activeId];
+      void abortChat(activeRequestId).catch(() => {});
     }
   };
 

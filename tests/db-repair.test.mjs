@@ -1,21 +1,39 @@
 import assert from 'node:assert/strict';
 import { readFile, writeFile, mkdir } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import test from 'node:test';
 import ts from 'typescript';
 
+function buildRoot() {
+  // 产物必须写在项目目录内（tests/.transpiled/…）：转译后的裸包名
+  // 要经项目 node_modules 解析，写到 os.tmpdir() 会解析失败。
+  return join(dirname(fileURLToPath(import.meta.url)), '.transpiled');
+}
+
+// 数据层已迁入 Electron 主进程（electron/db-service.ts，同步 better-sqlite3）。
+// 这里 stub 掉 ./db.js 的 getDb()，注入一个记录 SQL 调用的假连接。
 async function importDbService(fakeDb) {
-  const source = await readFile(new URL('../src/services/db.ts', import.meta.url), 'utf8');
+  const source = await readFile(new URL('../electron/db-service.ts', import.meta.url), 'utf8');
   const transformedSource = source.replace(
-    "import { invoke } from '@/services/bridge';",
-    'const invoke = globalThis.__quickChatDbTestInvoke;',
+    'import { getDb } from "./db.js";',
+    'const getDb = globalThis.__quickChatDbTestGetDb;',
   );
-  globalThis.__quickChatDbTestInvoke = async (cmd, args) => {
-    if (cmd === 'sql:execute') return fakeDb.execute(args.sql, args.params ?? []);
-    if (cmd === 'sql:select') return fakeDb.select(args.sql, args.params ?? []);
-    throw new Error(`unexpected invoke: ${cmd}`);
+  const connection = {
+    prepare(sql) {
+      return {
+        run: (...params) => {
+          fakeDb.execute(sql, params);
+          return { changes: 1, lastInsertRowid: 1 };
+        },
+        all: (...params) => fakeDb.select(sql, params),
+      };
+    },
+    exec(sql) {
+      fakeDb.execute(sql, []);
+    },
   };
+  globalThis.__quickChatDbTestGetDb = () => connection;
 
   const transformed = ts.transpileModule(transformedSource, {
     compilerOptions: {
@@ -25,9 +43,9 @@ async function importDbService(fakeDb) {
     },
   }).outputText;
 
-  const dir = join(tmpdir(), 'quick-chat-tests');
+  const dir = join(buildRoot(), `db-${Date.now()}-${Math.random().toString(36).slice(2)}`);
   await mkdir(dir, { recursive: true });
-  const modulePath = join(dir, `db-${Date.now()}-${Math.random().toString(36).slice(2)}.mjs`);
+  const modulePath = join(dir, 'db-service.mjs');
   await writeFile(modulePath, transformed);
   return import(`file:///${modulePath.replaceAll('\\', '/')}`);
 }
@@ -36,10 +54,10 @@ function normalizeSql(sql) {
   return sql.replace(/\s+/g, ' ').trim();
 }
 
-test('recognizes SQLite corruption errors returned by the sql bridge', async () => {
+test('recognizes SQLite corruption errors', async () => {
   const { isSqliteCorruptionError } = await importDbService({
-    execute: async () => undefined,
-    select: async () => [],
+    execute: () => undefined,
+    select: () => [],
   });
 
   assert.equal(
@@ -53,7 +71,7 @@ test('deleteConversation rebuilds message FTS indexes and retries after SQLite c
   const calls = [];
   let deleteAttempts = 0;
   const fakeDb = {
-    execute: async (sql, params = []) => {
+    execute: (sql, params = []) => {
       const normalized = normalizeSql(sql);
       calls.push({ sql: normalized, params });
       if (normalized === 'DELETE FROM conversations WHERE id = ?') {
@@ -64,7 +82,7 @@ test('deleteConversation rebuilds message FTS indexes and retries after SQLite c
       }
       return undefined;
     },
-    select: async () => [],
+    select: () => [],
   };
 
   const { deleteConversation } = await importDbService(fakeDb);
@@ -72,7 +90,7 @@ test('deleteConversation rebuilds message FTS indexes and retries after SQLite c
   const originalWarn = console.warn;
   console.warn = () => undefined;
   try {
-    await deleteConversation('conv-1');
+    deleteConversation('conv-1');
   } finally {
     console.warn = originalWarn;
   }
@@ -98,7 +116,7 @@ test('deleteConversation rebuilds message FTS indexes and retries after SQLite c
 test('deleteConversation does not rebuild indexes for unrelated delete errors', async () => {
   const calls = [];
   const fakeDb = {
-    execute: async (sql, params = []) => {
+    execute: (sql, params = []) => {
       const normalized = normalizeSql(sql);
       calls.push({ sql: normalized, params });
       if (normalized === 'DELETE FROM conversations WHERE id = ?') {
@@ -106,12 +124,12 @@ test('deleteConversation does not rebuild indexes for unrelated delete errors', 
       }
       return undefined;
     },
-    select: async () => [],
+    select: () => [],
   };
 
   const { deleteConversation } = await importDbService(fakeDb);
 
-  await assert.rejects(() => deleteConversation('conv-1'), /foreign key constraint failed/);
+  assert.throws(() => deleteConversation('conv-1'), /foreign key constraint failed/);
   assert.equal(calls.some((call) => call.sql.startsWith('DROP TRIGGER')), false);
   assert.equal(calls.some((call) => call.sql.startsWith('DROP TABLE')), false);
 });

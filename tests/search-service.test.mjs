@@ -1,29 +1,11 @@
 import assert from 'node:assert/strict';
-import { readFile, writeFile, mkdir } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
 import test from 'node:test';
-import ts from 'typescript';
 
+import { importElectronModule } from './lib/import-electron.mjs';
+
+// 搜索结果的归一化/格式化已迁入主进程（electron/commands.ts，与 search_web 同文件）
 async function importSearchService() {
-  const source = await readFile(new URL('../src/services/search.ts', import.meta.url), 'utf8');
-  const transformedSource = source.replace(
-    "import { invoke } from '@/services/bridge';",
-    "const invoke = async () => { throw new Error('invoke not stubbed'); };",
-  );
-  const transformed = ts.transpileModule(transformedSource, {
-    compilerOptions: {
-      module: ts.ModuleKind.ESNext,
-      target: ts.ScriptTarget.ES2022,
-      verbatimModuleSyntax: true,
-    },
-  }).outputText;
-
-  const dir = join(tmpdir(), 'quick-chat-tests');
-  await mkdir(dir, { recursive: true });
-  const modulePath = join(dir, `search-${Date.now()}-${Math.random().toString(36).slice(2)}.mjs`);
-  await writeFile(modulePath, transformed);
-  return import(`file:///${modulePath.replaceAll('\\', '/')}`);
+  return importElectronModule('commands');
 }
 
 test('normalizeTavilySearchResponse maps Tavily results into chat search results', async () => {

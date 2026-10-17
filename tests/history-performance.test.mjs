@@ -23,7 +23,8 @@ test('conversation history and message history are bounded at load time', async 
 });
 
 test('message pagination fetches the latest page and then older pages', async () => {
-  const db = await source('src/services/db.ts');
+  // SQL 已迁入主进程数据层（electron/db-service.ts）
+  const db = await source('electron/db-service.ts');
 
   assert.ok(db.includes('ORDER BY created_at DESC'));
   assert.ok(db.includes('LIMIT ?'));

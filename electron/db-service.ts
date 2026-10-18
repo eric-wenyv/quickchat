@@ -360,6 +360,16 @@ export function initDatabase(): void {
     );
   `);
 
+  // 应用设置（键值对）：Tavily API Key 等全局配置存这里，
+  // 由设置页读写，主进程按需读取
+  execute(`
+    CREATE TABLE IF NOT EXISTS app_settings (
+      key        TEXT    PRIMARY KEY NOT NULL,
+      value      TEXT    NOT NULL,
+      updated_at INTEGER NOT NULL
+    );
+  `);
+
   // 模型配置表
   execute(`
     CREATE TABLE IF NOT EXISTS model_configs (
@@ -760,6 +770,33 @@ export function updateModelConfig(
 
 export function deleteModelConfig(id: UUID): void {
   execute('DELETE FROM model_configs WHERE id = ?', [id]);
+}
+
+// ---------------------------------------------------------------------------
+// 应用设置 (App Settings)
+// ---------------------------------------------------------------------------
+
+/** 读取全局设置；不存在时返回 null。 */
+export function getAppSetting(key: string): string | null {
+  const rows = select<Array<{ value: string }>>(
+    'SELECT value FROM app_settings WHERE key = ?',
+    [key]
+  );
+  return rows[0]?.value ?? null;
+}
+
+/** 写入全局设置；空值表示删除该设置。 */
+export function setAppSetting(key: string, value: string): void {
+  const trimmed = value.trim();
+  if (trimmed.length === 0) {
+    execute('DELETE FROM app_settings WHERE key = ?', [key]);
+    return;
+  }
+  execute(
+    `INSERT INTO app_settings (key, value, updated_at) VALUES (?, ?, ?)
+     ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
+    [key, trimmed, Date.now()]
+  );
 }
 
 // ---------------------------------------------------------------------------

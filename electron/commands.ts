@@ -162,7 +162,7 @@ export async function fetchUrl(rawUrl: string): Promise<UrlContent> {
 export async function searchWeb(query: string): Promise<unknown> {
   const apiKey = getTavilyApiKey();
   if (apiKey.trim().length === 0) {
-    throw new Error("Tavily API Key 未配置，请在项目根目录 .env 中设置 TAVILY_API_KEY");
+    throw new Error("Tavily API Key 未配置，请在 设置 → 通用 → 联网搜索 中填写 Tavily API Key");
   }
 
   let response: Response;
@@ -277,85 +277,35 @@ export function formatUrlContent(result: UrlContent): string {
   return lines.join('\n');
 }
 
-function trimMatches(s: string, chars: string): string {
-  let out = s;
-  const set = new Set(Array.from(chars));
-  while (out.length > 0 && set.has(out[0])) {
-    out = out.slice(1);
-  }
-  while (out.length > 0 && set.has(out[out.length - 1])) {
-    out = out.slice(0, -1);
-  }
-  return out;
+let tavilyApiKeyProvider: (() => string | null | undefined) | null = null;
+
+export function configureTavilyApiKeyProvider(
+  provider: (() => string | null | undefined) | null,
+): void {
+  tavilyApiKeyProvider = provider;
 }
 
 export function getTavilyApiKey(): string {
+  if (tavilyApiKeyProvider) {
+    try {
+      const fromSettings = tavilyApiKeyProvider();
+      if (typeof fromSettings === "string" && fromSettings.trim().length > 0) {
+        return fromSettings.trim();
+      }
+    } catch (e) {
+      console.warn(
+        "[quick-chat] 读取设置中的 Tavily API Key 失败:",
+        e instanceof Error ? e.message : e,
+      );
+    }
+  }
+
   const envValue = process.env.TAVILY_API_KEY;
   if (envValue !== undefined && envValue.trim().length > 0) {
     return envValue.trim();
   }
-  const fromDotenv = readDotenvKey("TAVILY_API_KEY");
-  if (fromDotenv !== null) {
-    return fromDotenv;
-  }
-  throw new Error("Tavily API Key 未配置，请在项目根目录 .env 中设置 TAVILY_API_KEY");
-}
 
-function readDotenvKey(key: string): string | null {
-  for (const candidate of dotenvCandidatePaths()) {
-    let content: string;
-    try {
-      content = fs.readFileSync(candidate, "utf8");
-    } catch {
-      continue;
-    }
-    for (const rawLine of content.split("\n")) {
-      let trimmed = rawLine.trim();
-      if (trimmed.length === 0 || trimmed.startsWith("#")) {
-        continue;
-      }
-      if (trimmed.startsWith("export ")) {
-        trimmed = trimmed.slice("export ".length).trim();
-      }
-      const eq = trimmed.indexOf("=");
-      if (eq < 0) {
-        continue;
-      }
-      const name = trimmed.slice(0, eq).trim();
-      if (name !== key) {
-        continue;
-      }
-      const value = trimMatches(trimMatches(trimmed.slice(eq + 1).trim(), '"'), "'").trim();
-      if (value.length > 0) {
-        return value;
-      }
-    }
-  }
-  return null;
-}
-
-function dotenvCandidatePaths(): string[] {
-  const paths: string[] = [];
-  let dir = process.cwd();
-  for (; ;) {
-    paths.push(path.join(dir, ".env"));
-    const parent = path.dirname(dir);
-    if (parent === dir) {
-      break;
-    }
-    dir = parent;
-  }
-  const exeDir = path.dirname(process.execPath);
-  let ed = exeDir;
-  for (; ;) {
-    paths.push(path.join(ed, ".env"));
-    const parent = path.dirname(ed);
-    if (parent === ed) {
-      break;
-    }
-    ed = parent;
-  }
-  return paths;
+  throw new Error("Tavily API Key 未配置，请在 设置 → 通用 → 联网搜索 中填写 Tavily API Key");
 }
 
 // ---------------------------------------------------------------------------

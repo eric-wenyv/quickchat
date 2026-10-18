@@ -3,14 +3,11 @@
 // electron/commands.ts 测试：
 //   fetch_url — 本地 node:http 起测试服务器，验证 HTML 正文提取（对齐
 //               旧 Rust 主程序单测）、重定向、错误形状、截断
-//   search_web — Tavily 请求形状、.env 手写解析、缺 key 报错
+//   search_web — Tavily 请求形状、设置页 key 读取、缺 key 报错
 //   parse_document — Python 缺失 / 解析失败错误形状
 
 import assert from 'node:assert/strict';
 import http from 'node:http';
-import { mkdtemp, writeFile } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
 import test from 'node:test';
 
 import { importElectronModule } from './lib/import-electron.mjs';
@@ -197,38 +194,53 @@ test('search_web 组装 Tavily 请求并透传响应', async () => {
   }
 });
 
-test('search_web 从 .env 读取 TAVILY_API_KEY（手写解析：export 前缀/引号/注释）', async () => {
+test('search_web 优先使用设置页保存的 TAVILY_API_KEY，环境变量作为兜底', async () => {
   const commands = await importElectronModule('commands');
-  const tmp = await mkdtemp(join(tmpdir(), 'qc-dotenv-'));
-  await writeFile(
-    join(tmp, '.env'),
-    [
-      '# 注释行',
-      '',
-      'OTHER_KEY=skip',
-      'TAVILY_API_KEY="quoted-key"',
-      "export TAVILY_API_KEY_SINGLE='single-key'",
-    ].join('\n'),
-  );
-  const originalCwd = process.cwd();
   const originalKey = process.env.TAVILY_API_KEY;
-  delete process.env.TAVILY_API_KEY;
   try {
-    process.chdir(tmp);
-    assert.equal(commands.getTavilyApiKey(), 'quoted-key');
+    // 设置页写入 DB 的 key 优先于环境变量
+    process.env.TAVILY_API_KEY = 'env-key';
+    commands.configureTavilyApiKeyProvider(() => 'settings-key');
+    assert.equal(commands.getTavilyApiKey(), 'settings-key');
 
-    // 改为单一 single-key 后应读到去掉引号的值
-    await writeFile(join(tmp, '.env'), "export TAVILY_API_KEY_SINGLE='single-key'\nTAVILY_API_KEY='single-key'\n");
-    assert.equal(commands.getTavilyApiKey(), 'single-key');
+    // 设置项为空时回退到环境变量
+    commands.configureTavilyApiKeyProvider(() => '');
+    assert.equal(commands.getTavilyApiKey(), 'env-key');
 
-    // 空 .env：报未配置（getTavilyApiKey 为同步抛错）
-    await writeFile(join(tmp, '.env'), '# nothing\n');
+    // 两者都没有：提示去设置页配置
+    delete process.env.TAVILY_API_KEY;
+    commands.configureTavilyApiKeyProvider(() => null);
     assert.throws(() => commands.getTavilyApiKey(), /Tavily API Key 未配置/);
+    assert.throws(() => commands.getTavilyApiKey(), /设置 → 通用 → 联网搜索/);
   } finally {
-    process.chdir(originalCwd);
-    if (originalKey !== undefined) {
+    if (originalKey === undefined) {
+      delete process.env.TAVILY_API_KEY;
+    } else {
       process.env.TAVILY_API_KEY = originalKey;
     }
+    commands.configureTavilyApiKeyProvider(null);
+  }
+});
+
+test('search_web 读取设置失败时不崩溃，继续回退环境变量', async () => {
+  const commands = await importElectronModule('commands');
+  const originalKey = process.env.TAVILY_API_KEY;
+  try {
+    delete process.env.TAVILY_API_KEY;
+    commands.configureTavilyApiKeyProvider(() => {
+      throw new Error('db unavailable');
+    });
+    assert.throws(() => commands.getTavilyApiKey(), /Tavily API Key 未配置/);
+
+    process.env.TAVILY_API_KEY = 'env-key';
+    assert.equal(commands.getTavilyApiKey(), 'env-key');
+  } finally {
+    if (originalKey === undefined) {
+      delete process.env.TAVILY_API_KEY;
+    } else {
+      process.env.TAVILY_API_KEY = originalKey;
+    }
+    commands.configureTavilyApiKeyProvider(null);
   }
 });
 

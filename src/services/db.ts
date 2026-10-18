@@ -60,6 +60,16 @@ export const deleteModelConfig = (id: UUID) =>
   invoke<void>('db:delete_model_config', { id });
 
 // ---------------------------------------------------------------------------
+// 应用设置 (App Settings)
+// ---------------------------------------------------------------------------
+
+export const getAppSetting = (key: string) =>
+  invoke<string | null>('db:get_app_setting', { key });
+
+export const setAppSetting = (key: string, value: string) =>
+  invoke<void>('db:set_app_setting', { key, value });
+
+// ---------------------------------------------------------------------------
 // 思考强度缓存（OpenRouter 模型档位元数据）
 // ---------------------------------------------------------------------------
 

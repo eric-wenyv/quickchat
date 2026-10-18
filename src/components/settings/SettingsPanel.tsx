@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import pkg from '../../../package.json';
 import GlobalShortcutSettings from './GlobalShortcutSettings';
 import ModelManager from './ModelManager';
+import TavilySearchSettings from './TavilySearchSettings';
 import VisionModelSelector from './VisionModelSelector';
 import { Card, Row, SectionTitle } from './controls';
 import { isDesktopPlatform } from '@/utils/platform';
@@ -134,6 +135,12 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
               ))}
             </div>
           </Row>
+        </Card>
+      </div>
+      <div>
+        <SectionTitle>联网搜索</SectionTitle>
+        <Card>
+          <TavilySearchSettings />
         </Card>
       </div>
       {isDesktopPlatform && (

@@ -3,7 +3,9 @@ import netSocket from "node:net";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { registerIpcHandlers, sendEventTo } from "./ipc.js";
-import { setUserDataDir, getDb } from "./db.js";
+import { configureTavilyApiKeyProvider } from "./commands.js";
+import { setUserDataDir } from "./db.js";
+import { getAppSetting } from "./db-service.js";
 import { setupTray } from "./tray.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -189,6 +191,8 @@ app.whenReady().then(() => {
 
   const userDataDir = app.getPath("userData");
   setUserDataDir(userDataDir);
+
+  configureTavilyApiKeyProvider(() => getAppSetting("tavily_api_key"));
 
   registerIpcHandlers(getMainWindow);
 

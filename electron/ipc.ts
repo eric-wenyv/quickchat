@@ -66,6 +66,9 @@ handle("db:save_model_config", (args) => { dbs.saveModelConfig(args?.config as d
 handle("db:update_model_config", (args) => { dbs.updateModelConfig(String(args?.id ?? ""), (args?.updates ?? {}) as never); return null; });
 handle("db:delete_model_config", (args) => { dbs.deleteModelConfig(String(args?.id ?? "")); return null; });
 
+handle("db:get_app_setting", (args) => dbs.getAppSetting(String(args?.key ?? "")));
+handle("db:set_app_setting", (args) => { dbs.setAppSetting(String(args?.key ?? ""), String(args?.value ?? "")); return null; });
+
 handle("db:get_system_prompts", () => dbs.getSystemPrompts());
 handle("db:save_system_prompt", (args) => { dbs.saveSystemPrompt(args?.prompt as dbs.SystemPrompt); return null; });
 handle("db:delete_system_prompt", (args) => { dbs.deleteSystemPrompt(String(args?.id ?? "")); return null; });

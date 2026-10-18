@@ -1,18 +1,16 @@
 // =============================================================================
-// Quick-Chat — 统一 AI Service（OpenAI 兼容格式 + Tool Calling）
+// AI Service
 // =============================================================================
-// 运行在 Electron 主进程：直连模型 API（无渲染进程 CORS/密钥暴露问题），
-// SSE 解析、tool_calls 累加、标题生成、图片描述、思考档位元数据拉取都在此。
-// 对话编排（工具循环）见 chat.ts。
+// SSE, tool_calls, title generation, image description, thinking level fetch
+// chat loop in chat.ts
 // =============================================================================
 
 import { openSseStream } from './sse-transport.js';
 
 // ---------------------------------------------------------------------------
-// 类型（与 src/types/types.ts 结构对齐；IPC 传 JSON，主进程侧独立声明）
+// TYPES
 // ---------------------------------------------------------------------------
 
-/** 模型配置（主进程侧结构，字段与前端 ModelConfig 一致） */
 export interface AiModelConfig {
   provider: string;
   model_id: string;
@@ -23,14 +21,13 @@ export interface AiModelConfig {
   top_p: number;
 }
 
-/** 模型支持的思考强度元数据（来自 OpenRouter 官方模型接口） */
 export interface ThinkingEfforts {
   efforts: string[];
   defaultEffort: string | null;
 }
 
 // ---------------------------------------------------------------------------
-// 常量
+// Constant
 // ---------------------------------------------------------------------------
 
 const TITLE_MAX_LENGTH = 20;
@@ -38,7 +35,7 @@ const PLACEHOLDER_TITLES = new Set(['', 'new chat', 'untitled', '新对话']);
 
 
 // ---------------------------------------------------------------------------
-// 类型
+// TYPES
 // ---------------------------------------------------------------------------
 
 export interface StreamChunk {
@@ -90,12 +87,9 @@ export interface ChatCompletionParams {
   model: AiModelConfig;
   messages: ChatMessage[];
   tools?: ToolDefinition[];
-  /** 思考强度档位（模型支持的档位字符串，如 low/high/max；null 表示不干预） */
   thinkingLevel?: string | null;
   signal?: AbortSignal;
-  /** 覆盖模型配置的 max_tokens；传 null 表示本次请求不设上限（思考模型烧尽预算时放开） */
   maxTokens?: number | null;
-  /** 思考增量回调：reasoning 分片到达即触发（先于首个正文分片返回），用于 UI 实时展示思考内容 */
   onReasoningDelta?: (delta: string, accumulated: string) => void;
 }
 
@@ -118,13 +112,9 @@ export type ChatCompletionResult =
   | { type: 'tool_calls'; toolCalls: ToolCall[]; assistantMessage: string; reasoningContent: string; usage: TokenUsage | null };
 
 // ---------------------------------------------------------------------------
-// 内置工具定义
+// Built-in tools
 // ---------------------------------------------------------------------------
 
-/**
- * AI 阅读网页内容的工具：当用户消息包含 URL、要求阅读/总结某个页面，
- * 或回答需要引用页面具体内容时，模型传入 URL，工具返回抓取到的正文文本。
- */
 export const READ_URL_TOOL: ToolDefinition = {
   type: 'function',
   function: {
@@ -144,10 +134,6 @@ export const READ_URL_TOOL: ToolDefinition = {
   },
 };
 
-/**
- * AI 联网搜索工具：模型在需要实时信息（新闻、天气、股价、近期事件等）时
- * 传入查询词，工具返回 Tavily 搜索结果（标题/来源/摘要）。
- */
 export const WEB_SEARCH_TOOL: ToolDefinition = {
   type: 'function',
   function: {
@@ -167,11 +153,6 @@ export const WEB_SEARCH_TOOL: ToolDefinition = {
   },
 };
 
-/**
- * AI 自主调用 Skill 的工具：模型从系统提示中的可用 Skill 目录选择一个名称，
- * 工具返回该 Skill 的完整指引（SKILL.md 内容），模型随后遵循其指引回答。
- * 标注了 disable-model-invocation 的 Skill 不出现在目录中，此工具也拒绝加载。
- */
 export const USE_SKILL_TOOL: ToolDefinition = {
   type: 'function',
   function: {
@@ -191,22 +172,20 @@ export const USE_SKILL_TOOL: ToolDefinition = {
   },
 };
 
-/** 构造注入系统提示的可用 Skill 目录（仅 AI 可自主调用的部分） */
 export function buildSkillCatalogPrompt(skills: Array<{ id: string; name: string; description: string }>): string {
   const lines = skills.map(s => `- ${s.id}: ${s.description || s.name}`);
   return [
-    '## 可调用的 Skill 列表 / Available Skills',
+    '## Available Skills',
     '',
-    '当用户的请求与下列某个 Skill 的用途明确匹配时，调用 use_skill 工具加载其完整指引，并严格遵循返回的指引完成任务。',
     'When the user\'s request clearly matches one of the skills below, call the use_skill tool to load its full instructions and follow them.',
-    '仅在有明确匹配时调用；不要为无关请求调用；同一条回复不要重复加载同一个 Skill。',
+    'Invoke only when there is a clear match; do not invoke for unrelated requests; do not repeatedly load the same Skill within a single response.',
     '',
     ...lines,
   ].join('\n');
 }
 
 // ---------------------------------------------------------------------------
-// 工具函数
+// Tool function
 // ---------------------------------------------------------------------------
 
 function getApiEndpoint(model: AiModelConfig): string {
@@ -222,10 +201,9 @@ function buildHeaders(model: AiModelConfig): Record<string, string> {
 }
 
 // ---------------------------------------------------------------------------
-// 思考强度
+// Thinking level
 // ---------------------------------------------------------------------------
 
-/** 服务端拒绝不支持的思考档位时抛出，调用方据此提示用户重新选择 */
 export class ReasoningEffortError extends Error {
   constructor(message: string) {
     super(message);
@@ -233,30 +211,19 @@ export class ReasoningEffortError extends Error {
   }
 }
 
-/** 是否 OpenRouter 端点：provider 已统一为 openai_compatible，按 endpoint 域名识别 */
 export function isOpenRouterModel(model: Pick<AiModelConfig, 'api_endpoint'>): boolean {
   return (model.api_endpoint ?? '').includes('openrouter.ai');
 }
 
-/** 思考强度缓存的 key：OpenRouter 模型即官方 slug（provider:model_id） */
 export function thinkingEffortsKey(model: Pick<AiModelConfig, 'provider' | 'model_id'>): string {
   return `${model.provider}:${model.model_id}`;
 }
 
-const OPENROUTER_MODELS_URL = 'https://openrouter.ai/api/v1/models';
-
-/**
- * 从 OpenRouter 官方模型接口获取指定模型支持的思考强度。
- * 仅 OpenRouter 端点的模型可查（model_id 即官方 slug）。
- * 返回 null 表示非 OpenRouter 模型或 OpenRouter 上不存在该模型；
- * efforts 为空数组表示不支持选择档位。两种情况 UI 都应隐藏思考强度选择器。
- */
+// TODO: adjust to deepseek and openrouter api
 export async function fetchModelThinkingEfforts(model: AiModelConfig): Promise<ThinkingEfforts | null> {
-  if (!isOpenRouterModel(model)) return null;
-
-  const response = await fetch(OPENROUTER_MODELS_URL);
+  const response = await fetch(model.api_endpoint + '/models');
   if (!response.ok) {
-    throw new Error(`获取 OpenRouter 模型元数据失败 (${response.status}): ${response.statusText}`);
+    throw new Error(`获取模型列表失败 (${response.status}): ${response.statusText}`);
   }
 
   const json = await response.json() as any;
@@ -360,15 +327,12 @@ function buildRequestBody(
     messages,
     stream: true,
     temperature: thinkingEnabled ? 1.0 : model.temperature,
-    // 优先级：请求级 maxTokens（null = 本次显式不设上限）> 模型级 max_tokens（null = 不限制）；
-    // 最终为空时整个字段不发（JSON.stringify 会丢弃 undefined），provider 语义为"取模型默认最大输出"
     max_tokens: (maxTokens === null ? null : maxTokens ?? model.max_tokens) ?? undefined,
     top_p: thinkingEnabled ? 1.0 : model.top_p,
     stream_options: { include_usage: true },
   };
 
   if (thinkingEnabled) {
-    // OpenAI 风格的 reasoning_effort；部分服务端会将其归一化（两种格式只能发其一）
     body.reasoning_effort = thinkingLevel.toLowerCase();
   }
 
@@ -381,7 +345,7 @@ function buildRequestBody(
 }
 
 // ---------------------------------------------------------------------------
-// SSE 解析器（支持 tool_calls）
+// SSE
 // ---------------------------------------------------------------------------
 
 interface AccumulatedToolCall {
@@ -787,7 +751,7 @@ export async function chatCompletion(params: ChatCompletionParams): Promise<Chat
 }
 
 // ---------------------------------------------------------------------------
-// 对话标题生成（后台静默调用）
+// Title generation
 // ---------------------------------------------------------------------------
 
 export async function generateConversationTitle(
@@ -854,17 +818,9 @@ export async function generateConversationTitle(
 }
 
 // ---------------------------------------------------------------------------
-// 图片描述（非流式，用 vision 模型解析图片内容为文本）
+// Image description
 // ---------------------------------------------------------------------------
 
-/**
- * 使用指定的 vision 模型描述图片内容。
- * 非流式调用，返回纯文本描述。
- *
- * @param imageDataUrl 图片的 data URL（base64 编码）
- * @param visionModel 支持 vision 的模型配置
- * @returns 图片的文字描述，失败时返回 null
- */
 export async function describeImage(
   imageDataUrl: string,
   visionModel: AiModelConfig
@@ -888,7 +844,7 @@ export async function describeImage(
     messages,
     stream: false,
     temperature: 0.3,
-    max_tokens: 1024,
+    max_tokens: 10240,
   };
 
   const response = await fetch(url, {

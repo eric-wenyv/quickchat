@@ -360,6 +360,15 @@ html[data-platform='ios'] .app-window-shell {
 
 /* Custom Scrollbar - ultra minimal */
 @layer utilities {
+  .scrollbar-hide {
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+
+  .scrollbar-hide::-webkit-scrollbar {
+    display: none;
+  }
+
   .custom-scrollbar::-webkit-scrollbar {
     width: 6px;
     height: 6px;

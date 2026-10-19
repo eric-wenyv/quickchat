@@ -1,4 +1,4 @@
-import React, { forwardRef, useImperativeHandle, useMemo, useRef } from 'react';
+import React, { forwardRef, useImperativeHandle, useLayoutEffect, useMemo, useRef } from 'react';
 import { useAutoResize } from '@/hooks/useAutoResize';
 import { getSkillsSnapshot } from '@/services/skills';
 import {
@@ -49,8 +49,14 @@ export const ChatTextArea = forwardRef<ChatTextAreaHandle, ChatTextAreaProps>(({
   const syncMirrorScroll = () => {
     if (mirrorRef.current && textareaRef.current) {
       mirrorRef.current.scrollTop = textareaRef.current.scrollTop;
+      mirrorRef.current.scrollLeft = textareaRef.current.scrollLeft;
     }
   };
+
+  // 输入导致 textarea 自动滚动时不一定触发 onScroll，每次内容变化后兜底同步一次
+  useLayoutEffect(() => {
+    syncMirrorScroll();
+  }, [value]);
 
   useImperativeHandle(ref, () => ({
     focus: (options?: FocusOptions) => textareaRef.current?.focus(options),
@@ -112,6 +118,9 @@ export const ChatTextArea = forwardRef<ChatTextAreaHandle, ChatTextAreaProps>(({
             {value.slice(skillCommandPrefix.length)}
           </>
         ) : value}
+        {/* 末尾补零宽空格：文本以 \n 结尾时 pre-wrap 的 div 不会渲染最后的空行，
+            会导致镜像比 textarea 矮一行、光标错位 */}
+        {'​'}
       </div>
       <textarea
         ref={textareaRef}
@@ -122,7 +131,7 @@ export const ChatTextArea = forwardRef<ChatTextAreaHandle, ChatTextAreaProps>(({
         onScroll={syncMirrorScroll}
         disabled={disabled}
         placeholder={placeholder}
-        className="relative w-full bg-transparent border-none focus:ring-0 focus:outline-none resize-none p-0 text-[15px] leading-[1.55] text-transparent caret-linear-text-body placeholder:text-linear-text-muted min-h-[38px] max-h-[180px] scrollbar-hide transition-all duration-200 ease-in-out disabled:opacity-50"
+        className="block relative w-full bg-transparent border-none focus:ring-0 focus:outline-none resize-none p-0 text-[15px] leading-[1.55] text-transparent caret-linear-text-body placeholder:text-linear-text-muted min-h-[38px] max-h-[180px] scrollbar-hide transition-all duration-200 ease-in-out disabled:opacity-50"
         rows={1}
       />
     </div>

@@ -1,6 +1,6 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { buildArtifactSrcDoc } from '@/utils/artifacts';
+import { buildArtifactSrcDoc, fitArtifactToViewport, type ArtifactSize } from '@/utils/artifacts';
 import ArtifactFullscreenShell from './ArtifactFullscreenShell';
 
 interface HtmlArtifactProps {
@@ -159,17 +159,60 @@ const ARTIFACT_SRCDOC_DEBOUNCE_MS = 300;
 const ARTIFACT_LOAD_TIMEOUT_MS = 4000;
 
 const ArtifactFrame: React.FC<{
+  artifactId: string;
   srcDoc: string;
   title: string;
   reloadKey: number;
   className?: string;
-}> = ({ srcDoc, title, reloadKey, className = '' }) => {
+  fitSize?: ArtifactSize;
+  onSizeChange?: (size: ArtifactSize) => void;
+}> = ({ artifactId, srcDoc, title, reloadKey, className = '', fitSize, onSizeChange }) => {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const frameRef = useRef<HTMLIFrameElement>(null);
+  const [contentSize, setContentSize] = useState(fitSize ?? { width: 960, height: DEFAULT_ARTIFACT_HEIGHT });
+  const [viewportSize, setViewportSize] = useState({ width: 0, height: 0 });
   const [displayedSrcDoc, setDisplayedSrcDoc] = useState(srcDoc);
   const [generation, setGeneration] = useState(0);
   // loading 由「当前 (generation, reloadKey) 是否已确认加载」推导，而不是
   // effect 置位再等 onLoad 翻转布尔：两个异步信号的先后不确定时，
   // onLoad 先于最后一次提交到达会永久卡在加载态，演示只能手动刷新才可交互
   const [loadedFrame, setLoadedFrame] = useState<{ generation: number; reloadKey: number } | null>(null);
+
+  // iframe 保持预览时的逻辑尺寸，从外部整体缩放，布局与内部交互坐标保持一致。
+  const fitToViewport = Boolean(fitSize);
+  useEffect(() => {
+    if (!fitToViewport || !containerRef.current) return;
+    const container = containerRef.current;
+    const measure = () => {
+      const { width, height } = container.getBoundingClientRect();
+      setViewportSize({ width, height });
+    };
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(container);
+    return () => observer.disconnect();
+  }, [fitToViewport]);
+
+  useEffect(() => {
+    const handleMessage = (event: MessageEvent) => {
+      const data = event.data;
+      if (
+        event.source !== frameRef.current?.contentWindow ||
+        data?.type !== 'quick-chat-artifact-size' ||
+        data.artifactId !== artifactId
+      ) return;
+      const width = Number(data.width);
+      const height = Number(data.height);
+      if (![width, height].every((value) => Number.isFinite(value) && value > 0)) return;
+      const size = { width: Math.ceil(width), height: Math.ceil(height) };
+      if (fitToViewport) {
+        setContentSize((current) => current.width === size.width && current.height === size.height ? current : size);
+      }
+      onSizeChange?.(size);
+    };
+    window.addEventListener('message', handleMessage);
+    return () => window.removeEventListener('message', handleMessage);
+  }, [artifactId, fitToViewport, onSizeChange]);
 
   useEffect(() => {
     if (srcDoc === displayedSrcDoc) return;
@@ -194,18 +237,32 @@ const ArtifactFrame: React.FC<{
     return () => window.clearTimeout(timer);
   }, [loading, generation, reloadKey]);
 
+  const fit = fitArtifactToViewport(contentSize, viewportSize);
+
   return (
-    <div className={`relative min-w-0 max-w-full overflow-hidden bg-transparent ${className}`}>
+    <div ref={containerRef} className={`relative min-w-0 max-w-full overflow-hidden bg-transparent ${className}`}>
       {loading && (
         <div className="absolute inset-0 z-10 flex items-center justify-center bg-linear-bg/55 backdrop-blur-[1px]">
           <div className="h-5 w-5 rounded-full border-2 border-linear-border border-t-linear-text-secondary animate-spin" />
         </div>
       )}
       <iframe
+        ref={frameRef}
         key={`${reloadKey}-${generation}`}
         title={title}
         srcDoc={displayedSrcDoc}
         className="block h-full w-full max-w-full border-0 bg-transparent"
+        style={fitToViewport ? {
+          position: 'absolute',
+          left: fit.x,
+          top: fit.y,
+          width: contentSize.width,
+          height: contentSize.height,
+          maxWidth: 'none',
+          transform: `scale(${fit.scale})`,
+          transformOrigin: '0 0',
+          visibility: fit.scale > 0 ? 'visible' : 'hidden',
+        } : undefined}
         sandbox="allow-scripts allow-forms"
         scrolling="no"
         referrerPolicy="no-referrer"
@@ -222,6 +279,8 @@ const SourceView: React.FC<{ code: string; topPadding?: boolean }> = ({ code, to
 );
 
 const HtmlArtifactModal: React.FC<{
+  artifactId: string;
+  size: ArtifactSize;
   code: string;
   srcDoc: string;
   title: string;
@@ -230,7 +289,7 @@ const HtmlArtifactModal: React.FC<{
   onViewChange: (view: ArtifactView) => void;
   onReload: () => void;
   onClose: () => void;
-}> = ({ code, srcDoc, title, view, reloadKey, onViewChange, onReload, onClose }) => {
+}> = ({ artifactId, size, code, srcDoc, title, view, reloadKey, onViewChange, onReload, onClose }) => {
   const { copied, copy } = useCopyText(code);
 
   return (
@@ -251,7 +310,14 @@ const HtmlArtifactModal: React.FC<{
       contentClassName="overflow-hidden"
     >
         {view === 'preview' ? (
-          <ArtifactFrame srcDoc={srcDoc} title={title} reloadKey={reloadKey} className="h-full" />
+          <ArtifactFrame
+            artifactId={artifactId}
+            srcDoc={srcDoc}
+            title={title}
+            reloadKey={reloadKey}
+            fitSize={size}
+            className="h-full"
+          />
         ) : (
           <SourceView code={code} topPadding={false} />
         )}
@@ -272,41 +338,24 @@ const HtmlArtifact: React.FC<HtmlArtifactProps> = ({ code }) => {
   const { copied, copy } = useCopyText(code);
   const [view, setView] = useState<ArtifactView>('preview');
   const [reloadKey, setReloadKey] = useState(0);
-  const [artifactHeight, setArtifactHeight] = useState(DEFAULT_ARTIFACT_HEIGHT);
+  const [artifactSize, setArtifactSize] = useState({ width: 960, height: DEFAULT_ARTIFACT_HEIGHT });
   const [isFullscreen, setIsFullscreen] = useState(false);
 
   const handleReload = useCallback(() => {
     setReloadKey((key) => key + 1);
   }, []);
 
-  useEffect(() => {
-    const handleMessage = (event: MessageEvent) => {
-      const data = event.data;
-      if (
-        !data ||
-        data.type !== 'quick-chat-artifact-size' ||
-        data.artifactId !== artifactId
-      ) {
-        return;
-      }
-
-      const measuredHeight = Number(data.height);
-      if (!Number.isFinite(measuredHeight)) return;
-      const nextHeight = Math.max(MIN_ARTIFACT_HEIGHT, Math.ceil(measuredHeight));
-      setArtifactHeight((current) =>
-        Math.abs(current - nextHeight) < 2 ? current : nextHeight
-      );
-    };
-
-    window.addEventListener('message', handleMessage);
-    return () => window.removeEventListener('message', handleMessage);
-  }, [artifactId]);
+  const handleSizeChange = useCallback((size: ArtifactSize) => {
+    setArtifactSize((current) =>
+      Math.abs(current.width - size.width) < 2 && Math.abs(current.height - size.height) < 2 ? current : size
+    );
+  }, []);
 
   return (
     <>
       <div
         className="group relative my-3 w-full max-w-full overflow-hidden bg-transparent"
-        style={{ height: artifactHeight, minHeight: MIN_ARTIFACT_HEIGHT }}
+        style={{ height: Math.max(MIN_ARTIFACT_HEIGHT, artifactSize.height), minHeight: MIN_ARTIFACT_HEIGHT }}
       >
         <ArtifactControls
           view={view}
@@ -317,7 +366,14 @@ const HtmlArtifact: React.FC<HtmlArtifactProps> = ({ code }) => {
           onExpand={() => setIsFullscreen(true)}
         />
         {view === 'preview' ? (
-          <ArtifactFrame srcDoc={srcDoc} title={title} reloadKey={reloadKey} className="h-full" />
+          <ArtifactFrame
+            artifactId={artifactId}
+            srcDoc={srcDoc}
+            title={title}
+            reloadKey={reloadKey}
+            onSizeChange={handleSizeChange}
+            className="h-full"
+          />
         ) : (
           <SourceView code={code} />
         )}
@@ -326,6 +382,8 @@ const HtmlArtifact: React.FC<HtmlArtifactProps> = ({ code }) => {
       {isFullscreen &&
         createPortal(
           <HtmlArtifactModal
+            artifactId={modalArtifactId}
+            size={artifactSize}
             code={code}
             srcDoc={modalSrcDoc}
             title={title}

@@ -3,8 +3,8 @@
 // =============================================================================
 // 前端统一经 preload 桥 `window.__QC_BRIDGE__.invoke(cmd, args)` 调用，
 // 本模块按 cmd 路由到 handler 表。命令命名约定：
-//   db:*         SQLite 数据访问（语义命令，SQL 只在主进程，见 db-service.ts）
-//   ai:*         AI 管线（对话流、标题、图片描述、思考档位，见 ai.ts / chat.ts）
+//   db:*         SQLite 数据访问
+//   ai:*         AI 管线
 //   window:*     窗口控制
 //   clipboard:*  剪贴板
 //   opener:*     外部打开
@@ -19,6 +19,8 @@ import * as skills from "./skills.js";
 import * as dbs from "./db-service.js";
 import { describeImage, fetchModelThinkingEfforts, generateConversationTitle } from "./ai.js";
 import { runChatLoop, type ChatLoopOutcome } from "./chat.js";
+import { createQuickOpenHandler } from "./window-toggle.js";
+import { restoreKdeGlobalShortcuts } from "./kde-shortcuts.js";
 
 type InvokeArgs = Record<string, unknown> | undefined;
 
@@ -34,7 +36,7 @@ function handle(cmd: string, fn: InvokeHandler): void {
   handlers.set(cmd, fn);
 }
 
-// send window qc:event:<name> 
+// send window qc:event:<name>
 export function sendEventTo(window: BrowserWindow | null, name: string, payload?: unknown): void {
   if (window && !window.isDestroyed()) {
     window.webContents.send(`qc:event:${name}`, payload);
@@ -42,7 +44,7 @@ export function sendEventTo(window: BrowserWindow | null, name: string, payload?
 }
 
 // ---------------------------------------------------------------------------
-// SQLite（语义命令；SQL 集中在 db-service.ts，不再暴露裸 sql:*）
+// SQLite
 // ---------------------------------------------------------------------------
 
 handle("db:init", () => { dbs.initDatabase(); return null; });
@@ -80,7 +82,7 @@ handle("db:get_mermaid_svg", (args) => dbs.getMermaidSvgCache(String(args?.cache
 handle("db:set_mermaid_svg", (args) => { dbs.setMermaidSvgCache(String(args?.cacheKey ?? ""), String(args?.svg ?? "")); return null; });
 
 // ---------------------------------------------------------------------------
-// AI 管线（流式对话经 qc:event:ai:stream 推送增量，invoke 返回最终结果）
+// AI
 // ---------------------------------------------------------------------------
 
 const chatAbortControllers = new Map<string, AbortController>();
@@ -217,14 +219,23 @@ handle("opener:open-path", (args) => {
 // Global shortcut
 // ---------------------------------------------------------------------------
 
-handle("shortcut:register", (args, _event, getMainWindow) => {
+handle("shortcut:register", async (args, _event, getMainWindow) => {
   const accelerator = String(args?.accelerator ?? "");
   globalShortcut.unregister(accelerator);
-  const ok = globalShortcut.register(accelerator, () => {
-    sendEventTo(getMainWindow(), "shortcut-fired", { accelerator });
-  });
+  const ok = globalShortcut.register(accelerator, createQuickOpenHandler(getMainWindow));
   if (!ok) {
     throw new Error(`无法注册全局快捷键: ${accelerator}`);
+  }
+  if (process.platform === "linux") {
+    try {
+      await restoreKdeGlobalShortcuts({
+        pid: process.pid,
+        isRegistered: (key) => globalShortcut.isRegistered(key),
+      });
+    } catch (error) {
+      globalShortcut.unregister(accelerator);
+      throw error;
+    }
   }
   return null;
 });

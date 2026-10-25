@@ -78,10 +78,16 @@ package() {
     install -d "$pkgdir/usr/bin"
     ln -s "/opt/$pkgname/quick-chat" "$pkgdir/usr/bin/$pkgname"
 
-    install -Dm644 "electron/assets/icon.png" \
-        "$pkgdir/usr/share/icons/hicolor/512x512/apps/$pkgname.png"
+    local icon size
+    for icon in electron/assets/icons/*.png; do
+        size=$(basename "$icon" .png)
+        install -Dm644 "$icon" \
+            "$pkgdir/usr/share/icons/hicolor/$size/apps/$pkgname.png"
+    done
 
-    cat > "$srcdir/$pkgname.desktop" <<EOF
+    local desktop_name
+    desktop_name=$(node -p "require('./package.json').desktopName")
+    cat > "$srcdir/$desktop_name" <<EOF
 [Desktop Entry]
 Type=Application
 Name=Quick Chat
@@ -90,7 +96,7 @@ Exec=$pkgname
 Icon=$pkgname
 Terminal=false
 Categories=Network;InstantMessaging;
-StartupWMClass=$pkgname
+StartupWMClass=${desktop_name%.desktop}
 EOF
-    install -Dm644 "$srcdir/$pkgname.desktop" -t "$pkgdir/usr/share/applications/"
+    install -Dm644 "$srcdir/$desktop_name" -t "$pkgdir/usr/share/applications/"
 }

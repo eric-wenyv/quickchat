@@ -207,7 +207,7 @@ const ConversationItem: React.FC<ConversationItemProps> = ({
         <div
           ref={menuRef}
           className="fixed z-[9999] min-w-[140px] bg-linear-bg-elevated backdrop-blur-xl border border-[rgba(255,255,255,0.08)] shadow-linear-highlight rounded-lg py-1.5 animate-in fade-in zoom-in-95 duration-150"
-          style={menuPos ?? { visibility: 'hidden' }}
+          style={{ ...(menuPos ?? { visibility: 'hidden' as const }), ...({ WebkitAppRegion: 'no-drag' } as React.CSSProperties) }}
         >
           <button
             onClick={(e) => { e.stopPropagation(); onPin?.(); closeMenu(); }}

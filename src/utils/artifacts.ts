@@ -395,11 +395,33 @@ body :where(.qc-artifact[data-allow-logs="true"] .qc-artifact-log, .qc-artifact[
 }
 `;
 
+export interface ArtifactSize {
+  width: number;
+  height: number;
+}
+
+export function fitArtifactToViewport(content: ArtifactSize, viewport: ArtifactSize) {
+  if (![content.width, content.height, viewport.width, viewport.height].every((value) => Number.isFinite(value) && value > 0)) {
+    return { scale: 0, x: 0, y: 0 };
+  }
+  const padding = Math.min(24, viewport.width / 4, viewport.height / 4);
+  const scale = Math.min(
+    (viewport.width - padding * 2) / content.width,
+    (viewport.height - padding * 2) / content.height
+  );
+  return {
+    scale,
+    x: Math.max(0, (viewport.width - content.width * scale) / 2),
+    y: Math.max(0, (viewport.height - content.height * scale) / 2),
+  };
+}
+
 function artifactRuntimeScript(artifactId: string): string {
   return `<script data-quick-chat-artifact-runtime>
 (() => {
   const artifactId = ${JSON.stringify(artifactId)};
   const POLICY_HIDDEN_ATTR = 'data-qc-policy-hidden';
+  let lastWidth = 0;
   let lastHeight = 0;
   let scheduled = false;
 
@@ -496,21 +518,25 @@ function artifactRuntimeScript(artifactId: string): string {
     const body = document.body;
     const html = document.documentElement;
     if (!body || !html) return;
+    let rectRight = 0;
     const rectBottom = Array.from(body.children).reduce((bottom, child) => {
       const rect = child.getBoundingClientRect();
+      rectRight = Math.max(rectRight, rect.right);
       return Math.max(bottom, rect.bottom);
     }, 0);
+    const width = Math.ceil(Math.max(rectRight, body.scrollWidth, body.offsetWidth, html.clientWidth));
+    // html.scrollHeight 至少等于 iframe 视口高度，不能用它当内容高度，
+    // 否则全屏和缩放后产生的留白会被反复算回应用尺寸。
     const height = Math.ceil(Math.max(
       rectBottom,
       body.scrollHeight,
       body.offsetHeight,
-      html.scrollHeight,
-      html.offsetHeight,
-      260
+      1
     ));
-    if (Math.abs(height - lastHeight) < 2) return;
+    if (Math.abs(width - lastWidth) < 2 && Math.abs(height - lastHeight) < 2) return;
+    lastWidth = width;
     lastHeight = height;
-    window.parent.postMessage({ type: 'quick-chat-artifact-size', artifactId, height }, '*');
+    window.parent.postMessage({ type: 'quick-chat-artifact-size', artifactId, width, height }, '*');
   };
   const run = () => {
     scheduled = false;

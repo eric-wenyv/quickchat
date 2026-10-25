@@ -320,7 +320,6 @@ function buildRequestBody(
   thinkingLevel?: string | null,
   maxTokens?: number | null
 ): unknown {
-  // 思考模型官方建议不干预采样参数（temperature/top_p 固定为 1），由推理力度控制行为
   const thinkingEnabled = thinkingLevel != null;
   const body: Record<string, unknown> = {
     model: model.model_id,

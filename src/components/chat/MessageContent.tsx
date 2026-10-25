@@ -213,7 +213,7 @@ const clampMermaidScale = (scale: number): number =>
 // 复杂矢量图拖动时每个新露出的分块都要重新光栅化，是全屏卡顿的主因。
 const MERMAID_RASTER_MAX_EDGE = 4096;
 
-// 拖动限位：内容大于视口时至少保留这么多像素在屏内，防止图被拖丢找不回来
+// 拖动限位：至少保留这么多像素在屏内，防止图被拖丢找不回来
 const MERMAID_MIN_OVERLAP_PX = 32;
 
 const parseMermaidSvgSize = (svg: string): { width: number; height: number } => {
@@ -363,11 +363,13 @@ const MermaidFullscreenModal: React.FC<{
     const { width: W, height: H } = svgSizeRef.current;
     let { scale, x, y } = transformRef.current;
 
-    // 小于视口居中；大于视口时至少保留一角在屏内，防止图被拖丢
+    // 仅限制图被完全拖出视口；居中只在 resetView 时执行，不能覆盖拖拽和缩放锚点。
     const cw = W * scale;
     const ch = H * scale;
-    x = cw <= vw ? (vw - cw) / 2 : Math.min(Math.max(x, vw - cw - MERMAID_MIN_OVERLAP_PX), MERMAID_MIN_OVERLAP_PX);
-    y = ch <= vh ? (vh - ch) / 2 : Math.min(Math.max(y, vh - ch - MERMAID_MIN_OVERLAP_PX), MERMAID_MIN_OVERLAP_PX);
+    const overlapX = Math.min(MERMAID_MIN_OVERLAP_PX, cw, vw);
+    const overlapY = Math.min(MERMAID_MIN_OVERLAP_PX, ch, vh);
+    x = Math.min(Math.max(x, overlapX - cw), vw - overlapX);
+    y = Math.min(Math.max(y, overlapY - ch), vh - overlapY);
     transformRef.current.x = x;
     transformRef.current.y = y;
 
@@ -490,6 +492,7 @@ const MermaidFullscreenModal: React.FC<{
   // 换图复位（svg 变化 = 主题切换重渲染）
   useEffect(() => {
     if (rafRef.current) cancelAnimationFrame(rafRef.current);
+    rafRef.current = 0;
     resetView();
     scheduleApply();
   }, [svg, resetView, scheduleApply]);
@@ -497,6 +500,7 @@ const MermaidFullscreenModal: React.FC<{
   useEffect(
     () => () => {
       if (rafRef.current) cancelAnimationFrame(rafRef.current);
+      rafRef.current = 0;
     },
     []
   );
@@ -642,6 +646,7 @@ const MermaidFullscreenModal: React.FC<{
         onPointerMove={handlePointerMove}
         onPointerUp={stopDragging}
         onPointerCancel={stopDragging}
+        onLostPointerCapture={stopDragging}
       >
         {rasterLevels ? (
           <canvas ref={canvasRef} className="qc-mermaid-pan-canvas" />
@@ -1032,6 +1037,7 @@ const LinkPreviewModal: React.FC<{
   return (
     <div
       className="fixed inset-0 z-[200] flex items-center justify-center bg-black/40 backdrop-blur-sm animate-in fade-in duration-150"
+      style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
       onClick={onClose}
     >
       <div

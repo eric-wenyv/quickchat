@@ -144,7 +144,8 @@ const SelectionCopyBar: React.FC<SelectionCopyBarProps> = ({ messages }) => {
         minWidth: BAR_WIDTH,
         animation: 'menu-enter 0.15s var(--ease-snappy) both',
         touchAction: 'manipulation',
-      }}
+        WebkitAppRegion: 'no-drag',
+      } as React.CSSProperties}
       // 阻止按下时选区塌陷，否则复制到的是空文本
       onPointerDown={(e) => e.preventDefault()}
     >

@@ -7,6 +7,7 @@ import { configureTavilyApiKeyProvider } from "./commands.js";
 import { setUserDataDir } from "./db.js";
 import { getAppSetting } from "./db-service.js";
 import { setupTray } from "./tray.js";
+import { toggleMainWindow } from "./window-toggle.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const preloadPath = path.join(__dirname, "preload.cjs");
@@ -49,22 +50,12 @@ if (!gotSingleInstanceLock) {
   });
 }
 
-function toggleMainWindow(win: BrowserWindow): void {
-  if (win.isVisible()) {
-    if (win.isFocused()) {
-      win.hide();
-    } else {
-      win.focus();
-    }
-  } else {
-    if (win.isMinimized()) win.restore();
-    win.show();
-    win.focus();
-  }
-}
-
 // Ctrl + Shift + S / N register only when window focused
 function registerFixedShortcuts(): void {
+  // Linux uses AppLayout's DOM listeners for these window-local actions.
+  // Keeping them out of the portal lets quick-open unregister/recreate its
+  // session cleanly when disabled or rebound.
+  if (process.platform === "linux") return;
   const modifier = process.platform === "darwin" ? "Command+Shift" : "Ctrl+Shift";
   const registrations: Array<{ accelerator: string; event: string }> = [
     { accelerator: `${modifier}+S`, event: "shortcut-toggle-sidebar" },
@@ -130,6 +121,7 @@ async function createWindow(): Promise<void> {
     height: 768,
     frame: false,
     show: false,
+    icon: path.join(__dirname, "assets", "icons", "512x512.png"),
     transparent: isWindows,
     backgroundColor: isWindows ? "#00000000" : "#1e1e1e",
     ...(isWindows ? { backgroundMaterial: "acrylic" as const } : {}),

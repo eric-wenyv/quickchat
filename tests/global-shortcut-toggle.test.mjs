@@ -6,35 +6,27 @@ import test from 'node:test';
 import ts from 'typescript';
 
 // Transpile the service and swap its bridge imports for controllable mocks.
-async function importGlobalShortcut({ isVisibleDelayMs = 0 } = {}) {
+async function importGlobalShortcut({ saved = null, failAccelerator = null } = {}) {
   const raw = await readFile(new URL('../src/services/globalShortcut.ts', import.meta.url), 'utf8');
   const source = raw
-    .replace("import { invoke, onEvent, isElectron } from '@/services/bridge';", '')
-    .replace("import { getCurrentWindow } from '@/services/appWindow';", '');
+    .replace("import { invoke, isElectron } from '@/services/bridge';", '');
 
   const prelude = `
-    const firedHandlers = [];
-    let visible = false;
     const calls = [];
     const registered = [];
-    const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
+    let saved = ${JSON.stringify(saved)};
+    let failAccelerator = ${JSON.stringify(failAccelerator)};
     const invoke = async (cmd, args) => {
-      if (cmd === 'window:is-visible') { await delay(${isVisibleDelayMs}); return visible; }
-      if (cmd === 'window:show') { calls.push('show'); visible = true; }
-      if (cmd === 'window:hide') { calls.push('hide'); visible = false; }
-      if (cmd === 'shortcut:register') { registered.push(args.accelerator); }
+      if (cmd === 'shortcut:register') {
+        if (args.accelerator === failAccelerator) throw new Error('shortcut unavailable');
+        registered.push(args.accelerator);
+      }
       if (cmd === 'shortcut:unregister') { calls.push('unregister:' + args.accelerator); }
       return null;
     };
-    const onEvent = (event, handler) => { firedHandlers.push(handler); return () => {}; };
     const isElectron = () => true;
-    const getCurrentWindow = () => ({
-      isVisible: async () => { await delay(${isVisibleDelayMs}); return visible; },
-      show: async () => { calls.push('show'); visible = true; },
-      hide: async () => { calls.push('hide'); visible = false; },
-    });
-    const localStorage = { getItem: () => null, setItem: () => {} };
-    export const __mock = { firedHandlers, calls, registered, visible: () => visible };
+    const localStorage = { getItem: () => saved, setItem: (_key, value) => { saved = value; } };
+    export const __mock = { calls, registered, saved: () => saved, allowRegistration: () => { failAccelerator = null; } };
   `;
 
   const transformed = ts.transpileModule(prelude + source, {
@@ -52,54 +44,27 @@ async function importGlobalShortcut({ isVisibleDelayMs = 0 } = {}) {
   return import(`file:///${modulePath.replaceAll('\\', '/')}`);
 }
 
-const press = (module, times) => {
-  // 主进程回传的 accelerator 是注册时传入的归一化形式
-  const handler = module.__mock.firedHandlers[0];
-  for (let i = 0; i < times; i += 1) handler({ accelerator: 'Control+Alt+Space' });
-};
-
-const settle = () => new Promise(resolve => setTimeout(resolve, 50));
-
-test('repeated presses from key auto-repeat toggle the window only once', async () => {
+test('startup registers the default shortcut once', async () => {
   const module = await importGlobalShortcut();
   await module.initializeGlobalShortcut();
-
-  press(module, 5);
-  await settle();
-
-  assert.deepEqual(module.__mock.calls, ['show']);
-  assert.equal(module.__mock.visible(), true);
+  await module.initializeGlobalShortcut();
   assert.deepEqual(module.__mock.registered, ['Control+Alt+Space']);
 });
 
-test('overlapping toggles are serialized so a stale isVisible cannot re-show', async () => {
-  const module = await importGlobalShortcut({ isVisibleDelayMs: 20 });
+test('a shortcut can be enabled after starting with it disabled', async () => {
+  const module = await importGlobalShortcut({ saved: '' });
   await module.initializeGlobalShortcut();
-
-  press(module, 2);
-  await settle();
-
-  // Without serialization both toggles would read "hidden" and double-show,
-  // or interleave into show-then-hide. Exactly one show must win.
-  assert.deepEqual(module.__mock.calls, ['show']);
-  assert.equal(module.__mock.visible(), true);
+  assert.deepEqual(module.__mock.registered, []);
+  await module.setConfiguredGlobalShortcut('Ctrl+Alt+Space');
+  assert.deepEqual(module.__mock.registered, ['Control+Alt+Space']);
 });
 
-test('a deliberate second press after the debounce window hides the window', async () => {
-  const module = await importGlobalShortcut();
-  await module.initializeGlobalShortcut();
-
-  press(module, 1);
-  await settle();
-  assert.equal(module.__mock.visible(), true);
-
-  // Wait out the debounce window, then press again.
-  await new Promise(resolve => setTimeout(resolve, 450));
-  press(module, 1);
-  await settle();
-
-  assert.deepEqual(module.__mock.calls, ['show', 'hide']);
-  assert.equal(module.__mock.visible(), false);
+test('registration can be retried after startup failure', async () => {
+  const module = await importGlobalShortcut({ failAccelerator: 'Control+Alt+Space' });
+  await assert.rejects(module.initializeGlobalShortcut(), /shortcut unavailable/);
+  module.__mock.allowRegistration();
+  await module.setConfiguredGlobalShortcut('Ctrl+Alt+Space');
+  assert.deepEqual(module.__mock.registered, ['Control+Alt+Space']);
 });
 
 test('normalizeAccelerator 归一化旧桌面壳写法为 Electron 格式', async () => {
@@ -128,23 +93,26 @@ test('normalizeAccelerator 归一化旧桌面壳写法为 Electron 格式', asyn
   assert.equal(normalizeAccelerator('shift+escape'), 'Shift+Escape');
 });
 
-test('setConfiguredGlobalShortcut 注册前归一化，注册值与过滤值一致', async () => {
+test('setConfiguredGlobalShortcut normalizes accelerators before registration', async () => {
   const module = await importGlobalShortcut();
   const { setConfiguredGlobalShortcut } = module;
 
-  // 先走启动初始化（注册默认快捷键并订阅 fired 事件），再换键
+  // Register the default, then swap to a normalized custom shortcut.
   await module.initializeGlobalShortcut();
   assert.deepEqual(module.__mock.registered, ['Control+Alt+Space']);
 
   await setConfiguredGlobalShortcut('cmdorctrl+alt+space');
   assert.deepEqual(module.__mock.registered, ['Control+Alt+Space', 'CommandOrControl+Alt+Space']);
-  // 主进程回传归一化 accelerator 时能被正确匹配触发
-  // （mock 的 calls 还包含换键时的 unregister:Control+Alt+Space 记录）
-  const handler = module.__mock.firedHandlers[0];
-  handler({ accelerator: 'CommandOrControl+Alt+Space' });
-  await settle();
-  assert.ok(module.__mock.calls.includes('show'));
-  assert.equal(module.__mock.visible(), true);
+  assert.deepEqual(module.__mock.calls, ['unregister:Control+Alt+Space']);
+  assert.equal(module.__mock.saved(), 'cmdorctrl+alt+space');
+});
+
+test('a failed shortcut change restores the old binding and saved preference', async () => {
+  const module = await importGlobalShortcut({ saved: 'Ctrl+Alt+Space', failAccelerator: 'Control+Alt+P' });
+  await module.initializeGlobalShortcut();
+  await assert.rejects(module.setConfiguredGlobalShortcut('Ctrl+Alt+P'), /shortcut unavailable/);
+  assert.deepEqual(module.__mock.registered, ['Control+Alt+Space', 'Control+Alt+Space']);
+  assert.equal(module.__mock.saved(), 'Ctrl+Alt+Space');
 });
 
 test('isReservedGlobalShortcut 按平台拦截固定快捷键（含 mac Super≡Command 写法）', async () => {

@@ -2,19 +2,17 @@
 // Quick-Chat — 全局快捷键（唤起/隐藏主窗口）
 // =============================================================================
 // 注册走 Electron globalShortcut（bridge 的 shortcut:* 命令），触发时主进程
-// 向主窗口转发 shortcut-fired 事件；这里做防抖/串行化后切换窗口显隐。
+// 直接切换窗口显隐，隐藏窗口的唤起不依赖前端继续执行。
 // 快捷键值持久化在 localStorage，旧安装默认 Ctrl+Alt+Space。
 // =============================================================================
 
-import { invoke, onEvent, isElectron } from '@/services/bridge';
-import { getCurrentWindow } from '@/services/appWindow';
+import { invoke, isElectron } from '@/services/bridge';
 
 export const GLOBAL_SHORTCUT_STORAGE_KEY = 'quick_chat_global_shortcut';
 // Avoid Alt+Space: Linux desktop environments commonly reserve it for the window menu.
 export const DEFAULT_GLOBAL_SHORTCUT = 'Ctrl+Alt+Space';
 
 let registeredShortcut: string | null = null;
-let unsubscribeFired: (() => void) | null = null;
 
 // 旧桌面壳/global-hotkey 风格的修饰键写法 → Electron accelerator 规范名
 const MODIFIER_MAP: Record<string, string> = {
@@ -76,45 +74,12 @@ export function normalizeAccelerator(shortcut: string): string {
     .join('+');
 }
 
-// Holding the shortcut down fires repeated Pressed events (key auto-repeat), and
-// each async toggle reads isVisible() before the previous show()/hide() lands.
-// Both make the window flash open and immediately close. Serialize toggles and
-// ignore presses that arrive right after a toggle.
-const TOGGLE_DEBOUNCE_MS = 400;
-let lastToggleAt = 0;
-let toggleQueue: Promise<void> = Promise.resolve();
-
 export function getConfiguredGlobalShortcut(): string | null {
   const saved = localStorage.getItem(GLOBAL_SHORTCUT_STORAGE_KEY);
 
   // Existing installations have no saved value, so migrate them to the safer default.
   if (saved === null) return DEFAULT_GLOBAL_SHORTCUT;
   return saved || null;
-}
-
-async function toggleWindowVisibility() {
-  const window = getCurrentWindow();
-  const isVisible = await window.isVisible();
-
-  if (isVisible) {
-    await window.hide();
-    return;
-  }
-
-  // window:show 覆盖还原最小化 + 显示 + 聚焦
-  await window.show();
-}
-
-function requestToggle() {
-  const now = Date.now();
-  if (now - lastToggleAt < TOGGLE_DEBOUNCE_MS) return;
-  lastToggleAt = now;
-
-  toggleQueue = toggleQueue.then(() =>
-    toggleWindowVisibility().catch(error => {
-      console.error('切换 Quick Chat 窗口失败:', error);
-    }),
-  );
 }
 
 async function registerShortcut(shortcut: string) {
@@ -124,16 +89,6 @@ async function registerShortcut(shortcut: string) {
 
 async function unregisterShortcut(shortcut: string) {
   await invoke('shortcut:unregister', { accelerator: normalizeAccelerator(shortcut) });
-}
-
-/** 订阅主进程的 shortcut-fired 转发，只响应当前注册的快捷键 */
-function subscribeShortcutFired() {
-  unsubscribeFired?.();
-  unsubscribeFired = onEvent('shortcut-fired', (payload) => {
-    const accelerator = (payload as { accelerator?: string } | null)?.accelerator;
-    if (accelerator && accelerator !== registeredShortcut) return;
-    requestToggle();
-  });
 }
 
 /** Register the saved shortcut once the webview is ready. */
@@ -147,7 +102,6 @@ export async function initializeGlobalShortcut(): Promise<void> {
 
   await registerShortcut(shortcut);
   registeredShortcut = normalized;
-  subscribeShortcutFired();
 }
 
 /**
